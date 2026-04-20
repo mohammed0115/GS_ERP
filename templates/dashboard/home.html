@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% load i18n erp_money %}
+{% block title %}{% trans "Dashboard" %}{% endblock %}
+
+{% block content %}
+<h4 class="mb-3">{% trans "Dashboard" %}</h4>
+
+<div class="row">
+    {# ---------------- KPI cards ---------------- #}
+    <div class="col-md-3">
+        <div class="card shadow-sm mb-3">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-muted small">{% trans "Today's sales" %}</div>
+                        <h4 class="mb-0">{{ kpis.today_sales|money:currency }}</h4>
+                    </div>
+                    <div class="rounded-circle bg-primary text-white p-3">
+                        <i class="fas fa-shopping-bag"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card shadow-sm mb-3">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-muted small">{% trans "This month" %}</div>
+                        <h4 class="mb-0">{{ kpis.month_sales|money:currency }}</h4>
+                    </div>
+                    <div class="rounded-circle bg-success text-white p-3">
+                        <i class="fas fa-chart-line"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card shadow-sm mb-3">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-muted small">{% trans "Outstanding receivables" %}</div>
+                        <h4 class="mb-0">{{ kpis.outstanding|money:currency }}</h4>
+                    </div>
+                    <div class="rounded-circle bg-warning text-white p-3">
+                        <i class="fas fa-hand-holding-usd"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card shadow-sm mb-3">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-muted small">{% trans "Low stock alerts" %}</div>
+                        <h4 class="mb-0">{{ kpis.low_stock_count }}</h4>
+                    </div>
+                    <div class="rounded-circle bg-danger text-white p-3">
+                        <i class="fas fa-exclamation-triangle"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    {# ---------------- Best sellers ---------------- #}
+    <div class="col-lg-8">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <strong>{% trans "Best sellers (last 30 days)" %}</strong>
+                <a href="{% url 'reports:best_sellers' %}" class="small">{% trans "View all" %}</a>
+            </div>
+            <div class="card-body">
+                {% if best_sellers %}
+                    <canvas id="bestSellersChart" height="80"></canvas>
+                {% else %}
+                    <p class="text-muted mb-0">{% trans "No sales yet." %}</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    {# ---------------- Low stock ---------------- #}
+    <div class="col-lg-4">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <strong>{% trans "Low stock" %}</strong>
+                <a href="{% url 'reports:low_stock' %}" class="small">{% trans "View all" %}</a>
+            </div>
+            <ul class="list-group list-group-flush">
+                {% for row in low_stock|slice:":8" %}
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span class="text-truncate mr-2">{{ row.product_code }} — {{ row.product_name }}</span>
+                        <span class="badge badge-danger">{{ row.on_hand|qty }}</span>
+                    </li>
+                {% empty %}
+                    <li class="list-group-item text-muted">{% trans "All stocks above threshold." %}</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if best_sellers %}
+<script>
+(function () {
+    var ctx = document.getElementById('bestSellersChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: {{ best_sellers_labels|safe }},
+            datasets: [{
+                label: "{% trans 'Quantity sold' %}",
+                data: {{ best_sellers_values|safe }},
+                backgroundColor: 'rgba(52, 152, 219, 0.6)',
+                borderColor: 'rgba(52, 152, 219, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            scales: { y: { beginAtZero: true } }
+        }
+    });
+})();
+</script>
+{% endif %}
+{% endblock %}

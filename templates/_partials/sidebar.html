@@ -1,0 +1,259 @@
+{% load i18n erp_permissions %}
+{# ---------------------------------------------------------------------------
+   Left sidebar navigation.
+
+   The legacy sidebar (resources/views/layout/main.blade.php lines 150-1500)
+   was a procedural mess: 20+ inline raw-SQL permission checks per page load.
+
+   Here we use {% has_perm %} which calls the Permission Registry built in
+   Sprint 1.3 — same semantic contract, but: (a) one cached lookup per
+   (user, organization) per request (not 20+ queries), (b) human-readable.
+--------------------------------------------------------------------------- #}
+<aside class="sidebar bg-dark text-white">
+    <nav class="sidebar-nav">
+        <ul class="nav flex-column">
+
+            <li class="nav-item">
+                <a href="{% url 'dashboard:home' %}" class="nav-link text-white">
+                    <i class="fas fa-tachometer-alt"></i> {% trans "Dashboard" %}
+                </a>
+            </li>
+
+            {# -------- Product / Catalog -------- #}
+            {% if request.user|can:"catalog.products.view" or request.user|can:"catalog.categories.view" %}
+                <li class="nav-item">
+                    <a href="#nav-catalog" data-toggle="collapse" class="nav-link text-white">
+                        <i class="fas fa-boxes"></i> {% trans "Catalog" %}
+                        <i class="fas fa-angle-down float-right"></i>
+                    </a>
+                    <ul id="nav-catalog" class="collapse list-unstyled">
+                        {% if request.user|can:"catalog.categories.view" %}
+                            <li><a class="nav-link pl-5" href="{% url 'catalog:category_list' %}">{% trans "Categories" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"catalog.brands.view" %}
+                            <li><a class="nav-link pl-5" href="{% url 'catalog:brand_list' %}">{% trans "Brands" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"catalog.units.view" %}
+                            <li><a class="nav-link pl-5" href="{% url 'catalog:unit_list' %}">{% trans "Units" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"catalog.taxes.view" %}
+                            <li><a class="nav-link pl-5" href="{% url 'catalog:tax_list' %}">{% trans "Taxes" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"catalog.products.view" %}
+                            <li><a class="nav-link pl-5" href="{% url 'catalog:product_list' %}">{% trans "Products" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"catalog.products.create" %}
+                            <li><a class="nav-link pl-5" href="{% url 'catalog:product_create' %}">{% trans "Add Product" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"catalog.products.print_barcode" %}
+                            <li><a class="nav-link pl-5" href="{% url 'catalog:print_barcode' %}">{% trans "Print Barcode" %}</a></li>
+                        {% endif %}
+                    </ul>
+                </li>
+            {% endif %}
+
+            {# -------- Inventory -------- #}
+            {% if request.user|can:"inventory.warehouses.view" or request.user|can:"inventory.adjustments.view" %}
+                <li class="nav-item">
+                    <a href="#nav-inventory" data-toggle="collapse" class="nav-link text-white">
+                        <i class="fas fa-warehouse"></i> {% trans "Inventory" %}
+                        <i class="fas fa-angle-down float-right"></i>
+                    </a>
+                    <ul id="nav-inventory" class="collapse list-unstyled">
+                        {% if request.user|can:"inventory.warehouses.view" %}
+                            <li><a class="nav-link pl-5" href="{% url 'inventory:warehouse_list' %}">{% trans "Warehouses" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"inventory.adjustments.view" %}
+                            <li><a class="nav-link pl-5" href="{% url 'inventory:adjustment_list' %}">{% trans "Adjustments" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"inventory.transfers.view" %}
+                            <li><a class="nav-link pl-5" href="{% url 'inventory:transfer_list' %}">{% trans "Transfers" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"inventory.stock_count.view" %}
+                            <li><a class="nav-link pl-5" href="{% url 'inventory:stock_count_list' %}">{% trans "Stock Count" %}</a></li>
+                        {% endif %}
+                    </ul>
+                </li>
+            {% endif %}
+
+            {# -------- Purchases -------- #}
+            {% if request.user|can:"purchases.purchases.view" %}
+                <li class="nav-item">
+                    <a href="#nav-purchases" data-toggle="collapse" class="nav-link text-white">
+                        <i class="fas fa-shopping-cart"></i> {% trans "Purchases" %}
+                        <i class="fas fa-angle-down float-right"></i>
+                    </a>
+                    <ul id="nav-purchases" class="collapse list-unstyled">
+                        <li><a class="nav-link pl-5" href="{% url 'purchases:list' %}">{% trans "Purchase List" %}</a></li>
+                        {% if request.user|can:"purchases.purchases.create" %}
+                            <li><a class="nav-link pl-5" href="{% url 'purchases:create' %}">{% trans "Add Purchase" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"purchases.purchase_returns.view" %}
+                            <li><a class="nav-link pl-5" href="{% url 'purchases:return_list' %}">{% trans "Returns" %}</a></li>
+                        {% endif %}
+                    </ul>
+                </li>
+            {% endif %}
+
+            {# -------- Sales -------- #}
+            {% if request.user|can:"sales.sales.view" %}
+                <li class="nav-item">
+                    <a href="#nav-sales" data-toggle="collapse" class="nav-link text-white">
+                        <i class="fas fa-file-invoice-dollar"></i> {% trans "Sales" %}
+                        <i class="fas fa-angle-down float-right"></i>
+                    </a>
+                    <ul id="nav-sales" class="collapse list-unstyled">
+                        <li><a class="nav-link pl-5" href="{% url 'sales:list' %}">{% trans "Sales List" %}</a></li>
+                        {% if request.user|can:"sales.sales.create" %}
+                            <li><a class="nav-link pl-5" href="{% url 'sales:create' %}">{% trans "Add Sale" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"sales.quotations.view" %}
+                            <li><a class="nav-link pl-5" href="{% url 'sales:quotation_list' %}">{% trans "Quotations" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"sales.sale_returns.view" %}
+                            <li><a class="nav-link pl-5" href="{% url 'sales:return_list' %}">{% trans "Returns" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"sales.deliveries.view" %}
+                            <li><a class="nav-link pl-5" href="{% url 'sales:delivery_list' %}">{% trans "Deliveries" %}</a></li>
+                        {% endif %}
+                    </ul>
+                </li>
+            {% endif %}
+
+            {# -------- POS -------- #}
+            {% if request.user|can:"pos.pos.use" %}
+                <li class="nav-item">
+                    <a href="{% url 'pos:start' %}" class="nav-link text-white">
+                        <i class="fas fa-cash-register"></i> {% trans "POS" %}
+                    </a>
+                </li>
+            {% endif %}
+
+            {# -------- People -------- #}
+            {% if request.user|can:"crm.customers.view" or request.user|can:"crm.suppliers.view" %}
+                <li class="nav-item">
+                    <a href="#nav-people" data-toggle="collapse" class="nav-link text-white">
+                        <i class="fas fa-users"></i> {% trans "People" %}
+                        <i class="fas fa-angle-down float-right"></i>
+                    </a>
+                    <ul id="nav-people" class="collapse list-unstyled">
+                        {% if request.user|can:"crm.customers.view" %}
+                            <li><a class="nav-link pl-5" href="{% url 'crm:customer_list' %}">{% trans "Customers" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"crm.customer_groups.view" %}
+                            <li><a class="nav-link pl-5" href="{% url 'crm:customer_group_list' %}">{% trans "Customer Groups" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"crm.suppliers.view" %}
+                            <li><a class="nav-link pl-5" href="{% url 'crm:supplier_list' %}">{% trans "Suppliers" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"crm.billers.view" %}
+                            <li><a class="nav-link pl-5" href="{% url 'crm:biller_list' %}">{% trans "Billers" %}</a></li>
+                        {% endif %}
+                    </ul>
+                </li>
+            {% endif %}
+
+            {# -------- Finance -------- #}
+            {% if request.user|can:"finance.accounts.view" or request.user|can:"finance.expenses.view" %}
+                <li class="nav-item">
+                    <a href="#nav-finance" data-toggle="collapse" class="nav-link text-white">
+                        <i class="fas fa-coins"></i> {% trans "Finance" %}
+                        <i class="fas fa-angle-down float-right"></i>
+                    </a>
+                    <ul id="nav-finance" class="collapse list-unstyled">
+                        {% if request.user|can:"finance.accounts.view" %}
+                            <li><a class="nav-link pl-5" href="{% url 'finance:account_list' %}">{% trans "Accounts" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"finance.expenses.view" %}
+                            <li><a class="nav-link pl-5" href="{% url 'finance:expense_list' %}">{% trans "Expenses" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"finance.expense_categories.view" %}
+                            <li><a class="nav-link pl-5" href="{% url 'finance:expense_category_list' %}">{% trans "Expense Categories" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"finance.transfers.view" %}
+                            <li><a class="nav-link pl-5" href="{% url 'finance:transfer_list' %}">{% trans "Money Transfers" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"finance.payments.view" %}
+                            <li><a class="nav-link pl-5" href="{% url 'finance:payment_list' %}">{% trans "Payments" %}</a></li>
+                        {% endif %}
+                    </ul>
+                </li>
+            {% endif %}
+
+            {# -------- HR -------- #}
+            {% if request.user|can:"hr.employees.view" %}
+                <li class="nav-item">
+                    <a href="#nav-hr" data-toggle="collapse" class="nav-link text-white">
+                        <i class="fas fa-user-tie"></i> {% trans "HR" %}
+                        <i class="fas fa-angle-down float-right"></i>
+                    </a>
+                    <ul id="nav-hr" class="collapse list-unstyled">
+                        <li><a class="nav-link pl-5" href="{% url 'hr:employee_list' %}">{% trans "Employees" %}</a></li>
+                        {% if request.user|can:"hr.departments.view" %}
+                            <li><a class="nav-link pl-5" href="{% url 'hr:department_list' %}">{% trans "Departments" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"hr.attendance.view" %}
+                            <li><a class="nav-link pl-5" href="{% url 'hr:attendance_list' %}">{% trans "Attendance" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"hr.holidays.view" %}
+                            <li><a class="nav-link pl-5" href="{% url 'hr:holiday_list' %}">{% trans "Holidays" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"hr.payroll.view" %}
+                            <li><a class="nav-link pl-5" href="{% url 'hr:payroll_list' %}">{% trans "Payroll" %}</a></li>
+                        {% endif %}
+                    </ul>
+                </li>
+            {% endif %}
+
+            {# -------- Reports -------- #}
+            {% if request.user|can:"reports.reports.low_stock" or request.user|can:"reports.reports.daily_sales" %}
+                <li class="nav-item">
+                    <a href="#nav-reports" data-toggle="collapse" class="nav-link text-white">
+                        <i class="fas fa-chart-line"></i> {% trans "Reports" %}
+                        <i class="fas fa-angle-down float-right"></i>
+                    </a>
+                    <ul id="nav-reports" class="collapse list-unstyled">
+                        {% if request.user|can:"reports.reports.profit_loss" %}
+                            <li><a class="nav-link pl-5" href="{% url 'reports:profit_loss' %}">{% trans "Profit & Loss" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"reports.reports.daily_sales" %}
+                            <li><a class="nav-link pl-5" href="{% url 'reports:daily_sales' %}">{% trans "Daily Sales" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"reports.reports.best_sellers" %}
+                            <li><a class="nav-link pl-5" href="{% url 'reports:best_sellers' %}">{% trans "Best Sellers" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"reports.reports.low_stock" %}
+                            <li><a class="nav-link pl-5" href="{% url 'reports:low_stock' %}">{% trans "Low Stock Alert" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"reports.reports.warehouse_stock" %}
+                            <li><a class="nav-link pl-5" href="{% url 'reports:warehouse_stock' %}">{% trans "Warehouse Stock" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"reports.reports.due_report" %}
+                            <li><a class="nav-link pl-5" href="{% url 'reports:due_receivables' %}">{% trans "Due Receivables" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"reports.reports.payment_report" %}
+                            <li><a class="nav-link pl-5" href="{% url 'reports:payments' %}">{% trans "Payments" %}</a></li>
+                        {% endif %}
+                    </ul>
+                </li>
+            {% endif %}
+
+            {# -------- Settings -------- #}
+            {% if request.user.is_staff %}
+                <li class="nav-item">
+                    <a href="#nav-settings" data-toggle="collapse" class="nav-link text-white">
+                        <i class="fas fa-cog"></i> {% trans "Settings" %}
+                        <i class="fas fa-angle-down float-right"></i>
+                    </a>
+                    <ul id="nav-settings" class="collapse list-unstyled">
+                        <li><a class="nav-link pl-5" href="{% url 'admin:index' %}">{% trans "Django admin" %}</a></li>
+                        <li><a class="nav-link pl-5" href="{% url 'users:user_list' %}">{% trans "Users" %}</a></li>
+                        <li><a class="nav-link pl-5" href="{% url 'users:role_list' %}">{% trans "Roles" %}</a></li>
+                        <li><a class="nav-link pl-5" href="{% url 'settings:currency_list' %}">{% trans "Currencies" %}</a></li>
+                    </ul>
+                </li>
+            {% endif %}
+
+        </ul>
+    </nav>
+</aside>

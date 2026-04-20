@@ -1,0 +1,29 @@
+{% extends "_generic/list.html" %}
+{% load i18n erp_permissions %}
+
+{% block page_title %}{% trans "Roles" %}{% endblock %}
+{% block header_title %}{% trans "Roles" %}{% endblock %}
+{% block header_subtitle %}{% trans "Groups of permissions. Assign to users from the user edit page." %}{% endblock %}
+
+{% block create_url %}{% url 'users:role_create' %}{% endblock %}
+{% block create_label %}{% trans "Add Role" %}{% endblock %}
+
+{% block table_head %}
+    <th>{% trans "Name" %}</th>
+    <th class="text-right">{% trans "Permissions" %}</th>
+    <th class="text-right">{% trans "Users" %}</th>
+    <th style="width: 160px;">&nbsp;</th>
+{% endblock %}
+
+{% block table_body %}
+    {% for obj in object_list %}
+    <tr>
+        <td><strong>{{ obj.name }}</strong></td>
+        <td class="text-right">{{ obj.permissions.count }}</td>
+        <td class="text-right">{{ obj.user_set.count }}</td>
+        <td class="text-right">
+            <a href="{% url 'users:role_edit' obj.pk %}" class="btn btn-sm btn-outline-primary"><i class="fas fa-pen"></i></a>
+        </td>
+    </tr>
+    {% endfor %}
+{% endblock %}

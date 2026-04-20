@@ -1,0 +1,9 @@
+{% extends "errors/_base.html" %}
+{% load i18n %}
+{% block status %}400{% endblock %}
+{% block status_display %}400{% endblock %}
+{% block icon %}fa-times-circle{% endblock %}
+{% block headline %}{% trans "Bad request" %}{% endblock %}
+{% block message %}
+    {% trans "The request could not be understood. Try again or contact support if the problem persists." %}
+{% endblock %}

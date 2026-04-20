@@ -1,0 +1,144 @@
+{% load static i18n erp_permissions erp_money %}<!DOCTYPE html>
+{# ---------------------------------------------------------------------------
+   Base template — the single top-level layout.
+
+   Direct port of resources/views/layout/main.blade.php from the legacy
+   Laravel project, with these deliberate changes:
+
+     * Vendor assets are loaded from CDNs rather than a bundled
+       public/vendor/ tree. This drops ~60MB of vendor files from source
+       control and pins versions explicitly below.
+     * Permission-gated menu items use the `{% has_perm %}` template tag
+       (see common/templatetags/erp_permissions.py), not raw DB queries in
+       the view as the legacy system did.
+     * `organization_id` is derived from `request.tenant_context`, not
+       `session('organization_id')` (fixes legacy defect D1/D3).
+     * CSRF handled by Django's `{% csrf_token %}`, not a <meta> scrape hack.
+
+   Every concrete page extends this file and overrides:
+     {% block title %}   — page title
+     {% block content %} — main content area
+     {% block scripts %} — page-specific scripts (goes after global scripts)
+--------------------------------------------------------------------------- #}
+<html lang="{{ LANGUAGE_CODE|default:'en' }}" dir="{{ LANGUAGE_BIDI|yesno:'rtl,ltr' }}">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="all,follow">
+
+    <title>{% block title %}{% trans "Dashboard" %}{% endblock %} — {{ site_title|default:"N-ERP" }}</title>
+
+    {# ------- CSS ------- #}
+    {# Bootstrap 4.6 — last pre-bootstrap-5 release, matches legacy markup #}
+    <link rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css"
+          integrity="sha384-xOolHFLEh07PJGoPkLv1IbcEPTNtaed2xpHsD9ESMhqIYd0nLMwNLD69Npy4HI+N"
+          crossorigin="anonymous">
+
+    {# bootstrap-select — styled select2-like dropdowns the legacy uses #}
+    <link rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/bootstrap-select@1.13.18/dist/css/bootstrap-select.min.css">
+
+    {# Font Awesome 5 — icons. Legacy used 4.7; 5 supports all the old classes. #}
+    <link rel="stylesheet"
+          href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+
+    {# DataTables — table sorter / pager #}
+    <link rel="stylesheet"
+          href="https://cdn.datatables.net/1.13.7/css/dataTables.bootstrap4.min.css">
+    <link rel="stylesheet"
+          href="https://cdn.datatables.net/responsive/2.5.0/css/responsive.bootstrap4.min.css">
+
+    {# Bootstrap datepicker #}
+    <link rel="stylesheet"
+          href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-datepicker/1.9.0/css/bootstrap-datepicker.min.css">
+
+    {# Daterange picker #}
+    <link rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/daterangepicker/daterangepicker.css">
+
+    {# Google font — matches legacy Nunito choice #}
+    <link rel="stylesheet"
+          href="https://fonts.googleapis.com/css?family=Nunito:400,500,700&display=swap">
+
+    <link rel="stylesheet" href="{% static 'css/theme.css' %}">
+    {% block extra_css %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+
+<header class="header bg-white shadow-sm">
+    {% include "_partials/topbar.html" %}
+</header>
+
+<div class="d-flex align-items-stretch">
+    {% if request.user.is_authenticated %}
+        {% include "_partials/sidebar.html" %}
+    {% endif %}
+
+    <div class="page-content flex-grow-1">
+        {% if messages %}
+            <div class="container-fluid mt-3">
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+
+        <main class="container-fluid py-4">
+            {% block content %}{% endblock %}
+        </main>
+
+        <footer class="main-footer text-center py-3 text-muted small">
+            &copy; {% now "Y" %} {{ site_title|default:"N-ERP" }}. All rights reserved.
+        </footer>
+    </div>
+</div>
+
+{# ------- JS ------- #}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.16.1/umd/popper.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap-select@1.13.18/dist/js/bootstrap-select.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.7/js/dataTables.bootstrap4.min.js"></script>
+<script src="https://cdn.datatables.net/responsive/2.5.0/js/dataTables.responsive.min.js"></script>
+<script src="https://cdn.datatables.net/responsive/2.5.0/js/responsive.bootstrap4.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-datepicker/1.9.0/js/bootstrap-datepicker.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/moment@2.29.4/moment.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/daterangepicker/daterangepicker.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+<script>
+/* Global CSRF setup — Django reads CSRF from X-CSRFToken header on AJAX. */
+(function () {
+    function getCookie(name) {
+        var v = document.cookie.match('(^|;) ?' + name + '=([^;]*)(;|$)');
+        return v ? decodeURIComponent(v[2]) : null;
+    }
+    var csrftoken = getCookie('csrftoken');
+    $.ajaxSetup({
+        beforeSend: function (xhr, settings) {
+            if (!/^(GET|HEAD|OPTIONS|TRACE)$/.test(settings.type) && !this.crossDomain) {
+                xhr.setRequestHeader("X-CSRFToken", csrftoken);
+            }
+        }
+    });
+
+    /* Default DataTables init for any .datatable class */
+    $(function () {
+        $('.datatable').DataTable({ responsive: true, pageLength: 25 });
+        $('.selectpicker').selectpicker();
+        $('.datepicker').datepicker({ format: 'yyyy-mm-dd', autoclose: true });
+    });
+})();
+</script>
+
+{% block scripts %}{% endblock %}
+</body>
+</html>

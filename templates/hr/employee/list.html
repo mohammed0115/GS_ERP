@@ -1,0 +1,40 @@
+{% extends "_generic/list.html" %}
+{% load i18n erp_permissions erp_money %}
+
+{% block page_title %}{% trans "Employees" %}{% endblock %}
+{% block header_title %}{% trans "Employees" %}{% endblock %}
+{% block header_subtitle %}{% trans "People on payroll" %}{% endblock %}
+
+{% block create_url %}{% url 'hr:employee_create' %}{% endblock %}
+{% block create_label %}{% trans "Add Employee" %}{% endblock %}
+
+{% block table_head %}
+    <th>{% trans "Code" %}</th>
+    <th>{% trans "Name" %}</th>
+    <th>{% trans "Department" %}</th>
+    <th>{% trans "Job title" %}</th>
+    <th class="text-right">{% trans "Base salary" %}</th>
+    <th class="text-center">{% trans "Status" %}</th>
+    <th style="width: 160px;">&nbsp;</th>
+{% endblock %}
+
+{% block table_body %}
+    {% for obj in object_list %}
+    <tr>
+        <td><code>{{ obj.code }}</code></td>
+        <td>{{ obj.full_name }}</td>
+        <td>{% if obj.department %}{{ obj.department.name }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+        <td>{{ obj.job_title|default:"—" }}</td>
+        <td class="text-right">{{ obj.base_salary|money:obj.currency_code }}</td>
+        <td class="text-center">
+            {% if obj.is_active %}<span class="badge badge-success">{% trans "Active" %}</span>
+            {% else %}<span class="badge badge-secondary">{% trans "Inactive" %}</span>{% endif %}
+        </td>
+        <td class="text-right">
+            {% if request.user|can:"hr.employees.update" %}
+                <a href="{% url 'hr:employee_edit' obj.pk %}" class="btn btn-sm btn-outline-primary"><i class="fas fa-pen"></i></a>
+            {% endif %}
+        </td>
+    </tr>
+    {% endfor %}
+{% endblock %}

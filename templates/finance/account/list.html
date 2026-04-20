@@ -1,0 +1,43 @@
+{% extends "_generic/list.html" %}
+{% load i18n erp_permissions %}
+
+{% block page_title %}{% trans "Chart of Accounts" %}{% endblock %}
+{% block header_title %}{% trans "Chart of Accounts" %}{% endblock %}
+{% block header_subtitle %}{% trans "General ledger account structure" %}{% endblock %}
+
+{% block table_head %}
+    <th>{% trans "Code" %}</th>
+    <th>{% trans "Name" %}</th>
+    <th>{% trans "Type" %}</th>
+    <th>{% trans "Parent" %}</th>
+    <th class="text-center">{% trans "Status" %}</th>
+{% endblock %}
+
+{% block table_body %}
+    {% for obj in object_list %}
+        <tr>
+            <td><code>{{ obj.code }}</code></td>
+            <td>{{ obj.name }}</td>
+            <td>
+                {% if obj.account_type == "asset" %}
+                    <span class="badge badge-info">{% trans "Asset" %}</span>
+                {% elif obj.account_type == "liability" %}
+                    <span class="badge badge-warning">{% trans "Liability" %}</span>
+                {% elif obj.account_type == "equity" %}
+                    <span class="badge badge-primary">{% trans "Equity" %}</span>
+                {% elif obj.account_type == "income" %}
+                    <span class="badge badge-success">{% trans "Income" %}</span>
+                {% elif obj.account_type == "expense" %}
+                    <span class="badge badge-danger">{% trans "Expense" %}</span>
+                {% else %}
+                    <span class="badge badge-light">{{ obj.account_type }}</span>
+                {% endif %}
+            </td>
+            <td>{% if obj.parent %}<code>{{ obj.parent.code }}</code> — {{ obj.parent.name }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td class="text-center">
+                {% if obj.is_active %}<span class="badge badge-success">{% trans "Active" %}</span>
+                {% else %}<span class="badge badge-secondary">{% trans "Inactive" %}</span>{% endif %}
+            </td>
+        </tr>
+    {% endfor %}
+{% endblock %}

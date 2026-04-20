@@ -1,0 +1,80 @@
+[project]
+name = "nerp"
+version = "0.1.0"
+description = "N-ERP: Django-based ERP platform (rebuild of legacy Laravel n.erp)"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.test"
+python_files = ["test_*.py", "tests.py"]
+testpaths = ["apps", "tests"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--tb=short",
+]
+markers = [
+    "unit: pure unit tests (no DB, no network)",
+    "integration: tests that hit the DB",
+    "e2e: end-to-end tests through the HTTP layer",
+]
+filterwarnings = [
+    "error",
+    "ignore::DeprecationWarning:django.*",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = [
+    "*/migrations/*",
+]
+
+[tool.ruff.lint]
+select = [
+    "E", "F", "W",   # pycodestyle / pyflakes
+    "I",             # isort
+    "B",             # flake8-bugbear
+    "UP",            # pyupgrade
+    "N",             # pep8-naming
+    "SIM",           # flake8-simplify
+    "RUF",           # ruff-specific
+    "PTH",           # pathlib
+    "DTZ",           # datetime timezone
+    "TCH",           # type-checking imports
+]
+ignore = [
+    "E501",  # line-length handled by formatter
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["apps", "common", "config"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["mypy_django_plugin.main"]
+exclude = ["migrations/"]
+
+[tool.django-stubs]
+django_settings_module = "config.settings.development"
+
+[tool.coverage.run]
+source = ["apps", "common"]
+omit = [
+    "*/migrations/*",
+    "*/tests/*",
+    "*/apps.py",
+    "*/admin.py",
+]
+
+[tool.coverage.report]
+precision = 1
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]

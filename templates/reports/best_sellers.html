@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% load i18n erp_money %}
+
+{% block title %}{% trans "Best Sellers" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with
+    title=_("Best Sellers")
+    subtitle=_("Top products by quantity sold in a period") %}
+
+{% include "_partials/report_filters.html" %}
+
+{% if rows %}
+<div class="card shadow-sm mb-3">
+    <div class="card-body">
+        <canvas id="bestChart" height="80"></canvas>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <table class="table mb-0">
+            <thead>
+                <tr>
+                    <th style="width:60px;">#</th>
+                    <th>{% trans "Product code" %}</th>
+                    <th class="text-right">{% trans "Quantity sold" %}</th>
+                    <th class="text-right">{% trans "Revenue" %}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in rows %}
+                    <tr>
+                        <td>{{ forloop.counter }}</td>
+                        <td><code>{{ r.product_code }}</code></td>
+                        <td class="text-right">{{ r.quantity_sold }}</td>
+                        <td class="text-right">{{ r.revenue|money:currency }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<div class="card shadow-sm"><div class="card-body text-center text-muted p-5">
+    <i class="fas fa-trophy fa-3x mb-3 opacity-50"></i>
+    <p>{% trans "No sales recorded in this period yet." %}</p>
+</div></div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if rows %}
+<script>
+new Chart(document.getElementById('bestChart'), {
+    type: 'bar',
+    data: {
+        labels: {{ chart_labels|safe }},
+        datasets: [{
+            label: "{% trans 'Quantity sold' %}",
+            data: {{ chart_values|safe }},
+            backgroundColor: 'rgba(52, 152, 219, 0.6)',
+            borderColor: 'rgba(52, 152, 219, 1)',
+            borderWidth: 1
+        }]
+    },
+    options: { responsive: true, scales: { y: { beginAtZero: true } } }
+});
+</script>
+{% endif %}
+{% endblock %}

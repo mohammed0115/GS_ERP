@@ -1,0 +1,10 @@
+{% extends "_generic/form.html" %}
+{% load i18n %}
+{% block page_title %}{% if object %}{% trans "Edit Expense Category" %}{% else %}{% trans "New Expense Category" %}{% endif %}{% endblock %}
+{% block form_title %}{% if object %}{% blocktrans with name=object.name %}Edit category — {{ name }}{% endblocktrans %}{% else %}{% trans "New expense category" %}{% endif %}{% endblock %}
+{% block form_fields %}
+    {% include "_partials/form_field.html" with field=form.code cols=4 %}
+    {% include "_partials/form_field.html" with field=form.name cols=8 %}
+    {% include "_partials/form_field.html" with field=form.is_active cols=6 %}
+{% endblock %}
+{% block cancel_url %}{% url 'finance:expense_category_list' %}{% endblock %}

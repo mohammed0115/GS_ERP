@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% load i18n erp_permissions erp_money %}
+
+{% block title %}{% blocktrans with ref=object.reference %}Purchase {{ ref }}{% endblocktrans %}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h4 class="mb-0">{% trans "Purchase" %} <code>{{ object.reference }}</code></h4>
+        <p class="text-muted small mb-0">{{ object.purchase_date }} — {{ object.supplier.name }}</p>
+    </div>
+    <div>
+        <a href="{% url 'purchases:list' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left"></i> {% trans "Back" %}
+        </a>
+        {% if object.status == "posted" %}
+            <a href="{% url 'purchases:return_create' %}?from={{ object.pk }}" class="btn btn-outline-warning">
+                <i class="fas fa-undo"></i> {% trans "Create return" %}
+            </a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header"><strong>{% trans "Items" %}</strong></div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table mb-0">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>{% trans "Product" %}</th>
+                                <th>{% trans "Warehouse" %}</th>
+                                <th class="text-right">{% trans "Qty" %}</th>
+                                <th class="text-right">{% trans "Unit cost" %}</th>
+                                <th class="text-right">{% trans "Disc %" %}</th>
+                                <th class="text-right">{% trans "Tax %" %}</th>
+                                <th class="text-right">{% trans "Total" %}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for line in object.lines.all %}
+                                <tr>
+                                    <td>{{ line.line_number }}</td>
+                                    <td>
+                                        <strong>{{ line.product.name }}</strong><br>
+                                        <small class="text-muted"><code>{{ line.product.code }}</code></small>
+                                    </td>
+                                    <td>{{ line.warehouse.name }}</td>
+                                    <td class="text-right">{{ line.quantity|qty:line.uom_code }}</td>
+                                    <td class="text-right">{{ line.unit_cost|money:object.currency_code }}</td>
+                                    <td class="text-right">{{ line.discount_percent }}%</td>
+                                    <td class="text-right">{{ line.tax_rate_percent }}%</td>
+                                    <td class="text-right">{{ line.line_total|money:object.currency_code }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        {% if object.memo %}
+            <div class="card shadow-sm mb-3">
+                <div class="card-header"><strong>{% trans "Notes" %}</strong></div>
+                <div class="card-body">{{ object.memo|linebreaksbr }}</div>
+            </div>
+        {% endif %}
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header"><strong>{% trans "Summary" %}</strong></div>
+            <ul class="list-group list-group-flush">
+                <li class="list-group-item d-flex justify-content-between">
+                    <span class="text-muted">{% trans "Status" %}</span>
+                    <span>
+                        {% if object.status == "received" %}
+                            <span class="badge badge-success">{% trans "Received" %}</span>
+                        {% elif object.status == "posted" %}
+                            <span class="badge badge-primary">{% trans "Posted" %}</span>
+                        {% elif object.status == "draft" %}
+                            <span class="badge badge-secondary">{% trans "Draft" %}</span>
+                        {% elif object.status == "cancelled" %}
+                            <span class="badge badge-danger">{% trans "Cancelled" %}</span>
+                        {% else %}
+                            <span class="badge badge-light">{{ object.status }}</span>
+                        {% endif %}
+                    </span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between">
+                    <span class="text-muted">{% trans "Subtotal" %}</span>
+                    <span>{{ object.lines_subtotal|money:object.currency_code }}</span>
+                </li>
+                {% if object.lines_discount %}
+                    <li class="list-group-item d-flex justify-content-between text-warning">
+                        <span>{% trans "Line discount" %}</span>
+                        <span>-{{ object.lines_discount|money:object.currency_code }}</span>
+                    </li>
+                {% endif %}
+                {% if object.order_discount %}
+                    <li class="list-group-item d-flex justify-content-between text-warning">
+                        <span>{% trans "Order discount" %}</span>
+                        <span>-{{ object.order_discount|money:object.currency_code }}</span>
+                    </li>
+                {% endif %}
+                {% if object.lines_tax %}
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span class="text-muted">{% trans "Tax" %}</span>
+                        <span>{{ object.lines_tax|money:object.currency_code }}</span>
+                    </li>
+                {% endif %}
+                {% if object.shipping %}
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span class="text-muted">{% trans "Shipping" %}</span>
+                        <span>{{ object.shipping|money:object.currency_code }}</span>
+                    </li>
+                {% endif %}
+                <li class="list-group-item d-flex justify-content-between font-weight-bold">
+                    <span>{% trans "Grand total" %}</span>
+                    <span>{{ object.grand_total|money:object.currency_code }}</span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between">
+                    <span class="text-muted">{% trans "Paid" %}</span>
+                    <span>{{ object.paid_amount|money:object.currency_code }}</span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between font-weight-bold text-danger">
+                    <span>{% trans "Balance" %}</span>
+                    <span>{{ balance|money:object.currency_code }}</span>
+                </li>
+            </ul>
+        </div>
+
+        {% if object.journal_entry_id %}
+            <div class="card shadow-sm mb-3">
+                <div class="card-body small">
+                    <i class="fas fa-book"></i>
+                    {% trans "Posted to ledger as journal entry" %}
+                    <code>#{{ object.journal_entry_id }}</code>
+                </div>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

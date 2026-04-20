@@ -1,0 +1,9 @@
+{% extends "errors/_base.html" %}
+{% load i18n %}
+{% block status %}500{% endblock %}
+{% block status_display %}500{% endblock %}
+{% block icon %}fa-bug{% endblock %}
+{% block headline %}{% trans "Server error" %}{% endblock %}
+{% block message %}
+    {% trans "Something broke on our end. The incident has been recorded and will be investigated." %}
+{% endblock %}

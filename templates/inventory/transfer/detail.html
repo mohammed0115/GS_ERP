@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% blocktrans with ref=object.reference %}Transfer {{ ref }}{% endblocktrans %}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h4 class="mb-0">{% trans "Transfer" %} <code>{{ object.reference }}</code></h4>
+        <p class="text-muted small mb-0">
+            {{ object.transfer_date }} —
+            {{ object.source_warehouse.name }}
+            <i class="fas fa-arrow-right mx-2"></i>
+            {{ object.destination_warehouse.name }}
+        </p>
+    </div>
+    <a href="{% url 'inventory:transfer_list' %}" class="btn btn-outline-secondary">
+        <i class="fas fa-arrow-left"></i> {% trans "Back" %}
+    </a>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header"><strong>{% trans "Lines" %}</strong></div>
+            <div class="card-body p-0">
+                <table class="table mb-0">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>{% trans "Product" %}</th>
+                            <th class="text-right">{% trans "Quantity" %}</th>
+                            <th>{% trans "UoM" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for line in object.lines.all %}
+                            <tr>
+                                <td>{{ line.line_number }}</td>
+                                <td>
+                                    <strong>{{ line.product.name }}</strong><br>
+                                    <small class="text-muted"><code>{{ line.product.code }}</code></small>
+                                </td>
+                                <td class="text-right">{{ line.quantity }}</td>
+                                <td>{{ line.uom_code }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        {% if object.memo %}
+            <div class="card shadow-sm mb-3">
+                <div class="card-header"><strong>{% trans "Notes" %}</strong></div>
+                <div class="card-body">{{ object.memo|linebreaksbr }}</div>
+            </div>
+        {% endif %}
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header"><strong>{% trans "Summary" %}</strong></div>
+            <ul class="list-group list-group-flush">
+                <li class="list-group-item d-flex justify-content-between">
+                    <span class="text-muted">{% trans "Status" %}</span>
+                    <span>
+                        {% if object.status == "posted" %}
+                            <span class="badge badge-success">{% trans "Posted" %}</span>
+                        {% elif object.status == "draft" %}
+                            <span class="badge badge-secondary">{% trans "Draft" %}</span>
+                        {% else %}
+                            <span class="badge badge-danger">{% trans "Cancelled" %}</span>
+                        {% endif %}
+                    </span>
+                </li>
+                <li class="list-group-item">
+                    <div class="text-muted small">{% trans "From" %}</div>
+                    <div>{{ object.source_warehouse.name }}</div>
+                </li>
+                <li class="list-group-item">
+                    <div class="text-muted small">{% trans "To" %}</div>
+                    <div>{{ object.destination_warehouse.name }}</div>
+                </li>
+                {% if object.posted_at %}
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span class="text-muted">{% trans "Posted at" %}</span>
+                        <span class="small">{{ object.posted_at|date:"Y-m-d H:i" }}</span>
+                    </li>
+                {% endif %}
+            </ul>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-body small text-muted">
+                <i class="fas fa-info-circle"></i>
+                {% trans "Each line produced two stock movements: OUT from source and IN at destination. Transfers don't affect inventory valuation — only warehouse attribution." %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

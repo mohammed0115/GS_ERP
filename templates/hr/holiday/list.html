@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% load i18n erp_permissions %}
+
+{% block title %}{% trans "Holidays" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with
+    title=_("Holidays")
+    subtitle=_("Time-off requests and approvals") %}
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        {% if object_list %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>{% trans "Employee" %}</th>
+                            <th>{% trans "From" %}</th>
+                            <th>{% trans "To" %}</th>
+                            <th>{% trans "Days" %}</th>
+                            <th>{% trans "Reason" %}</th>
+                            <th>{% trans "Status" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for obj in object_list %}
+                            <tr>
+                                <td>{{ obj.employee.full_name }}</td>
+                                <td>{{ obj.start_date }}</td>
+                                <td>{{ obj.end_date }}</td>
+                                <td>{{ obj.end_date|timeuntil:obj.start_date|default:"1" }}</td>
+                                <td class="text-truncate" style="max-width: 300px;">{{ obj.reason }}</td>
+                                <td>
+                                    {% if obj.status == "approved" %}
+                                        <span class="badge badge-success">{% trans "Approved" %}</span>
+                                    {% elif obj.status == "rejected" %}
+                                        <span class="badge badge-danger">{% trans "Rejected" %}</span>
+                                    {% elif obj.status == "cancelled" %}
+                                        <span class="badge badge-secondary">{% trans "Cancelled" %}</span>
+                                    {% else %}
+                                        <span class="badge badge-warning">{% trans "Pending" %}</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="text-center text-muted p-5">
+                <i class="fas fa-umbrella-beach fa-3x mb-2 opacity-50"></i>
+                <p class="mb-0">{% trans "No holiday requests yet." %}</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "New Stock Adjustment" %}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .adj-builder .line-row td { vertical-align: middle; padding: 0.35rem 0.5rem; }
+    .adj-builder input.form-control-sm { height: 30px; font-size: 0.85rem; }
+    .adj-builder .product-search-wrapper { position: relative; }
+    .adj-builder .product-suggestions {
+        position: absolute; top: 100%; left: 0; right: 0; z-index: 100;
+        background: #fff; border: 1px solid #dee2e6; border-top: none;
+        max-height: 280px; overflow-y: auto; display: none;
+        box-shadow: 0 0.25rem 0.5rem rgba(0,0,0,0.08);
+    }
+    .adj-builder .product-suggestions.visible { display: block; }
+    .adj-builder .product-suggestions .item { padding: 0.5rem 0.75rem; cursor: pointer; border-bottom: 1px solid #f1f3f5; }
+    .adj-builder .product-suggestions .item:hover { background: #f8f9fa; }
+    .adj-builder .product-suggestions .code { font-family: monospace; color: #6c757d; font-size: 0.8rem; }
+    .qty-negative { background-color: #fff5f5; }
+    .qty-positive { background-color: #f0fff4; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with
+    title=_("New stock adjustment")
+    subtitle=_("Use negative quantities for decrements (shrinkage, damage); positive for found inventory") %}
+
+<form method="post" id="adj-form" class="adj-builder" novalidate>
+    {% csrf_token %}
+
+    {% if form.non_field_errors %}
+        <div class="alert alert-danger">
+            {% for err in form.non_field_errors %}{{ err }}<br>{% endfor %}
+        </div>
+    {% endif %}
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-body">
+            <div class="row">
+                {% include "_partials/form_field.html" with field=form.warehouse cols=4 %}
+                {% include "_partials/form_field.html" with field=form.adjustment_date cols=2 %}
+                {% include "_partials/form_field.html" with field=form.reason cols=3 %}
+                {% include "_partials/form_field.html" with field=form.reference cols=3 %}
+                {% include "_partials/form_field.html" with field=form.memo cols=12 %}
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <strong>{% trans "Lines" %}</strong>
+            <button type="button" id="add-line-btn" class="btn btn-sm btn-outline-primary">
+                <i class="fas fa-plus"></i> {% trans "Add line" %}
+            </button>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm mb-0">
+                <thead>
+                    <tr>
+                        <th style="width: 44%;">{% trans "Product" %}</th>
+                        <th class="text-right" style="width: 18%;">
+                            {% trans "Signed qty" %}
+                            <i class="fas fa-question-circle" title="{% trans 'Negative for stock going out; positive for stock coming in.' %}"></i>
+                        </th>
+                        <th style="width: 14%;">{% trans "UoM" %}</th>
+                        <th class="text-center" style="width: 14%;">{% trans "Direction" %}</th>
+                        <th style="width: 40px;">&nbsp;</th>
+                    </tr>
+                </thead>
+                <tbody id="lines-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="d-flex justify-content-end mb-4">
+        <a href="{% url 'inventory:adjustment_list' %}" class="btn btn-secondary mr-2">{% trans "Cancel" %}</a>
+        <button type="submit" class="btn btn-primary" id="post-btn">
+            <i class="fas fa-check"></i> {% trans "Post adjustment" %}
+        </button>
+    </div>
+
+    <input type="hidden" name="lines_json" id="lines_json" value="[]">
+</form>
+
+<template id="line-row-template">
+    <tr class="line-row">
+        <td>
+            <div class="product-search-wrapper">
+                <input type="text" class="form-control form-control-sm product-search" placeholder="{% trans 'Type to search…' %}" autocomplete="off">
+                <div class="product-suggestions"></div>
+                <input type="hidden" class="product-id">
+            </div>
+        </td>
+        <td><input type="number" class="form-control form-control-sm text-right signed-qty" step="0.0001" placeholder="±0.00"></td>
+        <td><input type="text" class="form-control form-control-sm uom" readonly></td>
+        <td class="text-center direction-cell"><span class="text-muted">—</span></td>
+        <td><button type="button" class="btn btn-sm text-danger remove-line"><i class="fas fa-times"></i></button></td>
+    </tr>
+</template>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    const SEARCH_URL = "{% url 'sales:api_product_search' %}";
+    const linesBody = document.getElementById('lines-body');
+    const tpl = document.getElementById('line-row-template');
+
+    function addRow() {
+        const clone = tpl.content.cloneNode(true);
+        linesBody.appendChild(clone);
+        const row = linesBody.lastElementChild;
+        wireRow(row);
+        row.querySelector('.product-search').focus();
+    }
+    function removeRow(row) { row.remove(); }
+
+    function wireRow(row) {
+        const search = row.querySelector('.product-search');
+        const sug = row.querySelector('.product-suggestions');
+        let debounce = null;
+
+        search.addEventListener('input', () => {
+            clearTimeout(debounce);
+            const q = search.value.trim();
+            if (q.length < 2) { sug.classList.remove('visible'); sug.innerHTML = ''; return; }
+            debounce = setTimeout(async () => {
+                try {
+                    const resp = await fetch(SEARCH_URL + "?q=" + encodeURIComponent(q));
+                    const data = await resp.json();
+                    renderSuggestions(row, data.results || []);
+                } catch (_) {}
+            }, 200);
+        });
+        search.addEventListener('blur', () => setTimeout(() => sug.classList.remove('visible'), 150));
+        row.querySelector('.remove-line').addEventListener('click', () => removeRow(row));
+        row.querySelector('.signed-qty').addEventListener('input', () => updateDirection(row));
+    }
+
+    function renderSuggestions(row, results) {
+        const sug = row.querySelector('.product-suggestions');
+        if (!results.length) {
+            sug.innerHTML = '<div class="item text-muted">{% trans "No match." %}</div>';
+            sug.classList.add('visible'); return;
+        }
+        sug.innerHTML = results.map(p => `
+            <div class="item" data-id="${p.id}" data-code="${p.code}" data-name="${p.name}" data-uom="${p.uom}">
+                <div><strong>${p.name}</strong></div>
+                <div class="code">${p.code} — UoM: ${p.uom}</div>
+            </div>`).join('');
+        sug.classList.add('visible');
+        sug.querySelectorAll('.item').forEach(el => {
+            el.addEventListener('mousedown', () => pickProduct(row, el.dataset));
+        });
+    }
+
+    function pickProduct(row, data) {
+        row.querySelector('.product-search').value = data.name + " (" + data.code + ")";
+        row.querySelector('.product-id').value = data.id;
+        row.querySelector('.uom').value = data.uom;
+        row.querySelector('.product-suggestions').classList.remove('visible');
+    }
+
+    function updateDirection(row) {
+        const q = parseFloat(row.querySelector('.signed-qty').value) || 0;
+        const cell = row.querySelector('.direction-cell');
+        const qtyInput = row.querySelector('.signed-qty');
+        qtyInput.classList.remove('qty-negative', 'qty-positive');
+        if (q < 0) {
+            cell.innerHTML = '<span class="badge badge-danger">{% trans "OUT" %}</span>';
+            qtyInput.classList.add('qty-negative');
+        } else if (q > 0) {
+            cell.innerHTML = '<span class="badge badge-success">{% trans "IN" %}</span>';
+            qtyInput.classList.add('qty-positive');
+        } else {
+            cell.innerHTML = '<span class="text-muted">—</span>';
+        }
+    }
+
+    document.getElementById('adj-form').addEventListener('submit', (e) => {
+        const rows = Array.from(document.querySelectorAll('#lines-body .line-row'));
+        if (!rows.length) {
+            e.preventDefault();
+            alert("{% trans 'Add at least one line before posting.' %}");
+            return;
+        }
+        const lines = rows.map(row => ({
+            product_id: row.querySelector('.product-id').value,
+            signed_quantity: row.querySelector('.signed-qty').value,
+            uom_code: row.querySelector('.uom').value,
+        }));
+        for (const l of lines) {
+            if (!l.product_id) {
+                e.preventDefault();
+                alert("{% trans 'Every line must have a product selected.' %}");
+                return;
+            }
+            if (!l.signed_quantity || parseFloat(l.signed_quantity) === 0) {
+                e.preventDefault();
+                alert("{% trans 'Every line must have a non-zero quantity.' %}");
+                return;
+            }
+        }
+        document.getElementById('lines_json').value = JSON.stringify(lines);
+    });
+
+    document.getElementById('add-line-btn').addEventListener('click', addRow);
+    addRow();
+})();
+</script>
+{% endblock %}

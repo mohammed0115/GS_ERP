@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% load i18n erp_money %}
+
+{% block title %}{% trans "Close Cash Register" %}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-4">
+    <div class="col-md-7">
+        <div class="card shadow-sm">
+            <div class="card-header">
+                <strong>{% trans "Close cash register" %}</strong>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-sm-6">
+                        <div class="text-muted small">{% trans "Opened at" %}</div>
+                        <div>{{ session.opened_at|date:"Y-m-d H:i" }}</div>
+                    </div>
+                    <div class="col-sm-6">
+                        <div class="text-muted small">{% trans "Warehouse" %}</div>
+                        <div>{{ session.warehouse.name }}</div>
+                    </div>
+                </div>
+
+                <table class="table table-sm mb-4">
+                    <tbody>
+                        <tr>
+                            <td class="text-muted">{% trans "Opening float" %}</td>
+                            <td class="text-right">{{ session.opening_float|money:session.currency_code }}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">{% trans "Net cash during session" %}</td>
+                            <td class="text-right">{{ net_cash|money:session.currency_code }}</td>
+                        </tr>
+                        <tr class="font-weight-bold">
+                            <td>{% trans "Expected cash in drawer" %}</td>
+                            <td class="text-right">{{ expected_cash|money:session.currency_code }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <form method="post" novalidate>
+                    {% csrf_token %}
+                    {% if form.non_field_errors %}
+                        <div class="alert alert-danger">
+                            {% for err in form.non_field_errors %}{{ err }}<br>{% endfor %}
+                        </div>
+                    {% endif %}
+                    <div class="row">
+                        {% include "_partials/form_field.html" with field=form.declared_closing_float cols=8 %}
+                        {% include "_partials/form_field.html" with field=form.note cols=12 %}
+                    </div>
+                    <div class="alert alert-info small">
+                        <i class="fas fa-info-circle"></i>
+                        {% trans "The system records both expected and declared amounts; the variance becomes auditable." %}
+                    </div>
+                    <div class="d-flex justify-content-end">
+                        <a href="{% url 'pos:start' %}" class="btn btn-secondary mr-2">{% trans "Cancel" %}</a>
+                        <button type="submit" class="btn btn-danger">
+                            <i class="fas fa-stop"></i> {% trans "Close register" %}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

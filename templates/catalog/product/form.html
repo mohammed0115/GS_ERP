@@ -1,0 +1,52 @@
+{% extends "_generic/form.html" %}
+{% load i18n %}
+
+{% block page_title %}
+    {% if object %}{% trans "Edit Product" %}{% else %}{% trans "New Product" %}{% endif %}
+{% endblock %}
+
+{% block form_title %}
+    {% if object %}
+        {% blocktrans with name=object.name %}Edit product — {{ name }}{% endblocktrans %}
+    {% else %}
+        {% trans "New product" %}
+    {% endif %}
+{% endblock %}
+
+{% block form_fields %}
+    {# ---- Identity ---- #}
+    <div class="col-12">
+        <h6 class="text-uppercase text-muted small mt-2 mb-3">{% trans "Identity" %}</h6>
+    </div>
+    {% include "_partials/form_field.html" with field=form.code cols=4 %}
+    {% include "_partials/form_field.html" with field=form.name cols=8 %}
+    {% include "_partials/form_field.html" with field=form.type cols=4 %}
+    {% include "_partials/form_field.html" with field=form.barcode_symbology cols=4 %}
+    {% include "_partials/form_field.html" with field=form.is_active cols=4 %}
+
+    {# ---- Classification ---- #}
+    <div class="col-12">
+        <h6 class="text-uppercase text-muted small mt-3 mb-3">{% trans "Classification" %}</h6>
+    </div>
+    {% include "_partials/form_field.html" with field=form.category cols=6 %}
+    {% include "_partials/form_field.html" with field=form.brand cols=6 %}
+    {% include "_partials/form_field.html" with field=form.unit cols=6 %}
+    {% include "_partials/form_field.html" with field=form.tax cols=6 %}
+
+    {# ---- Pricing ---- #}
+    <div class="col-12">
+        <h6 class="text-uppercase text-muted small mt-3 mb-3">{% trans "Pricing & Stock" %}</h6>
+    </div>
+    {% include "_partials/form_field.html" with field=form.cost cols=4 %}
+    {% include "_partials/form_field.html" with field=form.price cols=4 %}
+    {% include "_partials/form_field.html" with field=form.currency_code cols=4 %}
+    {% include "_partials/form_field.html" with field=form.alert_quantity cols=6 %}
+
+    {# ---- Description ---- #}
+    <div class="col-12">
+        <h6 class="text-uppercase text-muted small mt-3 mb-3">{% trans "Description" %}</h6>
+    </div>
+    {% include "_partials/form_field.html" with field=form.description cols=12 %}
+{% endblock %}
+
+{% block cancel_url %}{% url 'catalog:product_list' %}{% endblock %}

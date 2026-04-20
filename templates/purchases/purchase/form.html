@@ -1,0 +1,271 @@
+{% extends "base.html" %}
+{% load i18n erp_money %}
+
+{% block title %}
+    {% if object %}{% trans "Edit Purchase" %}{% else %}{% trans "New Purchase" %}{% endif %}
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .sale-builder .line-row td { vertical-align: middle; padding: 0.35rem 0.5rem; }
+    .sale-builder input.form-control-sm { height: 30px; font-size: 0.85rem; }
+    .sale-builder .product-search-wrapper { position: relative; }
+    .sale-builder .product-suggestions {
+        position: absolute; top: 100%; left: 0; right: 0; z-index: 100;
+        background: #fff; border: 1px solid #dee2e6; border-top: none;
+        max-height: 280px; overflow-y: auto; display: none;
+        box-shadow: 0 0.25rem 0.5rem rgba(0,0,0,0.08);
+    }
+    .sale-builder .product-suggestions.visible { display: block; }
+    .sale-builder .product-suggestions .item {
+        padding: 0.5rem 0.75rem; cursor: pointer; border-bottom: 1px solid #f1f3f5;
+    }
+    .sale-builder .product-suggestions .item:hover { background: #f8f9fa; }
+    .sale-builder .product-suggestions .code { font-family: monospace; color: #6c757d; font-size: 0.8rem; }
+    .sale-builder .totals-row td { font-weight: 600; background: #f8f9fa; }
+    .sale-builder .grand-total-row td { font-size: 1.1rem; color: #3498db; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with
+    title=_("New purchase")
+    subtitle=_("Compose lines, review totals, and post to the ledger") %}
+
+<form method="post" id="sale-form" class="sale-builder" novalidate>
+    {% csrf_token %}
+
+    {% if form.non_field_errors %}
+        <div class="alert alert-danger">
+            {% for err in form.non_field_errors %}{{ err }}<br>{% endfor %}
+        </div>
+    {% endif %}
+
+    {# ---- Header ---- #}
+    <div class="card shadow-sm mb-3">
+        <div class="card-body">
+            <div class="row">
+                {% include "_partials/form_field.html" with field=form.supplier cols=4 %}
+                {% include "_partials/form_field.html" with field=form.purchase_date cols=2 %}
+                {% include "_partials/form_field.html" with field=form.currency_code cols=2 %}
+                {% include "_partials/form_field.html" with field=form.default_warehouse cols=4 %}
+                {% include "_partials/form_field.html" with field=form.credit_account cols=4 %}
+                {% include "_partials/form_field.html" with field=form.inventory_account cols=4 %}
+                {% include "_partials/form_field.html" with field=form.expense_account cols=4 %}
+                {% include "_partials/form_field.html" with field=form.tax_recoverable_account cols=4 %}
+                {% include "_partials/form_field.html" with field=form.memo cols=8 %}
+            </div>
+        </div>
+    </div>
+
+    {# ---- Line items ---- #}
+    <div class="card shadow-sm mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <strong>{% trans "Items" %}</strong>
+            <button type="button" id="add-line-btn" class="btn btn-sm btn-outline-primary">
+                <i class="fas fa-plus"></i> {% trans "Add line" %}
+            </button>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm mb-0" id="lines-table">
+                <thead>
+                    <tr>
+                        <th style="width: 28%;">{% trans "Product" %}</th>
+                        <th style="width: 16%;">{% trans "Warehouse" %}</th>
+                        <th class="text-right" style="width: 8%;">{% trans "Qty" %}</th>
+                        <th class="text-right" style="width: 11%;">{% trans "Unit cost" %}</th>
+                        <th class="text-right" style="width: 9%;">{% trans "Disc %" %}</th>
+                        <th class="text-right" style="width: 9%;">{% trans "Tax %" %}</th>
+                        <th class="text-right" style="width: 13%;">{% trans "Line total" %}</th>
+                        <th style="width: 40px;">&nbsp;</th>
+                    </tr>
+                </thead>
+                <tbody id="lines-body"></tbody>
+                <tfoot>
+                    <tr class="totals-row">
+                        <td colspan="6" class="text-right">{% trans "Subtotal" %}</td>
+                        <td class="text-right"><span id="sum-subtotal">0.00</span></td><td></td>
+                    </tr>
+                    <tr class="totals-row">
+                        <td colspan="6" class="text-right">{% trans "Line discount" %}</td>
+                        <td class="text-right text-warning">-<span id="sum-discount">0.00</span></td><td></td>
+                    </tr>
+                    <tr class="totals-row">
+                        <td colspan="6" class="text-right">{% trans "Tax" %}</td>
+                        <td class="text-right"><span id="sum-tax">0.00</span></td><td></td>
+                    </tr>
+                    <tr class="grand-total-row">
+                        <td colspan="6" class="text-right">{% trans "Grand total" %}</td>
+                        <td class="text-right"><span id="sum-grand">0.00</span></td><td></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+
+    <div class="d-flex justify-content-end mb-4">
+        <a href="{% url 'purchases:list' %}" class="btn btn-secondary mr-2">{% trans "Cancel" %}</a>
+        <button type="submit" class="btn btn-primary" id="post-btn">
+            <i class="fas fa-check"></i> {% trans "Post purchase" %}
+        </button>
+    </div>
+
+    <input type="hidden" name="lines_json" id="lines_json" value="[]">
+</form>
+
+<template id="line-row-template">
+    <tr class="line-row">
+        <td>
+            <div class="product-search-wrapper">
+                <input type="text" class="form-control form-control-sm product-search"
+                       placeholder="{% trans 'Type to search…' %}" autocomplete="off">
+                <div class="product-suggestions"></div>
+                <input type="hidden" class="product-id">
+            </div>
+        </td>
+        <td>
+            <select class="form-control form-control-sm warehouse-picker">
+                {% for w in warehouses %}
+                    <option value="{{ w.pk }}">{{ w.code }} — {{ w.name }}</option>
+                {% endfor %}
+            </select>
+        </td>
+        <td><input type="number" class="form-control form-control-sm text-right qty" step="0.0001" min="0.0001" value="1"></td>
+        <td><input type="number" class="form-control form-control-sm text-right unit-price" step="0.01" min="0" value="0"></td>
+        <td><input type="number" class="form-control form-control-sm text-right disc" step="0.01" min="0" max="100" value="0"></td>
+        <td><input type="number" class="form-control form-control-sm text-right tax" step="0.01" min="0" max="100" value="0"></td>
+        <td class="text-right"><span class="line-total">0.00</span></td>
+        <td><button type="button" class="btn btn-sm text-danger remove-line"><i class="fas fa-times"></i></button></td>
+    </tr>
+</template>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* Purchase create — identical behaviour to the sales create form; the
+   `unit-price` class label is kept for easy code reuse (cost = price in
+   the UI semantics — they're both the per-unit money on the line). */
+(function () {
+    const SEARCH_URL = "{% url 'sales:api_product_search' %}";
+    const linesBody = document.getElementById('lines-body');
+    const tpl = document.getElementById('line-row-template');
+
+    function addRow() {
+        const clone = tpl.content.cloneNode(true);
+        linesBody.appendChild(clone);
+        const row = linesBody.lastElementChild;
+        wireRow(row);
+        row.querySelector('.product-search').focus();
+        recomputeAll();
+    }
+    function removeRow(row) { row.remove(); recomputeAll(); }
+
+    function wireRow(row) {
+        const search = row.querySelector('.product-search');
+        const sug = row.querySelector('.product-suggestions');
+        let debounce = null;
+        search.addEventListener('input', () => {
+            clearTimeout(debounce);
+            const q = search.value.trim();
+            if (q.length < 2) { sug.classList.remove('visible'); sug.innerHTML = ''; return; }
+            debounce = setTimeout(async () => {
+                try {
+                    const resp = await fetch(SEARCH_URL + "?q=" + encodeURIComponent(q));
+                    const data = await resp.json();
+                    renderSuggestions(row, data.results || []);
+                } catch (_) {}
+            }, 200);
+        });
+        search.addEventListener('blur', () => setTimeout(() => sug.classList.remove('visible'), 150));
+        row.querySelector('.remove-line').addEventListener('click', () => removeRow(row));
+        ['qty', 'unit-price', 'disc', 'tax'].forEach(cls => {
+            row.querySelector('.' + cls).addEventListener('input', recomputeAll);
+        });
+    }
+
+    function renderSuggestions(row, results) {
+        const sug = row.querySelector('.product-suggestions');
+        if (!results.length) {
+            sug.innerHTML = '<div class="item text-muted">{% trans "No match." %}</div>';
+            sug.classList.add('visible'); return;
+        }
+        sug.innerHTML = results.map(p => `
+            <div class="item" data-id="${p.id}" data-code="${p.code}" data-name="${p.name}"
+                 data-price="${p.price}" data-tax="${p.tax_rate_percent}">
+                <div><strong>${p.name}</strong></div>
+                <div class="code">${p.code} — ${p.price}</div>
+            </div>`).join('');
+        sug.classList.add('visible');
+        sug.querySelectorAll('.item').forEach(el => {
+            el.addEventListener('mousedown', () => pickProduct(row, el.dataset));
+        });
+    }
+
+    function pickProduct(row, data) {
+        row.querySelector('.product-search').value = data.name + " (" + data.code + ")";
+        row.querySelector('.product-id').value = data.id;
+        // For a purchase we default to the same price value as a "typical"
+        // cost — user typically overrides this. Not a bug if the cost
+        // differs: the user sees the field and changes it.
+        row.querySelector('.unit-price').value = parseFloat(data.price).toFixed(2);
+        row.querySelector('.tax').value = parseFloat(data.tax).toFixed(2);
+        row.querySelector('.product-suggestions').classList.remove('visible');
+        recomputeAll();
+    }
+
+    function recomputeRow(row) {
+        const qty = parseFloat(row.querySelector('.qty').value) || 0;
+        const price = parseFloat(row.querySelector('.unit-price').value) || 0;
+        const disc = parseFloat(row.querySelector('.disc').value) || 0;
+        const tax = parseFloat(row.querySelector('.tax').value) || 0;
+        const subtotal = qty * price;
+        const discount = subtotal * (disc / 100);
+        const afterDisc = subtotal - discount;
+        const taxAmt = afterDisc * (tax / 100);
+        const total = afterDisc + taxAmt;
+        row.querySelector('.line-total').textContent = total.toFixed(2);
+        return { subtotal, discount, tax: taxAmt, total };
+    }
+
+    function recomputeAll() {
+        let sSub = 0, sDisc = 0, sTax = 0, sGrand = 0;
+        document.querySelectorAll('#lines-body .line-row').forEach(row => {
+            const r = recomputeRow(row);
+            sSub += r.subtotal; sDisc += r.discount; sTax += r.tax; sGrand += r.total;
+        });
+        document.getElementById('sum-subtotal').textContent = sSub.toFixed(2);
+        document.getElementById('sum-discount').textContent = sDisc.toFixed(2);
+        document.getElementById('sum-tax').textContent = sTax.toFixed(2);
+        document.getElementById('sum-grand').textContent = sGrand.toFixed(2);
+    }
+
+    document.getElementById('sale-form').addEventListener('submit', (e) => {
+        const rows = Array.from(document.querySelectorAll('#lines-body .line-row'));
+        if (rows.length === 0) {
+            e.preventDefault();
+            alert("{% trans 'Add at least one line before posting.' %}");
+            return;
+        }
+        const lines = rows.map(row => ({
+            product_id: row.querySelector('.product-id').value,
+            warehouse_id: row.querySelector('.warehouse-picker').value,
+            quantity: row.querySelector('.qty').value,
+            unit_cost: row.querySelector('.unit-price').value,   // server-side name is "unit_cost"
+            discount_percent: row.querySelector('.disc').value || '0',
+            tax_rate_percent: row.querySelector('.tax').value || '0',
+        }));
+        for (const l of lines) {
+            if (!l.product_id) {
+                e.preventDefault();
+                alert("{% trans 'Every line must have a product selected.' %}");
+                return;
+            }
+        }
+        document.getElementById('lines_json').value = JSON.stringify(lines);
+    });
+
+    document.getElementById('add-line-btn').addEventListener('click', addRow);
+    addRow();
+})();
+</script>
+{% endblock %}

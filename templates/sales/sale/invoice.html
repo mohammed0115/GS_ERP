@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% load i18n erp_money %}
+
+{% block title %}{% blocktrans with ref=object.reference %}Invoice {{ ref }}{% endblocktrans %}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .invoice-card { max-width: 900px; margin: 0 auto; background: #fff; }
+    .invoice-header { border-bottom: 2px solid #dee2e6; padding-bottom: 1rem; margin-bottom: 1rem; }
+    .invoice-title { font-size: 1.8rem; font-weight: 700; }
+    .invoice-meta .label { color: #6c757d; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; }
+    .invoice-totals { background: #f8f9fa; padding: 1rem; border-radius: 6px; }
+    @media print {
+        body { background: #fff !important; }
+        .sidebar, .header, footer, .invoice-actions { display: none !important; }
+        .invoice-card { box-shadow: none !important; }
+        .page-content { padding: 0 !important; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="invoice-actions mb-3 d-flex justify-content-end">
+    <a href="{% url 'sales:detail' object.pk %}" class="btn btn-outline-secondary mr-2">
+        <i class="fas fa-arrow-left"></i> {% trans "Back" %}
+    </a>
+    <button onclick="window.print()" class="btn btn-primary">
+        <i class="fas fa-print"></i> {% trans "Print" %}
+    </button>
+</div>
+
+<div class="card shadow-sm invoice-card">
+    <div class="card-body p-4">
+        <div class="invoice-header d-flex justify-content-between">
+            <div>
+                <div class="invoice-title">{{ object.biller.name }}</div>
+                <div class="text-muted small">
+                    {% if object.biller.address_line1 %}{{ object.biller.address_line1 }}<br>{% endif %}
+                    {% if object.biller.city %}{{ object.biller.city }}{% if object.biller.state %}, {{ object.biller.state }}{% endif %}<br>{% endif %}
+                    {% if object.biller.phone %}<i class="fas fa-phone"></i> {{ object.biller.phone }}<br>{% endif %}
+                    {% if object.biller.email %}<i class="fas fa-envelope"></i> {{ object.biller.email }}{% endif %}
+                    {% if object.biller.tax_number %}<br>{% trans "Tax #" %}: {{ object.biller.tax_number }}{% endif %}
+                </div>
+            </div>
+            <div class="text-right">
+                <div style="font-size: 1.5rem; font-weight: 700; color: #3498db;">
+                    {% trans "INVOICE" %}
+                </div>
+                <div class="text-muted">#{{ object.reference }}</div>
+                <div class="text-muted small">{{ object.sale_date }}</div>
+            </div>
+        </div>
+
+        <div class="row invoice-meta mt-3">
+            <div class="col-6">
+                <div class="label">{% trans "Bill to" %}</div>
+                <div><strong>{{ object.customer.name }}</strong></div>
+                <div class="text-muted small">
+                    {% if object.customer.address_line1 %}{{ object.customer.address_line1 }}<br>{% endif %}
+                    {% if object.customer.city %}{{ object.customer.city }}{% if object.customer.state %}, {{ object.customer.state }}{% endif %}<br>{% endif %}
+                    {% if object.customer.phone %}{{ object.customer.phone }}<br>{% endif %}
+                    {% if object.customer.email %}{{ object.customer.email }}{% endif %}
+                    {% if object.customer.tax_number %}<br>{% trans "Tax #" %}: {{ object.customer.tax_number }}{% endif %}
+                </div>
+            </div>
+            <div class="col-6 text-right">
+                <div class="label">{% trans "Status" %}</div>
+                <div>
+                    {% if object.payment_status == "paid" %}
+                        <span class="badge badge-success">{% trans "PAID" %}</span>
+                    {% elif object.payment_status == "partial" %}
+                        <span class="badge badge-warning">{% trans "PARTIAL" %}</span>
+                    {% else %}
+                        <span class="badge badge-danger">{% trans "UNPAID" %}</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <table class="table mt-4">
+            <thead>
+                <tr style="background: #f8f9fa;">
+                    <th>#</th>
+                    <th>{% trans "Description" %}</th>
+                    <th class="text-right">{% trans "Qty" %}</th>
+                    <th class="text-right">{% trans "Unit price" %}</th>
+                    <th class="text-right">{% trans "Discount" %}</th>
+                    <th class="text-right">{% trans "Tax" %}</th>
+                    <th class="text-right">{% trans "Amount" %}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for line in object.lines.all %}
+                    <tr>
+                        <td>{{ line.line_number }}</td>
+                        <td>
+                            <strong>{{ line.product.name }}</strong>
+                            <br><small class="text-muted"><code>{{ line.product.code }}</code></small>
+                        </td>
+                        <td class="text-right">{{ line.quantity|qty:line.uom_code }}</td>
+                        <td class="text-right">{{ line.unit_price|money:object.currency_code }}</td>
+                        <td class="text-right">{{ line.discount_percent }}%</td>
+                        <td class="text-right">{{ line.tax_rate_percent }}%</td>
+                        <td class="text-right">{{ line.line_total|money:object.currency_code }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <div class="row mt-3">
+            <div class="col-6">
+                {% if object.memo %}
+                    <div class="label text-uppercase small text-muted">{% trans "Notes" %}</div>
+                    <div class="small">{{ object.memo|linebreaksbr }}</div>
+                {% endif %}
+            </div>
+            <div class="col-6">
+                <div class="invoice-totals">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-muted">{% trans "Subtotal" %}</span>
+                        <span>{{ object.lines_subtotal|money:object.currency_code }}</span>
+                    </div>
+                    {% if object.lines_discount %}
+                        <div class="d-flex justify-content-between mb-2 text-warning">
+                            <span>{% trans "Line discount" %}</span>
+                            <span>-{{ object.lines_discount|money:object.currency_code }}</span>
+                        </div>
+                    {% endif %}
+                    {% if object.order_discount %}
+                        <div class="d-flex justify-content-between mb-2 text-warning">
+                            <span>{% trans "Order discount" %}</span>
+                            <span>-{{ object.order_discount|money:object.currency_code }}</span>
+                        </div>
+                    {% endif %}
+                    {% if object.lines_tax %}
+                        <div class="d-flex justify-content-between mb-2">
+                            <span class="text-muted">{% trans "Tax" %}</span>
+                            <span>{{ object.lines_tax|money:object.currency_code }}</span>
+                        </div>
+                    {% endif %}
+                    {% if object.shipping %}
+                        <div class="d-flex justify-content-between mb-2">
+                            <span class="text-muted">{% trans "Shipping" %}</span>
+                            <span>{{ object.shipping|money:object.currency_code }}</span>
+                        </div>
+                    {% endif %}
+                    <hr>
+                    <div class="d-flex justify-content-between h5 mb-2">
+                        <strong>{% trans "Total" %}</strong>
+                        <strong>{{ object.grand_total|money:object.currency_code }}</strong>
+                    </div>
+                    <div class="d-flex justify-content-between mb-1">
+                        <span class="text-muted">{% trans "Paid" %}</span>
+                        <span>{{ object.paid_amount|money:object.currency_code }}</span>
+                    </div>
+                    <div class="d-flex justify-content-between text-danger">
+                        <strong>{% trans "Balance due" %}</strong>
+                        <strong>{{ balance|money:object.currency_code }}</strong>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="text-center text-muted small mt-4 pt-3 border-top">
+            {% trans "Thank you for your business." %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if request.GET.print %}
+    <script>window.addEventListener('load', function() { setTimeout(window.print, 300); });</script>
+{% endif %}
+{% endblock %}

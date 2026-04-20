@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Low Stock Alert" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with
+    title=_("Low Stock Alert")
+    subtitle=_("Products at or below their configured alert quantity") %}
+
+{% if rows %}
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <table class="table mb-0">
+            <thead>
+                <tr>
+                    <th>{% trans "Product code" %}</th>
+                    <th>{% trans "Product name" %}</th>
+                    <th>{% trans "Warehouse" %}</th>
+                    <th class="text-right">{% trans "On hand" %}</th>
+                    <th class="text-right">{% trans "Alert level" %}</th>
+                    <th class="text-center">{% trans "Severity" %}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in rows %}
+                    <tr>
+                        <td><code>{{ r.product_code }}</code></td>
+                        <td>{{ r.product_name }}</td>
+                        <td>{{ r.warehouse_code }}</td>
+                        <td class="text-right">{{ r.on_hand }}</td>
+                        <td class="text-right">{{ r.alert_quantity }}</td>
+                        <td class="text-center">
+                            {% if r.on_hand == 0 %}
+                                <span class="badge badge-danger">{% trans "OUT OF STOCK" %}</span>
+                            {% else %}
+                                <span class="badge badge-warning">{% trans "LOW" %}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+<p class="text-muted small mt-2">
+    {% blocktrans count counter=rows|length %}
+        {{ counter }} product needs restocking.
+    {% plural %}
+        {{ counter }} products need restocking.
+    {% endblocktrans %}
+</p>
+{% else %}
+<div class="card shadow-sm"><div class="card-body text-center p-5">
+    <i class="fas fa-check-circle fa-3x mb-3 text-success"></i>
+    <h5>{% trans "All stocks above threshold" %}</h5>
+    <p class="text-muted mb-0">{% trans "No products are at or below their alert quantity." %}</p>
+</div></div>
+{% endif %}
+{% endblock %}

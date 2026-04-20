@@ -1,0 +1,36 @@
+{% extends "_generic/list.html" %}
+{% load i18n erp_permissions %}
+
+{% block page_title %}{% trans "Departments" %}{% endblock %}
+{% block header_title %}{% trans "Departments" %}{% endblock %}
+{% block header_subtitle %}{% trans "Organizational structure" %}{% endblock %}
+
+{% block create_url %}{% url 'hr:department_create' %}{% endblock %}
+{% block create_label %}{% trans "Add Department" %}{% endblock %}
+
+{% block table_head %}
+    <th>{% trans "Code" %}</th>
+    <th>{% trans "Name" %}</th>
+    <th>{% trans "Parent" %}</th>
+    <th class="text-center">{% trans "Status" %}</th>
+    <th style="width: 160px;">&nbsp;</th>
+{% endblock %}
+
+{% block table_body %}
+    {% for obj in object_list %}
+    <tr>
+        <td><code>{{ obj.code }}</code></td>
+        <td>{{ obj.name }}</td>
+        <td>{% if obj.parent %}{{ obj.parent.name }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+        <td class="text-center">
+            {% if obj.is_active %}<span class="badge badge-success">{% trans "Active" %}</span>
+            {% else %}<span class="badge badge-secondary">{% trans "Inactive" %}</span>{% endif %}
+        </td>
+        <td class="text-right">
+            {% if request.user|can:"hr.departments.update" %}
+                <a href="{% url 'hr:department_edit' obj.pk %}" class="btn btn-sm btn-outline-primary"><i class="fas fa-pen"></i></a>
+            {% endif %}
+        </td>
+    </tr>
+    {% endfor %}
+{% endblock %}

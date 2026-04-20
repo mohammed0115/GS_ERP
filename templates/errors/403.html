@@ -1,0 +1,9 @@
+{% extends "errors/_base.html" %}
+{% load i18n %}
+{% block status %}403{% endblock %}
+{% block status_display %}403{% endblock %}
+{% block icon %}fa-lock{% endblock %}
+{% block headline %}{% trans "Permission denied" %}{% endblock %}
+{% block message %}
+    {% trans "You don't have permission to perform this action. Contact your administrator if you believe this is in error." %}
+{% endblock %}

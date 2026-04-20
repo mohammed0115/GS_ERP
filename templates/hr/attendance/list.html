@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% load i18n erp_permissions %}
+
+{% block title %}{% trans "Attendance" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with
+    title=_("Attendance")
+    subtitle=_("Daily attendance records per employee") %}
+
+<form method="get" class="card shadow-sm mb-3">
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-3 mb-2">
+                <label class="small text-muted">{% trans "Employee" %}</label>
+                <input type="text" name="employee" class="form-control"
+                       value="{{ request.GET.employee|default:'' }}"
+                       placeholder="{% trans 'Code or name' %}">
+            </div>
+            <div class="col-md-2 mb-2">
+                <label class="small text-muted">{% trans "From" %}</label>
+                <input type="date" name="date_from" class="form-control" value="{{ request.GET.date_from|default:'' }}">
+            </div>
+            <div class="col-md-2 mb-2">
+                <label class="small text-muted">{% trans "To" %}</label>
+                <input type="date" name="date_to" class="form-control" value="{{ request.GET.date_to|default:'' }}">
+            </div>
+            <div class="col-md-2 mb-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary mr-2"><i class="fas fa-search"></i></button>
+                <a href="{% url 'hr:attendance_list' %}" class="btn btn-outline-secondary"><i class="fas fa-times"></i></a>
+            </div>
+        </div>
+    </div>
+</form>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        {% if object_list %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>{% trans "Date" %}</th>
+                            <th>{% trans "Employee" %}</th>
+                            <th>{% trans "Status" %}</th>
+                            <th>{% trans "Clock in" %}</th>
+                            <th>{% trans "Clock out" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for obj in object_list %}
+                            <tr>
+                                <td>{{ obj.attendance_date }}</td>
+                                <td>{{ obj.employee.full_name }} <small class="text-muted"><code>{{ obj.employee.code }}</code></small></td>
+                                <td>
+                                    {% if obj.status == "present" %}
+                                        <span class="badge badge-success">{% trans "Present" %}</span>
+                                    {% elif obj.status == "absent" %}
+                                        <span class="badge badge-danger">{% trans "Absent" %}</span>
+                                    {% elif obj.status == "late" %}
+                                        <span class="badge badge-warning">{% trans "Late" %}</span>
+                                    {% elif obj.status == "half_day" %}
+                                        <span class="badge badge-info">{% trans "Half day" %}</span>
+                                    {% elif obj.status == "on_leave" %}
+                                        <span class="badge badge-secondary">{% trans "On leave" %}</span>
+                                    {% elif obj.status == "holiday" %}
+                                        <span class="badge badge-primary">{% trans "Holiday" %}</span>
+                                    {% else %}
+                                        <span class="badge badge-light">{{ obj.status }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ obj.clock_in|default:"—" }}</td>
+                                <td>{{ obj.clock_out|default:"—" }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="text-center text-muted p-5">
+                <i class="fas fa-calendar-check fa-3x mb-2 opacity-50"></i>
+                <p class="mb-0">{% trans "No attendance records match your filters." %}</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

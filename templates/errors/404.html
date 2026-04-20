@@ -1,0 +1,9 @@
+{% extends "errors/_base.html" %}
+{% load i18n %}
+{% block status %}404{% endblock %}
+{% block status_display %}404{% endblock %}
+{% block icon %}fa-map-signs{% endblock %}
+{% block headline %}{% trans "Page not found" %}{% endblock %}
+{% block message %}
+    {% trans "The page you were looking for doesn't exist, or you may not have access to it." %}
+{% endblock %}

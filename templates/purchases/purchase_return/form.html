@@ -1,0 +1,304 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "New Purchase Return" %}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .pret-builder .line-row td { vertical-align: middle; padding: 0.35rem 0.5rem; }
+    .pret-builder input.form-control-sm { height: 30px; font-size: 0.85rem; }
+    .pret-builder .product-search-wrapper { position: relative; }
+    .pret-builder .product-suggestions {
+        position: absolute; top: 100%; left: 0; right: 0; z-index: 100;
+        background: #fff; border: 1px solid #dee2e6; border-top: none;
+        max-height: 280px; overflow-y: auto; display: none;
+        box-shadow: 0 0.25rem 0.5rem rgba(0,0,0,0.08);
+    }
+    .pret-builder .product-suggestions.visible { display: block; }
+    .pret-builder .product-suggestions .item { padding: 0.5rem 0.75rem; cursor: pointer; border-bottom: 1px solid #f1f3f5; }
+    .pret-builder .product-suggestions .item:hover { background: #f8f9fa; }
+    .pret-builder .product-suggestions .code { font-family: monospace; color: #6c757d; font-size: 0.8rem; }
+    .pre-filled-line { background-color: #fff7e6; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with
+    title=_("New purchase return")
+    subtitle=_("Return stock to supplier — reverses AP/inventory in the ledger") %}
+
+<form method="post" id="pret-form" class="pret-builder" novalidate>
+    {% csrf_token %}
+
+    {% if form.non_field_errors %}
+        <div class="alert alert-danger">
+            {% for err in form.non_field_errors %}{{ err }}<br>{% endfor %}
+        </div>
+    {% endif %}
+
+    {% if prefill_from %}
+        <div class="alert alert-info">
+            <i class="fas fa-link"></i>
+            {% blocktrans with ref=prefill_from.reference %}
+                Pre-filled from purchase <code>{{ ref }}</code>. Edit quantities or remove lines as needed.
+            {% endblocktrans %}
+        </div>
+    {% endif %}
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-body">
+            <div class="row">
+                {% include "_partials/form_field.html" with field=form.supplier cols=4 %}
+                {% include "_partials/form_field.html" with field=form.original_purchase cols=4 %}
+                {% include "_partials/form_field.html" with field=form.return_date cols=2 %}
+                {% include "_partials/form_field.html" with field=form.currency_code cols=2 %}
+                {% include "_partials/form_field.html" with field=form.default_warehouse cols=6 %}
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-header"><strong>{% trans "Ledger accounts for the reversal entry" %}</strong></div>
+        <div class="card-body">
+            <div class="row">
+                {% include "_partials/form_field.html" with field=form.credit_account cols=4 %}
+                {% include "_partials/form_field.html" with field=form.inventory_account cols=4 %}
+                {% include "_partials/form_field.html" with field=form.tax_recoverable_account cols=4 %}
+                {% include "_partials/form_field.html" with field=form.memo cols=12 %}
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <strong>{% trans "Returned lines" %}</strong>
+            <button type="button" id="add-line-btn" class="btn btn-sm btn-outline-primary">
+                <i class="fas fa-plus"></i> {% trans "Add line" %}
+            </button>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm mb-0">
+                <thead>
+                    <tr>
+                        <th style="width: 26%;">{% trans "Product" %}</th>
+                        <th style="width: 14%;">{% trans "Warehouse" %}</th>
+                        <th class="text-right" style="width: 10%;">{% trans "Qty" %}</th>
+                        <th class="text-right" style="width: 12%;">{% trans "Unit cost" %}</th>
+                        <th class="text-right" style="width: 9%;">{% trans "Disc %" %}</th>
+                        <th class="text-right" style="width: 9%;">{% trans "Tax %" %}</th>
+                        <th class="text-right" style="width: 14%;">{% trans "Line total" %}</th>
+                        <th style="width: 40px;">&nbsp;</th>
+                    </tr>
+                </thead>
+                <tbody id="lines-body">
+                    {% for pl in prefill_lines %}
+                        <tr class="line-row pre-filled-line"
+                            data-original-line-id="{{ pl.id }}">
+                            <td>
+                                <div class="product-search-wrapper">
+                                    <input type="text" class="form-control form-control-sm product-search"
+                                           value="{{ pl.product_name }} ({{ pl.product_code }})" autocomplete="off" readonly>
+                                    <div class="product-suggestions"></div>
+                                    <input type="hidden" class="product-id" value="{{ pl.product_id }}">
+                                </div>
+                            </td>
+                            <td>
+                                <select class="form-control form-control-sm warehouse-select">
+                                    {% for w in warehouses %}
+                                        <option value="{{ w.pk }}" {% if w.pk == pl.warehouse_id %}selected{% endif %}>{{ w.code }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                            <td><input type="number" class="form-control form-control-sm text-right qty"
+                                       step="0.0001" min="0.0001" max="{{ pl.quantity }}"
+                                       value="{{ pl.quantity }}"
+                                       data-max="{{ pl.quantity }}"></td>
+                            <td><input type="number" class="form-control form-control-sm text-right unit-cost"
+                                       step="0.0001" min="0" value="{{ pl.unit_cost }}"></td>
+                            <td><input type="number" class="form-control form-control-sm text-right disc"
+                                       step="0.01" min="0" max="100" value="{{ pl.discount_percent }}"></td>
+                            <td><input type="number" class="form-control form-control-sm text-right tax"
+                                       step="0.01" min="0" max="100" value="{{ pl.tax_rate_percent }}"></td>
+                            <td class="text-right line-total">0.00</td>
+                            <td><button type="button" class="btn btn-sm text-danger remove-line"><i class="fas fa-times"></i></button></td>
+                            <input type="hidden" class="uom-code" value="{{ pl.uom_code }}">
+                        </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td colspan="6" class="text-right"><strong>{% trans "Refund total" %}</strong></td>
+                        <td class="text-right font-weight-bold"><span id="grand-total">0.00</span></td>
+                        <td></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+
+    <div class="d-flex justify-content-end mb-4">
+        <a href="{% url 'purchases:return_list' %}" class="btn btn-secondary mr-2">{% trans "Cancel" %}</a>
+        <button type="submit" class="btn btn-primary">
+            <i class="fas fa-check"></i> {% trans "Post return" %}
+        </button>
+    </div>
+
+    <input type="hidden" name="lines_json" id="lines_json" value="[]">
+</form>
+
+<template id="line-row-template">
+    <tr class="line-row">
+        <td>
+            <div class="product-search-wrapper">
+                <input type="text" class="form-control form-control-sm product-search" placeholder="{% trans 'Type to search…' %}" autocomplete="off">
+                <div class="product-suggestions"></div>
+                <input type="hidden" class="product-id">
+            </div>
+        </td>
+        <td>
+            <select class="form-control form-control-sm warehouse-select">
+                {% for w in warehouses %}
+                    <option value="{{ w.pk }}">{{ w.code }}</option>
+                {% endfor %}
+            </select>
+        </td>
+        <td><input type="number" class="form-control form-control-sm text-right qty" step="0.0001" min="0.0001"></td>
+        <td><input type="number" class="form-control form-control-sm text-right unit-cost" step="0.0001" min="0"></td>
+        <td><input type="number" class="form-control form-control-sm text-right disc" step="0.01" min="0" max="100" value="0"></td>
+        <td><input type="number" class="form-control form-control-sm text-right tax" step="0.01" min="0" max="100" value="0"></td>
+        <td class="text-right line-total">0.00</td>
+        <td><button type="button" class="btn btn-sm text-danger remove-line"><i class="fas fa-times"></i></button></td>
+        <input type="hidden" class="uom-code" value="">
+    </tr>
+</template>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    const SEARCH_URL = "{% url 'sales:api_product_search' %}";
+    const linesBody = document.getElementById('lines-body');
+    const tpl = document.getElementById('line-row-template');
+    const grandTotalEl = document.getElementById('grand-total');
+
+    function recomputeLine(row) {
+        const qty = parseFloat(row.querySelector('.qty').value) || 0;
+        const cost = parseFloat(row.querySelector('.unit-cost').value) || 0;
+        const disc = parseFloat(row.querySelector('.disc').value) || 0;
+        const tax = parseFloat(row.querySelector('.tax').value) || 0;
+        const subtotal = qty * cost;
+        const afterDisc = subtotal * (1 - disc / 100);
+        const total = afterDisc * (1 + tax / 100);
+        row.querySelector('.line-total').textContent = total.toFixed(2);
+        recomputeGrand();
+    }
+
+    function recomputeGrand() {
+        let total = 0;
+        document.querySelectorAll('#lines-body .line-row').forEach(r => {
+            total += parseFloat(r.querySelector('.line-total').textContent) || 0;
+        });
+        grandTotalEl.textContent = total.toFixed(2);
+    }
+
+    function addRow() {
+        linesBody.appendChild(tpl.content.cloneNode(true));
+        const row = linesBody.lastElementChild;
+        wireRow(row);
+        row.querySelector('.product-search').focus();
+    }
+
+    function wireRow(row) {
+        const search = row.querySelector('.product-search');
+        const sug = row.querySelector('.product-suggestions');
+        let debounce = null;
+
+        if (!search.readOnly) {
+            search.addEventListener('input', () => {
+                clearTimeout(debounce);
+                const q = search.value.trim();
+                if (q.length < 2) { sug.classList.remove('visible'); sug.innerHTML = ''; return; }
+                debounce = setTimeout(async () => {
+                    try {
+                        const resp = await fetch(SEARCH_URL + "?q=" + encodeURIComponent(q));
+                        const data = await resp.json();
+                        renderSuggestions(row, data.results || []);
+                    } catch (_) {}
+                }, 200);
+            });
+            search.addEventListener('blur', () => setTimeout(() => sug.classList.remove('visible'), 150));
+        }
+
+        row.querySelector('.remove-line').addEventListener('click', () => {
+            row.remove();
+            recomputeGrand();
+        });
+        ['qty', 'unit-cost', 'disc', 'tax'].forEach(cls => {
+            row.querySelector('.' + cls).addEventListener('input', () => recomputeLine(row));
+        });
+    }
+
+    function renderSuggestions(row, results) {
+        const sug = row.querySelector('.product-suggestions');
+        if (!results.length) {
+            sug.innerHTML = '<div class="item text-muted">{% trans "No match." %}</div>';
+            sug.classList.add('visible'); return;
+        }
+        sug.innerHTML = results.map(p => `
+            <div class="item" data-id="${p.id}" data-code="${p.code}" data-name="${p.name}" data-uom="${p.uom}">
+                <div><strong>${p.name}</strong></div>
+                <div class="code">${p.code} — UoM: ${p.uom}</div>
+            </div>`).join('');
+        sug.classList.add('visible');
+        sug.querySelectorAll('.item').forEach(el => {
+            el.addEventListener('mousedown', () => {
+                row.querySelector('.product-search').value = el.dataset.name + " (" + el.dataset.code + ")";
+                row.querySelector('.product-id').value = el.dataset.id;
+                row.querySelector('.uom-code').value = el.dataset.uom;
+                row.querySelector('.product-suggestions').classList.remove('visible');
+                recomputeLine(row);
+            });
+        });
+    }
+
+    document.querySelectorAll('#lines-body .line-row').forEach(r => {
+        wireRow(r);
+        recomputeLine(r);
+    });
+
+    document.getElementById('add-line-btn').addEventListener('click', addRow);
+
+    document.getElementById('pret-form').addEventListener('submit', (e) => {
+        const rows = Array.from(document.querySelectorAll('#lines-body .line-row'));
+        if (!rows.length) {
+            e.preventDefault();
+            alert("{% trans 'Add at least one line.' %}");
+            return;
+        }
+        const lines = rows.map(row => ({
+            product_id: row.querySelector('.product-id').value,
+            warehouse_id: row.querySelector('.warehouse-select').value,
+            quantity: row.querySelector('.qty').value,
+            unit_cost: row.querySelector('.unit-cost').value,
+            discount_percent: row.querySelector('.disc').value,
+            tax_rate_percent: row.querySelector('.tax').value,
+            uom_code: row.querySelector('.uom-code').value,
+            original_purchase_line_id: row.dataset.originalLineId || null,
+        }));
+        for (const l of lines) {
+            if (!l.product_id || !parseFloat(l.quantity) || !l.warehouse_id) {
+                e.preventDefault();
+                alert("{% trans 'Every line needs a product, warehouse, and positive quantity.' %}");
+                return;
+            }
+        }
+        document.getElementById('lines_json').value = JSON.stringify(lines);
+    });
+
+    if (!document.querySelectorAll('#lines-body .line-row').length) {
+        addRow();
+    }
+    recomputeGrand();
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Warehouse Stock" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with
+    title=_("Warehouse Stock")
+    subtitle=_("Current on-hand quantities per product and warehouse") %}
+
+<form method="get" class="card shadow-sm mb-3">
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-4 mb-2">
+                <label class="small text-muted">{% trans "Warehouse" %}</label>
+                <select name="warehouse" class="form-control selectpicker" data-live-search="true">
+                    <option value="">{% trans "All warehouses" %}</option>
+                    {% for w in warehouses %}
+                        <option value="{{ w.pk }}" {% if request.GET.warehouse == w.pk|stringformat:"s" %}selected{% endif %}>
+                            {{ w.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3 mb-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary mr-2">
+                    <i class="fas fa-chart-bar"></i> {% trans "Generate" %}
+                </button>
+                <button type="button" onclick="window.print()" class="btn btn-outline-secondary">
+                    <i class="fas fa-print"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</form>
+
+{% if rows %}
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <table class="table table-hover datatable mb-0">
+            <thead>
+                <tr>
+                    <th>{% trans "Product code" %}</th>
+                    <th>{% trans "Warehouse" %}</th>
+                    <th class="text-right">{% trans "On hand" %}</th>
+                    <th>{% trans "UoM" %}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in rows %}
+                    <tr>
+                        <td><code>{{ r.product_code }}</code></td>
+                        <td>{{ r.warehouse_code }}</td>
+                        <td class="text-right">{{ r.on_hand }}</td>
+                        <td>{{ r.uom_code }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<div class="card shadow-sm"><div class="card-body text-center text-muted p-5">
+    <i class="fas fa-boxes fa-3x mb-3 opacity-50"></i>
+    <p>{% trans "No stock records for the current selection." %}</p>
+</div></div>
+{% endif %}
+{% endblock %}

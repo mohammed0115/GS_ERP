@@ -1,0 +1,295 @@
+{% extends "base.html" %}
+{% load i18n erp_money %}
+
+{% block title %}{% trans "Point of Sale" %}{% endblock %}
+{% block body_class %}pos-body{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Tighter layout for POS — takes the full viewport below the navbar */
+    .pos-grid { display: grid; grid-template-columns: 1fr 380px; gap: 1rem; height: calc(100vh - 140px); }
+    .pos-catalog { display: flex; flex-direction: column; overflow: hidden; background: #fff; border-radius: 6px; box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,0.075); }
+    .pos-catalog-search { padding: 1rem; border-bottom: 1px solid #dee2e6; }
+    .pos-catalog-grid { flex: 1; overflow-y: auto; padding: 1rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.75rem; align-content: start; }
+    .pos-product {
+        background: #fff; border: 1px solid #dee2e6; border-radius: 6px; padding: 0.75rem;
+        cursor: pointer; transition: all 0.15s; text-align: center; min-height: 110px;
+        display: flex; flex-direction: column; justify-content: space-between;
+    }
+    .pos-product:hover { border-color: #3498db; transform: translateY(-2px); box-shadow: 0 0.25rem 0.5rem rgba(0,0,0,0.08); }
+    .pos-product .name { font-size: 0.85rem; font-weight: 500; line-height: 1.2; margin-bottom: 0.5rem; }
+    .pos-product .code { font-size: 0.7rem; color: #6c757d; font-family: monospace; }
+    .pos-product .price { font-size: 0.95rem; font-weight: 700; color: #3498db; margin-top: 0.25rem; }
+
+    .pos-cart { display: flex; flex-direction: column; background: #fff; border-radius: 6px; box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,0.075); overflow: hidden; }
+    .pos-cart-header { padding: 0.75rem 1rem; border-bottom: 1px solid #dee2e6; display: flex; justify-content: space-between; align-items: center; }
+    .pos-cart-lines { flex: 1; overflow-y: auto; padding: 0.5rem 0; }
+    .pos-cart-line { padding: 0.5rem 1rem; border-bottom: 1px solid #f1f3f5; }
+    .pos-cart-totals { padding: 1rem; background: #f8f9fa; border-top: 2px solid #dee2e6; }
+    .pos-cart-totals .row-kv { display: flex; justify-content: space-between; padding: 0.2rem 0; }
+    .pos-cart-totals .row-total { font-size: 1.2rem; font-weight: 700; color: #3498db; padding-top: 0.5rem; border-top: 1px solid #dee2e6; }
+
+    .pos-cart-actions { padding: 0.75rem 1rem; display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+    .pos-cart-actions .btn { padding: 0.75rem 0.5rem; }
+
+    .pos-empty-cart { text-align: center; color: #adb5bd; padding: 3rem 1rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% if not session %}
+    {# No open session — route the user to open one first #}
+    <div class="row justify-content-center mt-5">
+        <div class="col-md-6">
+            <div class="card shadow-sm">
+                <div class="card-body text-center p-5">
+                    <i class="fas fa-cash-register fa-4x text-muted mb-3"></i>
+                    <h4 class="mb-3">{% trans "Open a cash register session" %}</h4>
+                    <p class="text-muted">
+                        {% trans "You need an open cash register session before taking sales from the POS." %}
+                    </p>
+                    <a href="{% url 'pos:register_open' %}" class="btn btn-primary mt-2">
+                        <i class="fas fa-play"></i> {% trans "Open register" %}
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+{% else %}
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h5 class="mb-0"><i class="fas fa-cash-register"></i> {% trans "Point of Sale" %}</h5>
+            <small class="text-muted">
+                {% blocktrans with wh=session.warehouse.name opened=session.opened_at|date:"Y-m-d H:i" %}
+                    Register at {{ wh }} — opened {{ opened }}
+                {% endblocktrans %}
+            </small>
+        </div>
+        <a href="{% url 'pos:register_close' %}" class="btn btn-outline-danger">
+            <i class="fas fa-stop"></i> {% trans "Close register" %}
+        </a>
+    </div>
+
+    <div class="pos-grid">
+        {# ---- Product catalog (left) ---- #}
+        <div class="pos-catalog">
+            <div class="pos-catalog-search">
+                <input type="text" id="pos-search" class="form-control"
+                       placeholder="{% trans 'Scan barcode or search product name/code…' %}"
+                       autofocus>
+            </div>
+            <div class="pos-catalog-grid" id="pos-products">
+                {% for p in products %}
+                    <div class="pos-product" data-id="{{ p.pk }}"
+                         data-code="{{ p.code }}"
+                         data-name="{{ p.name }}"
+                         data-price="{{ p.price }}"
+                         data-uom="{{ p.unit.code }}"
+                         data-tax="{{ p.tax.rate_percent|default:0 }}"
+                         data-warehouse="{{ session.warehouse_id }}">
+                        <div>
+                            <div class="name">{{ p.name|truncatechars:40 }}</div>
+                            <div class="code">{{ p.code }}</div>
+                        </div>
+                        <div class="price">{{ p.price|money:p.currency_code }}</div>
+                    </div>
+                {% empty %}
+                    <div class="text-muted text-center" style="grid-column: 1 / -1;">
+                        <p>{% trans "No products in catalog." %}</p>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        {# ---- Cart (right) ---- #}
+        <div class="pos-cart">
+            <div class="pos-cart-header">
+                <strong>{% trans "Cart" %}</strong>
+                <button id="pos-clear" class="btn btn-sm btn-outline-danger">
+                    <i class="fas fa-trash"></i> {% trans "Clear" %}
+                </button>
+            </div>
+            <div class="pos-cart-lines" id="pos-cart-lines">
+                <div class="pos-empty-cart">
+                    <i class="fas fa-shopping-basket fa-2x mb-2"></i>
+                    <p class="mb-0">{% trans "Cart is empty." %}</p>
+                </div>
+            </div>
+            <div class="pos-cart-totals">
+                <div class="row-kv">
+                    <span class="text-muted">{% trans "Subtotal" %}</span>
+                    <span id="pos-subtotal">0.00 {{ currency }}</span>
+                </div>
+                <div class="row-kv">
+                    <span class="text-muted">{% trans "Tax" %}</span>
+                    <span id="pos-tax">0.00 {{ currency }}</span>
+                </div>
+                <div class="row-kv row-total">
+                    <span>{% trans "Total" %}</span>
+                    <span id="pos-total">0.00 {{ currency }}</span>
+                </div>
+            </div>
+            <div class="pos-cart-actions">
+                <button class="btn btn-outline-primary" id="pos-select-customer">
+                    <i class="fas fa-user"></i> {% trans "Customer" %}
+                </button>
+                <button class="btn btn-success" id="pos-checkout" disabled>
+                    <i class="fas fa-check"></i> {% trans "Checkout" %}
+                </button>
+            </div>
+        </div>
+    </div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if session %}
+<script>
+/* --------------------------------------------------------------------------
+   POS terminal — client-side cart + checkout.
+
+   State lives in a single `cart` array; every mutation re-renders. A server
+   POST at checkout submits the cart to `PostSale` via a JSON endpoint.
+   The server returns the posted sale reference and we redirect to the
+   invoice page.
+   -------------------------------------------------------------------------- */
+(function () {
+    const currency = "{{ currency|escapejs }}";
+    const cart = []; // { id, code, name, qty, unit_price, tax_rate, uom, warehouse_id }
+
+    const fmt = (n) => parseFloat(n).toFixed(2) + " " + currency;
+
+    function render() {
+        const host = document.getElementById('pos-cart-lines');
+        if (cart.length === 0) {
+            host.innerHTML = '<div class="pos-empty-cart"><i class="fas fa-shopping-basket fa-2x mb-2"></i><p class="mb-0">{% trans "Cart is empty." %}</p></div>';
+            document.getElementById('pos-checkout').disabled = true;
+        } else {
+            host.innerHTML = cart.map((l, i) => `
+                <div class="pos-cart-line d-flex justify-content-between align-items-center">
+                    <div class="flex-grow-1">
+                        <div><strong>${l.name}</strong> <small class="text-muted"><code>${l.code}</code></small></div>
+                        <div class="small">
+                            <button class="btn btn-xs btn-outline-secondary" onclick="window.posAdj(${i},-1)">−</button>
+                            <span class="mx-2">${l.qty} ${l.uom}</span>
+                            <button class="btn btn-xs btn-outline-secondary" onclick="window.posAdj(${i},+1)">+</button>
+                            <span class="text-muted ml-2">× ${fmt(l.unit_price)}</span>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <div><strong>${fmt(l.qty * l.unit_price)}</strong></div>
+                        <button class="btn btn-xs text-danger" onclick="window.posRm(${i})"><i class="fas fa-times"></i></button>
+                    </div>
+                </div>
+            `).join('');
+            document.getElementById('pos-checkout').disabled = false;
+        }
+
+        let subtotal = 0, tax = 0;
+        cart.forEach(l => {
+            const lineSub = l.qty * l.unit_price;
+            subtotal += lineSub;
+            tax += lineSub * (parseFloat(l.tax_rate) / 100);
+        });
+        document.getElementById('pos-subtotal').textContent = fmt(subtotal);
+        document.getElementById('pos-tax').textContent = fmt(tax);
+        document.getElementById('pos-total').textContent = fmt(subtotal + tax);
+    }
+
+    function addProduct(el) {
+        const id = parseInt(el.dataset.id, 10);
+        const existing = cart.findIndex(l => l.id === id);
+        if (existing >= 0) {
+            cart[existing].qty += 1;
+        } else {
+            cart.push({
+                id,
+                code: el.dataset.code,
+                name: el.dataset.name,
+                qty: 1,
+                unit_price: parseFloat(el.dataset.price),
+                tax_rate: parseFloat(el.dataset.tax),
+                uom: el.dataset.uom,
+                warehouse_id: parseInt(el.dataset.warehouse, 10),
+            });
+        }
+        render();
+    }
+
+    window.posAdj = (i, delta) => { cart[i].qty = Math.max(1, cart[i].qty + delta); render(); };
+    window.posRm  = (i) => { cart.splice(i, 1); render(); };
+
+    document.querySelectorAll('.pos-product').forEach(el => {
+        el.addEventListener('click', () => addProduct(el));
+    });
+
+    document.getElementById('pos-clear').addEventListener('click', () => {
+        cart.length = 0; render();
+    });
+
+    // Product search — client-side filter on the rendered grid.
+    document.getElementById('pos-search').addEventListener('input', (e) => {
+        const q = e.target.value.toLowerCase();
+        document.querySelectorAll('.pos-product').forEach(el => {
+            const name = el.dataset.name.toLowerCase();
+            const code = el.dataset.code.toLowerCase();
+            el.style.display = (name.includes(q) || code.includes(q)) ? '' : 'none';
+        });
+    });
+
+    // Checkout — POST the cart to the server. The server maps it to a
+    // SaleDraft and calls PostSale. On success we redirect to the invoice.
+    document.getElementById('pos-checkout').addEventListener('click', async () => {
+        if (!cart.length) return;
+        const btn = document.getElementById('pos-checkout');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> {% trans "Posting…" %}';
+
+        const payload = {
+            lines: cart.map(l => ({
+                product_id: l.id,
+                warehouse_id: l.warehouse_id,
+                quantity: String(l.qty),
+                unit_price: String(l.unit_price),
+                tax_rate_percent: String(l.tax_rate),
+            })),
+            // Server fills in defaults for customer, biller, and ledger
+            // accounts from POS configuration. The client doesn't need to
+            // know chart-of-accounts IDs.
+        };
+
+        const csrfToken = document.cookie.match(/csrftoken=([^;]+)/)?.[1] || "";
+
+        try {
+            const resp = await fetch("{% url 'pos:checkout' %}", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRFToken": csrfToken,
+                },
+                body: JSON.stringify(payload),
+            });
+            const data = await resp.json();
+
+            if (!resp.ok) {
+                alert((data.detail || data.error || "Checkout failed."));
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-check"></i> {% trans "Checkout" %}';
+                return;
+            }
+
+            // Reset cart and navigate to the posted invoice.
+            cart.length = 0;
+            window.location.href = "/sales/" + data.sale_id + "/invoice/?print=1";
+        } catch (err) {
+            alert("Network error: " + err.message);
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-check"></i> {% trans "Checkout" %}';
+        }
+    });
+
+    render();
+})();
+</script>
+{% endif %}
+{% endblock %}

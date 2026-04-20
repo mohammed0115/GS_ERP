@@ -1,0 +1,103 @@
+/* =============================================================================
+   N-ERP theme stylesheet.
+
+   Supplements Bootstrap 4 — only contains the sidebar / layout rules the
+   legacy project's style.css used, without the theme-switcher noise.
+   ============================================================================= */
+
+body {
+    font-family: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #f4f6f9;
+    margin: 0;
+}
+
+.header {
+    height: 60px;
+    display: flex;
+    align-items: center;
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+}
+.header .navbar { width: 100%; }
+
+/* ---------- Sidebar ---------- */
+.sidebar {
+    width: 240px;
+    min-width: 240px;
+    min-height: calc(100vh - 60px);
+    padding: 0;
+    overflow-y: auto;
+    background: #343a40 !important;
+}
+.sidebar-nav { padding: 1rem 0; }
+.sidebar-nav .nav-link {
+    padding: 0.6rem 1.2rem;
+    color: rgba(255, 255, 255, 0.85) !important;
+    border-left: 3px solid transparent;
+    transition: all 0.15s;
+}
+.sidebar-nav .nav-link:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-left-color: #3498db;
+    color: #fff !important;
+}
+.sidebar-nav .nav-link i {
+    width: 20px;
+    margin-right: 0.5rem;
+    text-align: center;
+}
+.sidebar-nav .collapse li a {
+    font-size: 0.9rem;
+    padding: 0.4rem 1rem;
+    color: rgba(255, 255, 255, 0.6) !important;
+}
+.sidebar-nav .collapse li a:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: #fff !important;
+}
+.sidebar-nav .nav-link[aria-expanded="true"] > .fa-angle-down {
+    transform: rotate(180deg);
+}
+
+.page-content {
+    min-height: calc(100vh - 60px);
+    background: #f4f6f9;
+    overflow-x: hidden;
+}
+
+/* ---------- Cards ---------- */
+.card { border: none; }
+.card-header { background: #fff; font-weight: 500; }
+
+/* ---------- Tables ---------- */
+table.dataTable thead th {
+    background: #f8f9fa;
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    border-bottom: 2px solid #dee2e6;
+}
+
+/* ---------- Forms ---------- */
+.form-control, .form-control:focus {
+    border-color: #ced4da;
+    box-shadow: none;
+}
+.form-control:focus { border-color: #3498db; }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 767.98px) {
+    .sidebar { display: none; }
+}
+
+/* RTL (Arabic) support */
+html[dir="rtl"] .sidebar-nav .nav-link {
+    border-left: 0;
+    border-right: 3px solid transparent;
+}
+html[dir="rtl"] .sidebar-nav .nav-link i {
+    margin-right: 0;
+    margin-left: 0.5rem;
+}

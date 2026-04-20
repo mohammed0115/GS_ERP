@@ -1,0 +1,119 @@
+"""
+PostTransfer — post a stock-transfer document.
+
+For each line, emits a pair of movements:
+  1. TRANSFER_OUT from source warehouse
+  2. TRANSFER_IN  to destination warehouse
+
+Both movements share the same `transfer_id` (the StockTransfer pk), so
+the pair is identifiable in the movement log and the database check
+constraint (`inventory_stock_movement_transfer_id_matches_type`) is
+satisfied.
+
+The whole document posts atomically — any failure (e.g. insufficient
+stock at the source) rolls everything back.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timezone
+
+from django.db import transaction
+
+from apps.inventory.application.use_cases.record_stock_movement import (
+    RecordStockMovement,
+)
+from apps.inventory.domain.entities import MovementSpec, MovementType
+from apps.inventory.domain.exceptions import TransferAlreadyPostedError
+from apps.inventory.domain.transfer import TransferSpec
+from apps.inventory.infrastructure.models import (
+    StockTransfer,
+    StockTransferLine,
+    TransferStatusChoices,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class PostedTransfer:
+    transfer_id: int
+    reference: str
+    out_movement_ids: tuple[int, ...]
+    in_movement_ids: tuple[int, ...]
+
+
+class PostTransfer:
+    def __init__(
+        self,
+        record_stock_movement: RecordStockMovement | None = None,
+    ) -> None:
+        self._stock = record_stock_movement or RecordStockMovement()
+
+    def execute(self, spec: TransferSpec) -> PostedTransfer:
+        with transaction.atomic():
+            if StockTransfer.objects.filter(reference=spec.reference).exists():
+                raise TransferAlreadyPostedError(
+                    f"Transfer with reference {spec.reference!r} already exists."
+                )
+
+            header = StockTransfer.objects.create(
+                reference=spec.reference,
+                transfer_date=spec.transfer_date,
+                source_warehouse_id=spec.source_warehouse_id,
+                destination_warehouse_id=spec.destination_warehouse_id,
+                status=TransferStatusChoices.DRAFT,
+                memo=spec.memo,
+            )
+
+            out_ids: list[int] = []
+            in_ids: list[int] = []
+            for line_number, line in enumerate(spec.lines, start=1):
+                # Pair key = header pk. The movement log enforces both
+                # rows of the pair exist via its transfer_id check
+                # constraint; if either half fails, the transaction
+                # rolls the whole document back.
+                out_spec = MovementSpec(
+                    product_id=line.product_id,
+                    warehouse_id=spec.source_warehouse_id,
+                    movement_type=MovementType.TRANSFER_OUT,
+                    quantity=line.quantity,
+                    reference=f"TRF-{header.pk}",
+                    source_type="stock_transfer",
+                    source_id=header.pk,
+                    transfer_id=header.pk,
+                )
+                in_spec = MovementSpec(
+                    product_id=line.product_id,
+                    warehouse_id=spec.destination_warehouse_id,
+                    movement_type=MovementType.TRANSFER_IN,
+                    quantity=line.quantity,
+                    reference=f"TRF-{header.pk}",
+                    source_type="stock_transfer",
+                    source_id=header.pk,
+                    transfer_id=header.pk,
+                )
+                # Out first: we must check there's enough at source BEFORE
+                # crediting destination. If source insufficient, the in-half
+                # won't run and both are rolled back.
+                out_rec = self._stock.execute(out_spec)
+                in_rec = self._stock.execute(in_spec)
+
+                StockTransferLine.objects.create(
+                    transfer=header,
+                    product_id=line.product_id,
+                    quantity=line.quantity.value,
+                    uom_code=line.quantity.uom_code,
+                    line_number=line_number,
+                )
+                out_ids.append(out_rec.movement_id)
+                in_ids.append(in_rec.movement_id)
+
+            header.status = TransferStatusChoices.POSTED
+            header.posted_at = datetime.now(timezone.utc)
+            header.save(update_fields=["status", "posted_at", "updated_at"])
+
+            return PostedTransfer(
+                transfer_id=header.pk,
+                reference=header.reference,
+                out_movement_ids=tuple(out_ids),
+                in_movement_ids=tuple(in_ids),
+            )

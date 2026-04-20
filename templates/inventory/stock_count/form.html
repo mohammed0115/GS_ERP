@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "New Stock Count" %}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .count-sheet tr.variance td.counted { background-color: #fff3cd; }
+    .count-sheet input[type=number] { max-width: 120px; }
+    .count-sheet .variance-cell { font-weight: 600; min-width: 80px; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with
+    title=_("New stock count")
+    subtitle=_("Record counted quantities against the expected on-hand values") %}
+
+{% if not warehouse_selected %}
+    {# ---- Step 1: pick warehouse ---- #}
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card shadow-sm">
+                <div class="card-header"><strong>{% trans "Step 1 — Select a warehouse" %}</strong></div>
+                <div class="card-body">
+                    <form method="get">
+                        <div class="form-group">
+                            <label>{% trans "Warehouse" %}</label>
+                            <select name="warehouse" class="form-control selectpicker" data-live-search="true" required>
+                                <option value="">{% trans "Choose a warehouse…" %}</option>
+                                {% for w in warehouses %}
+                                    <option value="{{ w.pk }}">{{ w.code }} — {{ w.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-arrow-right"></i> {% trans "Continue" %}
+                        </button>
+                        <a href="{% url 'inventory:stock_count_list' %}" class="btn btn-outline-secondary">{% trans "Cancel" %}</a>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+{% else %}
+    {# ---- Step 2: count sheet ---- #}
+    <form method="post" id="count-form" novalidate>
+        {% csrf_token %}
+        <input type="hidden" name="warehouse" value="{{ warehouse.pk }}">
+
+        {% if form.non_field_errors %}
+            <div class="alert alert-danger">
+                {% for err in form.non_field_errors %}{{ err }}<br>{% endfor %}
+            </div>
+        {% endif %}
+
+        <div class="card shadow-sm mb-3">
+            <div class="card-header">
+                <strong>
+                    {% blocktrans with name=warehouse.name %}
+                        Count sheet — {{ name }}
+                    {% endblocktrans %}
+                </strong>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    {% include "_partials/form_field.html" with field=form.count_date cols=3 %}
+                    {% include "_partials/form_field.html" with field=form.reference cols=5 %}
+                    {% include "_partials/form_field.html" with field=form.memo cols=12 %}
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <strong>{% trans "Products" %}</strong>
+                <span class="text-muted small">
+                    {% blocktrans count counter=products|length %}
+                        {{ counter }} product
+                    {% plural %}
+                        {{ counter }} products
+                    {% endblocktrans %}
+                </span>
+            </div>
+            <div class="table-responsive">
+                <table class="table count-sheet mb-0">
+                    <thead>
+                        <tr>
+                            <th>{% trans "Product" %}</th>
+                            <th class="text-right">{% trans "Expected" %}</th>
+                            <th class="text-center">{% trans "Counted" %}</th>
+                            <th class="text-right">{% trans "Variance" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for p in products %}
+                            <tr data-product-id="{{ p.product_id }}" data-expected="{{ p.expected_quantity }}">
+                                <td>
+                                    <strong>{{ p.product_name }}</strong><br>
+                                    <small class="text-muted"><code>{{ p.product_code }}</code></small>
+                                </td>
+                                <td class="text-right">{{ p.expected_quantity }} {{ p.uom_code }}</td>
+                                <td class="counted text-center">
+                                    <input type="number"
+                                           name="counted_{{ p.product_id }}"
+                                           class="form-control form-control-sm text-right counted-input"
+                                           step="0.0001" min="0"
+                                           value="{{ p.expected_quantity }}">
+                                    <input type="hidden" name="uom_{{ p.product_id }}" value="{{ p.uom_code }}">
+                                    <input type="hidden" name="expected_{{ p.product_id }}" value="{{ p.expected_quantity }}">
+                                </td>
+                                <td class="text-right variance-cell">
+                                    <span class="variance-display">0</span>
+                                </td>
+                            </tr>
+                        {% empty %}
+                            <tr><td colspan="4" class="text-center text-muted p-4">
+                                {% trans "No stock on hand at this warehouse yet." %}
+                            </td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="d-flex justify-content-end mb-4">
+            <a href="{% url 'inventory:stock_count_list' %}" class="btn btn-secondary mr-2">{% trans "Cancel" %}</a>
+            <button type="submit" class="btn btn-primary" {% if not products %}disabled{% endif %}>
+                <i class="fas fa-save"></i> {% trans "Save as draft" %}
+            </button>
+        </div>
+
+        <p class="text-muted small">
+            <i class="fas fa-info-circle"></i>
+            {% trans "The count is saved as a draft first. Review variances on the detail page, then click Finalise to post adjustments for any differences." %}
+        </p>
+    </form>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if warehouse_selected %}
+<script>
+(function () {
+    /* Live variance computation as the user types counted values. */
+    function updateVariance(row) {
+        const expected = parseFloat(row.dataset.expected) || 0;
+        const counted = parseFloat(row.querySelector('.counted-input').value) || 0;
+        const variance = counted - expected;
+        const display = row.querySelector('.variance-display');
+        display.textContent = (variance > 0 ? '+' : '') + variance.toFixed(4).replace(/\.?0+$/, '');
+        display.className = 'variance-display ' +
+            (variance < 0 ? 'text-danger' :
+             variance > 0 ? 'text-success' : 'text-muted');
+        row.classList.toggle('variance', variance !== 0);
+    }
+
+    document.querySelectorAll('.counted-input').forEach(input => {
+        input.addEventListener('input', () => updateVariance(input.closest('tr')));
+    });
+})();
+</script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% load i18n erp_permissions erp_money %}
+
+{% block title %}{% trans "Payments" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with
+    title=_("Payments")
+    subtitle=_("All payments received and made — the unified ledger") %}
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        {% if object_list %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>{% trans "Reference" %}</th>
+                            <th>{% trans "Date" %}</th>
+                            <th>{% trans "Method" %}</th>
+                            <th>{% trans "Direction" %}</th>
+                            <th>{% trans "Source" %}</th>
+                            <th class="text-right">{% trans "Amount" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for obj in object_list %}
+                        <tr>
+                            <td><code>{{ obj.reference }}</code></td>
+                            <td>{{ obj.created_at|date:"Y-m-d H:i" }}</td>
+                            <td>{{ obj.method|title }}</td>
+                            <td>
+                                {% if obj.direction == "in" %}
+                                    <span class="badge badge-success">{% trans "Received" %}</span>
+                                {% else %}
+                                    <span class="badge badge-info">{% trans "Paid out" %}</span>
+                                {% endif %}
+                            </td>
+                            <td class="small text-muted">{{ obj.source_type }}#{{ obj.source_id|default:"—" }}</td>
+                            <td class="text-right">{{ obj.amount|money:obj.currency_code }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="text-center text-muted p-5">
+                <i class="fas fa-money-bill-wave fa-3x mb-2 opacity-50"></i>
+                <p class="mb-0">{% trans "No payments recorded." %}</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,23 @@
+{% extends "_generic/form.html" %}
+{% load i18n %}
+
+{% block page_title %}
+    {% if object %}{% trans "Edit Warehouse" %}{% else %}{% trans "New Warehouse" %}{% endif %}
+{% endblock %}
+
+{% block form_title %}
+    {% if object %}
+        {% blocktrans with name=object.name %}Edit warehouse — {{ name }}{% endblocktrans %}
+    {% else %}
+        {% trans "New warehouse" %}
+    {% endif %}
+{% endblock %}
+
+{% block form_fields %}
+    {% include "_partials/form_field.html" with field=form.code cols=4 %}
+    {% include "_partials/form_field.html" with field=form.name cols=8 %}
+    {% include "_partials/form_field.html" with field=form.branch cols=6 %}
+    {% include "_partials/form_field.html" with field=form.is_active cols=6 %}
+{% endblock %}
+
+{% block cancel_url %}{% url 'inventory:warehouse_list' %}{% endblock %}

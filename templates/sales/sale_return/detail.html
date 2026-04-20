@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% blocktrans with ref=object.reference %}Return {{ ref }}{% endblocktrans %}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h4 class="mb-0">{% trans "Sale return" %} <code>{{ object.reference }}</code></h4>
+        <p class="text-muted small mb-0">
+            {{ object.return_date }} — {{ object.customer.name }} —
+            {% trans "against" %}
+            <a href="{% url 'sales:detail' object.original_sale_id %}">
+                <code>{{ object.original_sale.reference }}</code>
+            </a>
+        </p>
+    </div>
+    <a href="{% url 'sales:return_list' %}" class="btn btn-outline-secondary">
+        <i class="fas fa-arrow-left"></i> {% trans "Back" %}
+    </a>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header"><strong>{% trans "Returned lines" %}</strong></div>
+            <div class="card-body p-0">
+                <table class="table mb-0">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>{% trans "Product" %}</th>
+                            <th>{% trans "Warehouse" %}</th>
+                            <th class="text-right">{% trans "Qty" %}</th>
+                            <th class="text-right">{% trans "Unit price" %}</th>
+                            <th class="text-right">{% trans "Discount" %}</th>
+                            <th class="text-right">{% trans "Tax" %}</th>
+                            <th class="text-right">{% trans "Total" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for line in object.lines.all %}
+                            <tr>
+                                <td>{{ line.line_number }}</td>
+                                <td>
+                                    <strong>{{ line.product.name }}</strong><br>
+                                    <small class="text-muted"><code>{{ line.product.code }}</code></small>
+                                    {% if line.original_sale_line_id %}
+                                        <br><small class="text-muted">{% trans "linked to original line" %}</small>
+                                    {% else %}
+                                        <br><small class="text-warning">{% trans "goodwill — no original link" %}</small>
+                                    {% endif %}
+                                </td>
+                                <td>{{ line.warehouse.name }}</td>
+                                <td class="text-right">{{ line.quantity }} {{ line.uom_code }}</td>
+                                <td class="text-right">{{ line.unit_price }}</td>
+                                <td class="text-right">{{ line.discount_percent }}%</td>
+                                <td class="text-right">{{ line.tax_rate_percent }}%</td>
+                                <td class="text-right">{{ line.line_total }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        {% if object.memo %}
+            <div class="card shadow-sm mb-3">
+                <div class="card-header"><strong>{% trans "Notes" %}</strong></div>
+                <div class="card-body">{{ object.memo|linebreaksbr }}</div>
+            </div>
+        {% endif %}
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header"><strong>{% trans "Summary" %}</strong></div>
+            <ul class="list-group list-group-flush">
+                <li class="list-group-item d-flex justify-content-between">
+                    <span class="text-muted">{% trans "Status" %}</span>
+                    <span>
+                        {% if object.status == "posted" %}
+                            <span class="badge badge-success">{% trans "Posted" %}</span>
+                        {% elif object.status == "draft" %}
+                            <span class="badge badge-secondary">{% trans "Draft" %}</span>
+                        {% else %}
+                            <span class="badge badge-danger">{% trans "Cancelled" %}</span>
+                        {% endif %}
+                    </span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between">
+                    <span class="text-muted">{% trans "Subtotal" %}</span>
+                    <span>{{ object.lines_subtotal }} {{ object.currency_code }}</span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between">
+                    <span class="text-muted">{% trans "Discount" %}</span>
+                    <span>-{{ object.lines_discount }}</span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between">
+                    <span class="text-muted">{% trans "Tax" %}</span>
+                    <span>{{ object.lines_tax }}</span>
+                </li>
+                {% if object.restocking_fee and object.restocking_fee != "0.0000" %}
+                    <li class="list-group-item d-flex justify-content-between text-warning">
+                        <span>{% trans "Restocking fee" %}</span>
+                        <span>-{{ object.restocking_fee }}</span>
+                    </li>
+                {% endif %}
+                <li class="list-group-item d-flex justify-content-between font-weight-bold">
+                    <span>{% trans "Refund total" %}</span>
+                    <span>{{ object.refund_total }} {{ object.currency_code }}</span>
+                </li>
+                {% if object.posted_at %}
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span class="text-muted">{% trans "Posted at" %}</span>
+                        <span class="small">{{ object.posted_at|date:"Y-m-d H:i" }}</span>
+                    </li>
+                {% endif %}
+                {% if object.reversal_journal_entry_id %}
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span class="text-muted">{% trans "Reversal JE" %}</span>
+                        <span class="small"><code>#{{ object.reversal_journal_entry_id }}</code></span>
+                    </li>
+                {% endif %}
+                {% if object.restocking_journal_entry_id %}
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span class="text-muted">{% trans "Restocking JE" %}</span>
+                        <span class="small"><code>#{{ object.restocking_journal_entry_id }}</code></span>
+                    </li>
+                {% endif %}
+            </ul>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-body small text-muted">
+                <i class="fas fa-info-circle"></i>
+                {% trans "Posted returns are immutable. The original sale's journal entry is never modified — this return stands as a separate reversal entry in the ledger." %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

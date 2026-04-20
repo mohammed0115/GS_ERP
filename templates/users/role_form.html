@@ -1,0 +1,24 @@
+{% extends "_generic/form.html" %}
+{% load i18n %}
+
+{% block page_title %}
+    {% if object %}{% trans "Edit Role" %}{% else %}{% trans "New Role" %}{% endif %}
+{% endblock %}
+
+{% block form_title %}
+    {% if object %}
+        {% blocktrans with name=object.name %}Edit role — {{ name }}{% endblocktrans %}
+    {% else %}
+        {% trans "New role" %}
+    {% endif %}
+{% endblock %}
+
+{% block form_fields %}
+    {% include "_partials/form_field.html" with field=form.name cols=6 %}
+    <div class="col-12">
+        <h6 class="text-uppercase text-muted small mt-3 mb-3">{% trans "Permissions" %}</h6>
+    </div>
+    {% include "_partials/form_field.html" with field=form.permissions cols=12 %}
+{% endblock %}
+
+{% block cancel_url %}{% url 'users:role_list' %}{% endblock %}

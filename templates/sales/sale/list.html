@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% load i18n erp_permissions erp_money %}
+
+{% block title %}{% trans "Sales" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with
+    title=_("Sales")
+    subtitle=_("Invoices, POS receipts, and credit sales")
+    primary_action_url=create_url
+    primary_action_label=_("New sale")
+    primary_action_icon="fa-plus" %}
+
+{# ---- Filters ---- #}
+<form method="get" class="card shadow-sm mb-3">
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-3 mb-2">
+                <label class="small text-muted">{% trans "Status" %}</label>
+                <select name="status" class="form-control selectpicker">
+                    <option value="">{% trans "All statuses" %}</option>
+                    {% for value, label in status_choices %}
+                        <option value="{{ value }}" {% if request.GET.status == value %}selected{% endif %}>
+                            {{ label }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3 mb-2">
+                <label class="small text-muted">{% trans "Customer" %}</label>
+                <input type="text" name="customer" class="form-control"
+                       value="{{ request.GET.customer|default:'' }}"
+                       placeholder="{% trans 'Search by code or name' %}">
+            </div>
+            <div class="col-md-2 mb-2">
+                <label class="small text-muted">{% trans "From" %}</label>
+                <input type="date" name="date_from" class="form-control"
+                       value="{{ request.GET.date_from|default:'' }}">
+            </div>
+            <div class="col-md-2 mb-2">
+                <label class="small text-muted">{% trans "To" %}</label>
+                <input type="date" name="date_to" class="form-control"
+                       value="{{ request.GET.date_to|default:'' }}">
+            </div>
+            <div class="col-md-2 mb-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary mr-2">
+                    <i class="fas fa-search"></i>
+                </button>
+                <a href="{% url 'sales:list' %}" class="btn btn-outline-secondary">
+                    <i class="fas fa-times"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+</form>
+
+{# ---- Table ---- #}
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        {% if object_list %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>{% trans "Reference" %}</th>
+                            <th>{% trans "Date" %}</th>
+                            <th>{% trans "Customer" %}</th>
+                            <th>{% trans "Status" %}</th>
+                            <th>{% trans "Payment" %}</th>
+                            <th class="text-right">{% trans "Total" %}</th>
+                            <th class="text-right">{% trans "Paid" %}</th>
+                            <th style="width: 180px;">&nbsp;</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for obj in object_list %}
+                            <tr>
+                                <td><code>{{ obj.reference }}</code></td>
+                                <td>{{ obj.sale_date }}</td>
+                                <td>{{ obj.customer.name }}</td>
+                                <td>
+                                    {% if obj.status == "draft" %}
+                                        <span class="badge badge-secondary">{% trans "Draft" %}</span>
+                                    {% elif obj.status == "confirmed" %}
+                                        <span class="badge badge-info">{% trans "Confirmed" %}</span>
+                                    {% elif obj.status == "posted" %}
+                                        <span class="badge badge-primary">{% trans "Posted" %}</span>
+                                    {% elif obj.status == "delivered" %}
+                                        <span class="badge badge-success">{% trans "Delivered" %}</span>
+                                    {% elif obj.status == "cancelled" %}
+                                        <span class="badge badge-danger">{% trans "Cancelled" %}</span>
+                                    {% elif obj.status == "returned" %}
+                                        <span class="badge badge-warning">{% trans "Returned" %}</span>
+                                    {% else %}
+                                        <span class="badge badge-light">{{ obj.status }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if obj.payment_status == "paid" %}
+                                        <span class="badge badge-success">{% trans "Paid" %}</span>
+                                    {% elif obj.payment_status == "partial" %}
+                                        <span class="badge badge-warning">{% trans "Partial" %}</span>
+                                    {% elif obj.payment_status == "unpaid" %}
+                                        <span class="badge badge-danger">{% trans "Unpaid" %}</span>
+                                    {% elif obj.payment_status == "refunded" %}
+                                        <span class="badge badge-secondary">{% trans "Refunded" %}</span>
+                                    {% else %}
+                                        <span class="badge badge-light">{{ obj.payment_status }}</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-right">{{ obj.grand_total|money:obj.currency_code }}</td>
+                                <td class="text-right">{{ obj.paid_amount|money:obj.currency_code }}</td>
+                                <td class="text-right">
+                                    <a href="{% url 'sales:detail' obj.pk %}" class="btn btn-sm btn-outline-primary" title="{% trans 'View' %}">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                    <a href="{% url 'sales:invoice' obj.pk %}" class="btn btn-sm btn-outline-secondary" title="{% trans 'Invoice' %}">
+                                        <i class="fas fa-file-invoice"></i>
+                                    </a>
+                                    {% if obj.status == "draft" and request.user|can:"sales.sales.update" %}
+                                        <a href="{% url 'sales:edit' obj.pk %}" class="btn btn-sm btn-outline-warning" title="{% trans 'Edit' %}">
+                                            <i class="fas fa-pen"></i>
+                                        </a>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="text-center text-muted p-5">
+                <i class="fas fa-inbox fa-3x mb-2 opacity-50"></i>
+                <p class="mb-0">{% trans "No sales match your filters." %}</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+{% if is_paginated %}
+    <nav class="mt-3">
+        <ul class="pagination justify-content-center">
+            {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}">&laquo;</a>
+                </li>
+            {% endif %}
+            <li class="page-item disabled">
+                <span class="page-link">
+                    {% blocktrans with current=page_obj.number total=page_obj.paginator.num_pages %}
+                        Page {{ current }} of {{ total }}
+                    {% endblocktrans %}
+                </span>
+            </li>
+            {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.next_page_number }}">&raquo;</a>
+                </li>
+            {% endif %}
+        </ul>
+    </nav>
+{% endif %}
+{% endblock %}

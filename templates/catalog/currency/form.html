@@ -1,0 +1,18 @@
+{% extends "_generic/form.html" %}
+{% load i18n %}
+{% block page_title %}{% if object %}{% trans "Edit Currency" %}{% else %}{% trans "New Currency" %}{% endif %}{% endblock %}
+{% block form_title %}
+    {% if object %}
+        {% blocktrans with code=object.code %}Edit currency — {{ code }}{% endblocktrans %}
+    {% else %}
+        {% trans "New currency" %}
+    {% endif %}
+{% endblock %}
+{% block form_fields %}
+    {% include "_partials/form_field.html" with field=form.code cols=3 %}
+    {% include "_partials/form_field.html" with field=form.symbol cols=3 %}
+    {% include "_partials/form_field.html" with field=form.minor_units cols=3 %}
+    {% include "_partials/form_field.html" with field=form.is_active cols=3 %}
+    {% include "_partials/form_field.html" with field=form.name cols=12 %}
+{% endblock %}
+{% block cancel_url %}{% url 'settings:currency_list' %}{% endblock %}

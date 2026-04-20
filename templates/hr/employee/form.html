@@ -1,0 +1,48 @@
+{% extends "_generic/form.html" %}
+{% load i18n %}
+
+{% block page_title %}{% if object %}{% trans "Edit Employee" %}{% else %}{% trans "New Employee" %}{% endif %}{% endblock %}
+
+{% block form_title %}
+    {% if object %}
+        {% blocktrans with name=object.full_name %}Edit employee — {{ name }}{% endblocktrans %}
+    {% else %}
+        {% trans "New employee" %}
+    {% endif %}
+{% endblock %}
+
+{% block form_fields %}
+    <div class="col-12">
+        <h6 class="text-uppercase text-muted small mt-2 mb-3">{% trans "Identity" %}</h6>
+    </div>
+    {% include "_partials/form_field.html" with field=form.code cols=4 %}
+    {% include "_partials/form_field.html" with field=form.first_name cols=4 %}
+    {% include "_partials/form_field.html" with field=form.last_name cols=4 %}
+    {% include "_partials/form_field.html" with field=form.email cols=6 %}
+    {% include "_partials/form_field.html" with field=form.phone cols=6 %}
+    {% include "_partials/form_field.html" with field=form.national_id cols=6 %}
+    {% include "_partials/form_field.html" with field=form.is_active cols=6 %}
+
+    <div class="col-12">
+        <h6 class="text-uppercase text-muted small mt-3 mb-3">{% trans "Employment" %}</h6>
+    </div>
+    {% include "_partials/form_field.html" with field=form.department cols=6 %}
+    {% include "_partials/form_field.html" with field=form.branch cols=6 %}
+    {% include "_partials/form_field.html" with field=form.job_title cols=6 %}
+    {% include "_partials/form_field.html" with field=form.user cols=6 %}
+    {% include "_partials/form_field.html" with field=form.hire_date cols=4 %}
+    {% include "_partials/form_field.html" with field=form.end_date cols=4 %}
+
+    <div class="col-12">
+        <h6 class="text-uppercase text-muted small mt-3 mb-3">{% trans "Compensation" %}</h6>
+    </div>
+    {% include "_partials/form_field.html" with field=form.base_salary cols=6 %}
+    {% include "_partials/form_field.html" with field=form.currency_code cols=6 %}
+
+    <div class="col-12">
+        <h6 class="text-uppercase text-muted small mt-3 mb-3">{% trans "Notes" %}</h6>
+    </div>
+    {% include "_partials/form_field.html" with field=form.note cols=12 %}
+{% endblock %}
+
+{% block cancel_url %}{% url 'hr:employee_list' %}{% endblock %}

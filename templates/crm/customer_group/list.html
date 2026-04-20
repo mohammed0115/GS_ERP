@@ -1,0 +1,41 @@
+{% extends "_generic/list.html" %}
+{% load i18n erp_permissions %}
+
+{% block page_title %}{% trans "Customer Groups" %}{% endblock %}
+{% block header_title %}{% trans "Customer Groups" %}{% endblock %}
+{% block header_subtitle %}{% trans "Group customers by pricing / discount tier" %}{% endblock %}
+
+{% block create_url %}{% url 'crm:customer_group_create' %}{% endblock %}
+{% block create_label %}{% trans "Add Group" %}{% endblock %}
+
+{% block table_head %}
+    <th>{% trans "Code" %}</th>
+    <th>{% trans "Name" %}</th>
+    <th class="text-right">{% trans "Default discount %" %}</th>
+    <th class="text-center">{% trans "Status" %}</th>
+    <th style="width: 160px;">&nbsp;</th>
+{% endblock %}
+
+{% block table_body %}
+    {% for obj in object_list %}
+        <tr>
+            <td><code>{{ obj.code }}</code></td>
+            <td>{{ obj.name }}</td>
+            <td class="text-right">{{ obj.discount_percent }}%</td>
+            <td class="text-center">
+                {% if obj.is_active %}
+                    <span class="badge badge-success">{% trans "Active" %}</span>
+                {% else %}
+                    <span class="badge badge-secondary">{% trans "Inactive" %}</span>
+                {% endif %}
+            </td>
+            <td class="text-right">
+                {% if request.user|can:"crm.customer_groups.update" %}
+                    <a href="{% url 'crm:customer_group_edit' obj.pk %}" class="btn btn-sm btn-outline-primary">
+                        <i class="fas fa-pen"></i>
+                    </a>
+                {% endif %}
+            </td>
+        </tr>
+    {% endfor %}
+{% endblock %}

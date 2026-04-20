@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% load i18n erp_money %}
+
+{% block title %}{% trans "Daily Sales" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with
+    title=_("Daily Sales")
+    subtitle=_("Sales totals by day for a selected month") %}
+
+<form method="get" class="card shadow-sm mb-3">
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-3 mb-2">
+                <label class="small text-muted">{% trans "Year" %}</label>
+                <input type="number" name="year" class="form-control" value="{{ year }}" min="2000" max="2100">
+            </div>
+            <div class="col-md-3 mb-2">
+                <label class="small text-muted">{% trans "Month" %}</label>
+                <select name="month" class="form-control selectpicker">
+                    {% for m in months %}
+                        <option value="{{ m.0 }}" {% if m.0 == month %}selected{% endif %}>{{ m.1 }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3 mb-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary mr-2">
+                    <i class="fas fa-chart-bar"></i> {% trans "Generate" %}
+                </button>
+                <button type="button" onclick="window.print()" class="btn btn-outline-secondary">
+                    <i class="fas fa-print"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</form>
+
+{% if rows %}
+<div class="card shadow-sm mb-3">
+    <div class="card-body">
+        <canvas id="dailySalesChart" height="80"></canvas>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <table class="table mb-0">
+            <thead>
+                <tr>
+                    <th>{% trans "Date" %}</th>
+                    <th class="text-right">{% trans "Orders" %}</th>
+                    <th class="text-right">{% trans "Quantity" %}</th>
+                    <th class="text-right">{% trans "Total" %}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in rows %}
+                    <tr>
+                        <td>{{ r.sale_date }}</td>
+                        <td class="text-right">{{ r.order_count }}</td>
+                        <td class="text-right">{{ r.total_qty }}</td>
+                        <td class="text-right">{{ r.total_sales|money:currency }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr class="font-weight-bold" style="background:#f8f9fa;">
+                    <td>{% trans "Totals" %}</td>
+                    <td class="text-right">{{ total_orders }}</td>
+                    <td class="text-right">{{ total_qty }}</td>
+                    <td class="text-right">{{ total_sales|money:currency }}</td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+{% else %}
+<div class="card shadow-sm"><div class="card-body text-center text-muted p-5">
+    <i class="fas fa-calendar-alt fa-3x mb-3 opacity-50"></i>
+    <p>{% trans "No sales for the selected month." %}</p>
+</div></div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if rows %}
+<script>
+new Chart(document.getElementById('dailySalesChart'), {
+    type: 'line',
+    data: {
+        labels: {{ chart_labels|safe }},
+        datasets: [{
+            label: "{% trans 'Daily sales' %}",
+            data: {{ chart_values|safe }},
+            borderColor: 'rgba(52, 152, 219, 1)',
+            backgroundColor: 'rgba(52, 152, 219, 0.15)',
+            fill: true, tension: 0.3
+        }]
+    },
+    options: { responsive: true, scales: { y: { beginAtZero: true } } }
+});
+</script>
+{% endif %}
+{% endblock %}

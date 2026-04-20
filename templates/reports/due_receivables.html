@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% load i18n erp_money %}
+
+{% block title %}{% trans "Due Receivables" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with
+    title=_("Due Receivables")
+    subtitle=_("Outstanding customer balances as of a date") %}
+
+<form method="get" class="card shadow-sm mb-3">
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-3 mb-2">
+                <label class="small text-muted">{% trans "As of" %}</label>
+                <input type="date" name="as_of" class="form-control"
+                       value="{{ as_of|default:'' }}">
+            </div>
+            <div class="col-md-3 mb-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary mr-2">
+                    <i class="fas fa-chart-bar"></i> {% trans "Generate" %}
+                </button>
+                <button type="button" onclick="window.print()" class="btn btn-outline-secondary">
+                    <i class="fas fa-print"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</form>
+
+{% if rows %}
+<div class="card shadow-sm">
+    <div class="card-header d-flex justify-content-between">
+        <strong>{% trans "Customers with outstanding balance" %}</strong>
+        <span>
+            {% trans "Total due" %}:
+            <strong class="text-danger">{{ total_due|money:currency }}</strong>
+        </span>
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>{% trans "Customer code" %}</th>
+                    <th>{% trans "Customer name" %}</th>
+                    <th class="text-right">{% trans "Balance due" %}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in rows %}
+                    <tr>
+                        <td><code>{{ r.customer_code }}</code></td>
+                        <td>{{ r.customer_name }}</td>
+                        <td class="text-right text-danger">{{ r.total_due|money:currency }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<div class="card shadow-sm"><div class="card-body text-center p-5">
+    <i class="fas fa-check-circle fa-3x mb-3 text-success"></i>
+    <h5>{% trans "No outstanding receivables" %}</h5>
+    <p class="text-muted mb-0">{% trans "All customer balances are settled as of this date." %}</p>
+</div></div>
+{% endif %}
+{% endblock %}

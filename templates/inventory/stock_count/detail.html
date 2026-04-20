@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% blocktrans with ref=object.reference %}Count {{ ref }}{% endblocktrans %}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h4 class="mb-0">{% trans "Stock count" %} <code>{{ object.reference }}</code></h4>
+        <p class="text-muted small mb-0">{{ object.count_date }} — {{ object.warehouse.name }}</p>
+    </div>
+    <div>
+        <a href="{% url 'inventory:stock_count_list' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left"></i> {% trans "Back" %}
+        </a>
+        {% if object.status == "draft" %}
+            <form method="post" action="{% url 'inventory:stock_count_finalise' object.pk %}" class="d-inline" onsubmit="return confirm('{% trans "Finalise this count? Any variances will be posted as a stock adjustment and cannot be undone." %}');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-success ml-2">
+                    <i class="fas fa-check-double"></i> {% trans "Finalise count" %}
+                </button>
+            </form>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header d-flex justify-content-between">
+                <strong>{% trans "Lines" %}</strong>
+                <span class="text-muted small">
+                    {% blocktrans count counter=variance_count %}
+                        {{ counter }} line with variance
+                    {% plural %}
+                        {{ counter }} lines with variance
+                    {% endblocktrans %}
+                </span>
+            </div>
+            <div class="card-body p-0">
+                <table class="table mb-0">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>{% trans "Product" %}</th>
+                            <th class="text-right">{% trans "Expected" %}</th>
+                            <th class="text-right">{% trans "Counted" %}</th>
+                            <th class="text-right">{% trans "Variance" %}</th>
+                            <th>{% trans "UoM" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for line in object.lines.all %}
+                            <tr {% if line.variance != 0 %}class="table-warning"{% endif %}>
+                                <td>{{ line.line_number }}</td>
+                                <td>
+                                    <strong>{{ line.product.name }}</strong><br>
+                                    <small class="text-muted"><code>{{ line.product.code }}</code></small>
+                                </td>
+                                <td class="text-right">{{ line.expected_quantity }}</td>
+                                <td class="text-right"><strong>{{ line.counted_quantity }}</strong></td>
+                                <td class="text-right {% if line.variance < 0 %}text-danger{% elif line.variance > 0 %}text-success{% endif %}">
+                                    {% if line.variance > 0 %}+{% endif %}{{ line.variance }}
+                                </td>
+                                <td>{{ line.uom_code }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        {% if object.memo %}
+            <div class="card shadow-sm mb-3">
+                <div class="card-header"><strong>{% trans "Notes" %}</strong></div>
+                <div class="card-body">{{ object.memo|linebreaksbr }}</div>
+            </div>
+        {% endif %}
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header"><strong>{% trans "Summary" %}</strong></div>
+            <ul class="list-group list-group-flush">
+                <li class="list-group-item d-flex justify-content-between">
+                    <span class="text-muted">{% trans "Status" %}</span>
+                    <span>
+                        {% if object.status == "finalised" %}
+                            <span class="badge badge-success">{% trans "Finalised" %}</span>
+                        {% elif object.status == "draft" %}
+                            <span class="badge badge-warning">{% trans "Draft" %}</span>
+                        {% else %}
+                            <span class="badge badge-secondary">{% trans "Cancelled" %}</span>
+                        {% endif %}
+                    </span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between">
+                    <span class="text-muted">{% trans "Warehouse" %}</span>
+                    <span>{{ object.warehouse.name }}</span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between">
+                    <span class="text-muted">{% trans "Total lines" %}</span>
+                    <span>{{ object.lines.count }}</span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between">
+                    <span class="text-muted">{% trans "Variance lines" %}</span>
+                    <span class="font-weight-bold {% if variance_count > 0 %}text-warning{% endif %}">{{ variance_count }}</span>
+                </li>
+                {% if object.finalised_at %}
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span class="text-muted">{% trans "Finalised at" %}</span>
+                        <span class="small">{{ object.finalised_at|date:"Y-m-d H:i" }}</span>
+                    </li>
+                {% endif %}
+                {% if object.adjustment %}
+                    <li class="list-group-item">
+                        <div class="text-muted small mb-1">{% trans "Generated adjustment" %}</div>
+                        <a href="{% url 'inventory:adjustment_detail' object.adjustment_id %}">
+                            <code>{{ object.adjustment.reference }}</code>
+                        </a>
+                    </li>
+                {% endif %}
+            </ul>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-body small text-muted">
+                <i class="fas fa-info-circle"></i>
+                {% trans "Finalising a count with variances creates a stock adjustment to reconcile the difference. The count itself doesn't emit stock movements — the adjustment does." %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

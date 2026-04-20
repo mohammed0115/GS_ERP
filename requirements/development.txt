@@ -1,0 +1,12 @@
+-r base.txt
+
+# Debugging
+django-debug-toolbar==4.*
+ipython==8.*
+
+# Code quality
+ruff==0.6.*
+mypy==1.11.*
+django-stubs[compatible-mypy]==5.0.*
+djangorestframework-stubs==3.15.*
+pre-commit==3.*

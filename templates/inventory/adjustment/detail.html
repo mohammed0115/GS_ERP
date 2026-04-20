@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% blocktrans with ref=object.reference %}Adjustment {{ ref }}{% endblocktrans %}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h4 class="mb-0">{% trans "Adjustment" %} <code>{{ object.reference }}</code></h4>
+        <p class="text-muted small mb-0">
+            {{ object.adjustment_date }} — {{ object.warehouse.name }}
+        </p>
+    </div>
+    <a href="{% url 'inventory:adjustment_list' %}" class="btn btn-outline-secondary">
+        <i class="fas fa-arrow-left"></i> {% trans "Back" %}
+    </a>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header"><strong>{% trans "Lines" %}</strong></div>
+            <div class="card-body p-0">
+                <table class="table mb-0">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>{% trans "Product" %}</th>
+                            <th class="text-right">{% trans "Signed qty" %}</th>
+                            <th>{% trans "UoM" %}</th>
+                            <th>{% trans "Direction" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for line in object.lines.all %}
+                            <tr>
+                                <td>{{ line.line_number }}</td>
+                                <td>
+                                    <strong>{{ line.product.name }}</strong><br>
+                                    <small class="text-muted"><code>{{ line.product.code }}</code></small>
+                                </td>
+                                <td class="text-right {% if line.signed_quantity < 0 %}text-danger{% else %}text-success{% endif %}">
+                                    {% if line.signed_quantity >= 0 %}+{% endif %}{{ line.signed_quantity }}
+                                </td>
+                                <td>{{ line.uom_code }}</td>
+                                <td>
+                                    {% if line.signed_quantity < 0 %}
+                                        <span class="badge badge-danger">{% trans "OUT" %}</span>
+                                    {% else %}
+                                        <span class="badge badge-success">{% trans "IN" %}</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        {% if object.memo %}
+            <div class="card shadow-sm mb-3">
+                <div class="card-header"><strong>{% trans "Notes" %}</strong></div>
+                <div class="card-body">{{ object.memo|linebreaksbr }}</div>
+            </div>
+        {% endif %}
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header"><strong>{% trans "Summary" %}</strong></div>
+            <ul class="list-group list-group-flush">
+                <li class="list-group-item d-flex justify-content-between">
+                    <span class="text-muted">{% trans "Status" %}</span>
+                    <span>
+                        {% if object.status == "posted" %}
+                            <span class="badge badge-success">{% trans "Posted" %}</span>
+                        {% elif object.status == "draft" %}
+                            <span class="badge badge-secondary">{% trans "Draft" %}</span>
+                        {% else %}
+                            <span class="badge badge-danger">{% trans "Cancelled" %}</span>
+                        {% endif %}
+                    </span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between">
+                    <span class="text-muted">{% trans "Reason" %}</span>
+                    <span>{{ object.get_reason_display }}</span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between">
+                    <span class="text-muted">{% trans "Warehouse" %}</span>
+                    <span>{{ object.warehouse.name }}</span>
+                </li>
+                {% if object.posted_at %}
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span class="text-muted">{% trans "Posted at" %}</span>
+                        <span class="small">{{ object.posted_at|date:"Y-m-d H:i" }}</span>
+                    </li>
+                {% endif %}
+            </ul>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-body small text-muted">
+                <i class="fas fa-info-circle"></i>
+                {% trans "Posted adjustments are immutable. To reverse one, create a new adjustment with opposite signs." %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

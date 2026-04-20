@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% load i18n erp_permissions erp_money %}
+
+{% block title %}{% trans "Expenses" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with
+    title=_("Expenses")
+    subtitle=_("Operational expense ledger") %}
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        {% if object_list %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>{% trans "Reference" %}</th>
+                            <th>{% trans "Date" %}</th>
+                            <th>{% trans "Category" %}</th>
+                            <th>{% trans "Note" %}</th>
+                            <th class="text-right">{% trans "Amount" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for obj in object_list %}
+                        <tr>
+                            <td><code>{{ obj.reference }}</code></td>
+                            <td>{{ obj.expense_date }}</td>
+                            <td>{% if obj.category %}{{ obj.category.name }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                            <td class="text-truncate" style="max-width: 300px;">{{ obj.memo|default:"—" }}</td>
+                            <td class="text-right">{{ obj.amount|money:obj.currency_code }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="text-center text-muted p-5">
+                <i class="fas fa-receipt fa-3x mb-2 opacity-50"></i>
+                <p class="mb-0">{% trans "No expenses recorded." %}</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

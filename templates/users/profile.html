@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "My profile" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with
+    title=_("My profile")
+    subtitle=_("Your account details") %}
+
+<div class="row">
+    <div class="col-md-4">
+        <div class="card shadow-sm mb-3">
+            <div class="card-body text-center">
+                <i class="fas fa-user-circle fa-5x text-muted mb-3"></i>
+                <h5 class="mb-1">{{ request.user.full_name|default:request.user.email }}</h5>
+                <p class="text-muted mb-2">{{ request.user.email }}</p>
+                {% if request.user.is_staff %}
+                    <span class="badge badge-info">{% trans "Staff" %}</span>
+                {% endif %}
+                {% if request.user.is_superuser %}
+                    <span class="badge badge-danger">{% trans "Superuser" %}</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <a href="{% url 'users:change_password' %}" class="btn btn-outline-primary btn-block mb-2">
+            <i class="fas fa-key"></i> {% trans "Change password" %}
+        </a>
+    </div>
+
+    <div class="col-md-8">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header"><strong>{% trans "Profile" %}</strong></div>
+            <ul class="list-group list-group-flush">
+                <li class="list-group-item d-flex justify-content-between">
+                    <span class="text-muted">{% trans "Email" %}</span>
+                    <span>{{ request.user.email }}</span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between">
+                    <span class="text-muted">{% trans "First name" %}</span>
+                    <span>{{ request.user.first_name|default:"—" }}</span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between">
+                    <span class="text-muted">{% trans "Last name" %}</span>
+                    <span>{{ request.user.last_name|default:"—" }}</span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between">
+                    <span class="text-muted">{% trans "Phone" %}</span>
+                    <span>{{ request.user.phone|default:"—" }}</span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between">
+                    <span class="text-muted">{% trans "Last login" %}</span>
+                    <span>{{ request.user.last_login|date:"Y-m-d H:i"|default:_("Never") }}</span>
+                </li>
+            </ul>
+        </div>
+
+        {% if memberships %}
+            <div class="card shadow-sm mb-3">
+                <div class="card-header"><strong>{% trans "Organizations" %}</strong></div>
+                <ul class="list-group list-group-flush">
+                    {% for m in memberships %}
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>
+                                <strong>{{ m.organization.name }}</strong>
+                                {% if m.branch %}<span class="text-muted">— {{ m.branch.name }}</span>{% endif %}
+                            </span>
+                            <span class="badge badge-info">{{ m.role }}</span>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        {% endif %}
+
+        <div class="card shadow-sm">
+            <div class="card-header"><strong>{% trans "Groups" %}</strong></div>
+            <div class="card-body">
+                {% for g in request.user.groups.all %}
+                    <span class="badge badge-secondary mr-1">{{ g.name }}</span>
+                {% empty %}
+                    <p class="text-muted mb-0">{% trans "Not a member of any role group." %}</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
