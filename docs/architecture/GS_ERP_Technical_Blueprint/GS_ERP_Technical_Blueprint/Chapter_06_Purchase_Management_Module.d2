@@ -1,0 +1,35 @@
+direction: right
+
+Purchase_Management_Module: {
+  shape: rectangle
+  label: "موديول إدارة المشتريات"
+
+  Sub_Modules: {
+    shape: rectangle
+    label: "الموديولات الفرعية"
+
+    Purchase_Orders: {
+      shape: rectangle
+      label: "أوامر الشراء (Purchase Orders)"
+    }
+    Purchase_Invoices: {
+      shape: rectangle
+      label: "فواتير المشتريات (Purchase Invoices)"
+    }
+    Goods_Receipt: {
+      shape: rectangle
+      label: "استلام البضائع (Goods Receipt)"
+    }
+  }
+
+  Other_ERP_Modules: {
+    shape: cloud
+    label: "موديولات ERP أخرى"
+  }
+
+  Sub_Modules.Purchase_Orders -> Sub_Modules.Goods_Receipt: "تؤدي إلى"
+  Sub_Modules.Goods_Receipt -> Sub_Modules.Purchase_Invoices: "تطابق مع"
+
+  Other_ERP_Modules -> Sub_Modules.Purchase_Orders: "تنشئ طلبات"
+  Sub_Modules.Purchase_Invoices -> Other_ERP_Modules: "ترسل قيود محاسبية"
+}

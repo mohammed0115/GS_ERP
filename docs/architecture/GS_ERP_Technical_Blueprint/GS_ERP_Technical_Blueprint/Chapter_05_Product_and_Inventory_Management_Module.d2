@@ -1,0 +1,39 @@
+direction: right
+
+Product_Inventory_Module: {
+  shape: rectangle
+  label: "موديول إدارة المنتجات والمخزون"
+
+  Sub_Modules: {
+    shape: rectangle
+    label: "الموديولات الفرعية"
+
+    Products: {
+      shape: rectangle
+      label: "المنتجات (Products)"
+    }
+    Inventory_Levels: {
+      shape: rectangle
+      label: "مستويات المخزون (Inventory Levels)"
+    }
+    Warehouses: {
+      shape: rectangle
+      label: "المستودعات (Warehouses)"
+    }
+    Stock_Transactions: {
+      shape: rectangle
+      label: "حركات المخزون (Stock Transactions)"
+    }
+  }
+
+  Other_ERP_Modules: {
+    shape: cloud
+    label: "موديولات ERP أخرى"
+  }
+
+  Sub_Modules.Products -> Sub_Modules.Inventory_Levels: "تحدد كميات"
+  Sub_Modules.Warehouses -> Sub_Modules.Inventory_Levels: "تحدد مواقع"
+  Sub_Modules.Stock_Transactions -> Sub_Modules.Inventory_Levels: "تعدل"
+
+  Other_ERP_Modules -> Sub_Modules.Stock_Transactions: "تنشئ حركات (مبيعات، مشتريات)"
+}

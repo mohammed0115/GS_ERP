@@ -1,0 +1,34 @@
+direction: right
+
+Users_Roles_Module: {
+  shape: rectangle
+  label: "موديول المستخدمين والصلاحيات"
+
+  Sub_Modules: {
+    shape: rectangle
+    label: "الموديولات الفرعية"
+
+    Users: {
+      shape: rectangle
+      label: "المستخدمون (Users)"
+    }
+    Roles: {
+      shape: rectangle
+      label: "الأدوار (Roles)"
+    }
+    Permissions: {
+      shape: rectangle
+      label: "الصلاحيات (Permissions)"
+    }
+  }
+
+  Other_ERP_Modules: {
+    shape: cloud
+    label: "موديولات ERP أخرى"
+  }
+
+  Sub_Modules.Users -> Sub_Modules.Roles: "يُعين لـ"
+  Sub_Modules.Roles -> Sub_Modules.Permissions: "يمتلك"
+
+  Other_ERP_Modules -> Sub_Modules.Users: "تتحقق من صلاحيات"
+}

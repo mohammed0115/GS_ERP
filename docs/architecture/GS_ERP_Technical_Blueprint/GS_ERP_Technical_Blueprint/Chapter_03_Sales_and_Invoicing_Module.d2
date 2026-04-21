@@ -1,0 +1,35 @@
+direction: right
+
+Sales_and_Invoicing_Module: {
+  shape: rectangle
+  label: "موديول المبيعات والفواتير"
+
+  Sub_Modules: {
+    shape: rectangle
+    label: "الموديولات الفرعية"
+
+    Sales_Orders: {
+      shape: rectangle
+      label: "أوامر المبيعات (Sales Orders)"
+    }
+    Invoices: {
+      shape: rectangle
+      label: "الفواتير (Invoices)"
+    }
+    Payments: {
+      shape: rectangle
+      label: "المدفوعات (Payments)"
+    }
+  }
+
+  Other_ERP_Modules: {
+    shape: cloud
+    label: "موديولات ERP أخرى"
+  }
+
+  Sub_Modules.Sales_Orders -> Sub_Modules.Invoices: "ينشئ"
+  Sub_Modules.Invoices -> Sub_Modules.Payments: "يتلقى"
+
+  Other_ERP_Modules -> Sub_Modules.Sales_Orders: "يتلقى طلبات"
+  Sub_Modules.Invoices -> Other_ERP_Modules: "يرسل قيود محاسبية"
+}

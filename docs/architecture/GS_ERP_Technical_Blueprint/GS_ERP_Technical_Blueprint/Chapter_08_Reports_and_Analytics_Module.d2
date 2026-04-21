@@ -1,0 +1,34 @@
+direction: right
+
+Reports_Analytics_Module: {
+  shape: rectangle
+  label: "موديول التقارير والتحليلات"
+
+  Sub_Modules: {
+    shape: rectangle
+    label: "الموديولات الفرعية"
+
+    Aggregated_Data: {
+      shape: cylinder
+      label: "بيانات التقارير المجمعة (Aggregated Data)"
+    }
+    Report_Definitions: {
+      shape: rectangle
+      label: "تعريفات التقارير (Report Definitions)"
+    }
+    Report_Engine: {
+      shape: rectangle
+      label: "محرك توليد التقارير (Report Engine)"
+    }
+  }
+
+  Other_ERP_Modules: {
+    shape: cloud
+    label: "موديولات ERP أخرى"
+  }
+
+  Other_ERP_Modules -> Sub_Modules.Aggregated_Data: "توفر بيانات لـ"
+  Sub_Modules.Report_Definitions -> Sub_Modules.Report_Engine: "تستخدم بواسطة"
+  Sub_Modules.Report_Engine -> Sub_Modules.Aggregated_Data: "تستعلم من"
+  Sub_Modules.Report_Engine -> Other_ERP_Modules: "تستعلم من (مباشرة)"
+}

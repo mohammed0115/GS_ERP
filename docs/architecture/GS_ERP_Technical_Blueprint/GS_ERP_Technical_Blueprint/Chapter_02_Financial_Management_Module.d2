@@ -1,0 +1,39 @@
+direction: right
+
+Financial_Management_Module: {
+  shape: rectangle
+  label: "موديول إدارة المالية"
+
+  Sub_Modules: {
+    shape: rectangle
+    label: "الموديولات الفرعية"
+
+    General_Ledger: {
+      shape: rectangle
+      label: "دفتر الأستاذ العام (General Ledger)"
+    }
+    Accounts_Receivable: {
+      shape: rectangle
+      label: "الذمم المدينة (Accounts Receivable)"
+    }
+    Accounts_Payable: {
+      shape: rectangle
+      label: "الذمم الدائنة (Accounts Payable)"
+    }
+    Cash_and_Bank: {
+      shape: rectangle
+      label: "النقدية والبنوك (Cash & Bank)"
+    }
+  }
+
+  Other_ERP_Modules: {
+    shape: cloud
+    label: "موديولات ERP أخرى"
+  }
+
+  Sub_Modules.General_Ledger -> Sub_Modules.Accounts_Receivable: "يتلقى قيود"
+  Sub_Modules.General_Ledger -> Sub_Modules.Accounts_Payable: "يتلقى قيود"
+  Sub_Modules.General_Ledger -> Sub_Modules.Cash_and_Bank: "يتلقى قيود"
+
+  Other_ERP_Modules -> Sub_Modules.General_Ledger: "يرسل قيود محاسبية"
+}

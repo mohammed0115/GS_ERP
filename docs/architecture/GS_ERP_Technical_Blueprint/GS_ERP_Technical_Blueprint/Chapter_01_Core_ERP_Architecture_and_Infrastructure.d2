@@ -1,0 +1,48 @@
+direction: right
+
+ERP_System: {
+  shape: rectangle
+  label: "نظام تخطيط موارد المؤسسات (ERP)"
+
+  Subsystems: {
+    shape: rectangle
+    label: "الأنظمة الفرعية"
+
+    Database: {
+      shape: cylinder
+      label: "قاعدة البيانات (Database)"
+    }
+    Application_Layer: {
+      shape: rectangle
+      label: "طبقة التطبيق (Application Layer)"
+    }
+    Presentation_Layer: {
+      shape: rectangle
+      label: "طبقة العرض (Presentation Layer)"
+    }
+    Integration_Layer: {
+      shape: rectangle
+      label: "طبقة التكامل (Integration Layer)"
+    }
+  }
+
+  Users: {
+    shape: person
+    label: "المستخدمون (Users)"
+  }
+
+  External_Systems: {
+    shape: cloud
+    label: "الأنظمة الخارجية (External Systems)"
+  }
+
+  Users -> Presentation_Layer: "يتفاعل مع"
+  Presentation_Layer -> Application_Layer: "يستدعي وظائف"
+  Application_Layer -> Database: "يصل إلى البيانات"
+  Application_Layer -> Integration_Layer: "يتكامل مع"
+  Integration_Layer -> External_Systems: "يتصل بـ"
+
+  Subsystems.Database -> Subsystems.Application_Layer: "يخدم"
+  Subsystems.Application_Layer -> Subsystems.Presentation_Layer: "يوفر واجهة"
+  Subsystems.Application_Layer -> Subsystems.Integration_Layer: "يوفر خدمات"
+}

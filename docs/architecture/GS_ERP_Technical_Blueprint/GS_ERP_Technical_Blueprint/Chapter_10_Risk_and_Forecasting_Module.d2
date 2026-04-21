@@ -1,0 +1,33 @@
+direction: right
+
+Risk_Forecasting_Module: {
+  shape: rectangle
+  label: "موديول المخاطر والتنبؤ"
+
+  Sub_Modules: {
+    shape: rectangle
+    label: "الموديولات الفرعية"
+
+    Risk_Register: {
+      shape: rectangle
+      label: "سجل المخاطر (Risk Register)"
+    }
+    Forecasting_Data: {
+      shape: cylinder
+      label: "بيانات التنبؤ (Forecasting Data)"
+    }
+    Forecasting_Models: {
+      shape: rectangle
+      label: "نماذج التنبؤ (Forecasting Models)"
+    }
+  }
+
+  Other_ERP_Modules: {
+    shape: cloud
+    label: "موديولات ERP أخرى"
+  }
+
+  Other_ERP_Modules -> Sub_Modules.Forecasting_Data: "توفر بيانات تاريخية"
+  Sub_Modules.Forecasting_Models -> Sub_Modules.Forecasting_Data: "تستخدم بيانات"
+  Sub_Modules.Risk_Register -> Sub_Modules.Forecasting_Models: "تستفيد من التنبؤات"
+}

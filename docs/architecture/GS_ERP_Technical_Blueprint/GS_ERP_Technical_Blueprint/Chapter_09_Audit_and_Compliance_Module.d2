@@ -1,0 +1,33 @@
+direction: right
+
+Audit_Compliance_Module: {
+  shape: rectangle
+  label: "موديول التدقيق والامتثال"
+
+  Sub_Modules: {
+    shape: rectangle
+    label: "الموديولات الفرعية"
+
+    Activity_Log: {
+      shape: cylinder
+      label: "سجل الأنشطة (Activity Log)"
+    }
+    Audit_Findings: {
+      shape: rectangle
+      label: "نتائج التدقيق (Audit Findings)"
+    }
+    Compliance_Rules: {
+      shape: rectangle
+      label: "قواعد الامتثال (Compliance Rules)"
+    }
+  }
+
+  Other_ERP_Modules: {
+    shape: cloud
+    label: "موديولات ERP أخرى"
+  }
+
+  Other_ERP_Modules -> Sub_Modules.Activity_Log: "تسجل أنشطة في"
+  Sub_Modules.Compliance_Rules -> Sub_Modules.Activity_Log: "تراقب"
+  Sub_Modules.Audit_Findings -> Sub_Modules.Compliance_Rules: "تستند إلى"
+}

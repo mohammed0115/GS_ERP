@@ -1,0 +1,34 @@
+direction: right
+
+Customer_Supplier_Module: {
+  shape: rectangle
+  label: "موديول إدارة العملاء والموردين"
+
+  Sub_Modules: {
+    shape: rectangle
+    label: "الموديولات الفرعية"
+
+    Customers: {
+      shape: rectangle
+      label: "العملاء (Customers)"
+    }
+    Suppliers: {
+      shape: rectangle
+      label: "الموردون (Suppliers)"
+    }
+    Contacts: {
+      shape: rectangle
+      label: "جهات الاتصال (Contacts)"
+    }
+  }
+
+  Other_ERP_Modules: {
+    shape: cloud
+    label: "موديولات ERP أخرى"
+  }
+
+  Sub_Modules.Customers -> Other_ERP_Modules: "توفر بيانات لـ (مبيعات، مالية)"
+  Sub_Modules.Suppliers -> Other_ERP_Modules: "توفر بيانات لـ (مشتريات، مالية)"
+  Sub_Modules.Contacts -> Sub_Modules.Customers: "مرتبطة بـ"
+  Sub_Modules.Contacts -> Sub_Modules.Suppliers: "مرتبطة بـ"
+}

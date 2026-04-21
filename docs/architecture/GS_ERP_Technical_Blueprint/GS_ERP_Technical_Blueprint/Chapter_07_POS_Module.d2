@@ -1,0 +1,29 @@
+direction: right
+
+POS_Module: {
+  shape: rectangle
+  label: "موديول نقطة البيع (POS)"
+
+  Sub_Modules: {
+    shape: rectangle
+    label: "الموديولات الفرعية"
+
+    POSTransactions: {
+      shape: rectangle
+      label: "معاملات نقطة البيع (POS Transactions)"
+    }
+    PaymentMethods: {
+      shape: rectangle
+      label: "طرق الدفع (Payment Methods)"
+    }
+  }
+
+  Other_ERP_Modules: {
+    shape: cloud
+    label: "موديولات ERP أخرى"
+  }
+
+  Sub_Modules.POSTransactions -> Sub_Modules.PaymentMethods: "تستخدم"
+
+  Sub_Modules.POSTransactions -> Other_ERP_Modules: "تؤثر على (مبيعات، مخزون، مالية)"
+}

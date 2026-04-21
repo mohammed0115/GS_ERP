@@ -1,0 +1,38 @@
+direction: right
+
+General_Settings_Module: {
+  shape: rectangle
+  label: "موديول الإعدادات العامة"
+
+  Sub_Modules: {
+    shape: rectangle
+    label: "الموديولات الفرعية"
+
+    Company_Settings: {
+      shape: rectangle
+      label: "إعدادات الشركة (Company Settings)"
+    }
+    Financial_Settings: {
+      shape: rectangle
+      label: "الإعدادات المالية (Financial Settings)"
+    }
+    Localization_Settings: {
+      shape: rectangle
+      label: "إعدادات الأقلمة (Localization Settings)"
+    }
+    API_Settings: {
+      shape: rectangle
+      label: "إعدادات API (API Settings)"
+    }
+  }
+
+  Other_ERP_Modules: {
+    shape: cloud
+    label: "موديولات ERP أخرى"
+  }
+
+  Sub_Modules.Company_Settings -> Other_ERP_Modules: "توفر معلومات أساسية لـ"
+  Sub_Modules.Financial_Settings -> Other_ERP_Modules: "تحدد سلوك مالي لـ"
+  Sub_Modules.Localization_Settings -> Other_ERP_Modules: "تحدد تنسيقات لـ"
+  Sub_Modules.API_Settings -> Other_ERP_Modules: "تتيح تكامل مع"
+}
