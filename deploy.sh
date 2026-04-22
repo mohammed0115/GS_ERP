@@ -4,7 +4,7 @@
 # Usage:  bash deploy.sh [--init-ssl]
 set -euo pipefail
 
-COMPOSE="docker compose -f docker/docker-compose.prod.yml"
+COMPOSE="docker compose -f docker/docker-compose.prod.yml --env-file .env.production"
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 red()   { echo -e "\e[31m$*\e[0m"; }
@@ -60,6 +60,6 @@ $COMPOSE ps
 
 green "Deployment complete!"
 echo ""
-echo "  Logs:    docker compose -f docker/docker-compose.prod.yml logs -f"
-echo "  Shell:   docker compose -f docker/docker-compose.prod.yml exec api python manage.py shell"
-echo "  Restart: docker compose -f docker/docker-compose.prod.yml restart"
+echo "  Logs:    docker compose -f docker/docker-compose.prod.yml --env-file .env.production logs -f"
+echo "  Shell:   docker compose -f docker/docker-compose.prod.yml --env-file .env.production exec api python manage.py shell"
+echo "  Restart: docker compose -f docker/docker-compose.prod.yml --env-file .env.production restart"
