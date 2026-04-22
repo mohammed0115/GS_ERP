@@ -34,6 +34,7 @@ local_settings.py
 .env
 .env.*
 !.env.example
+!.env.production.example
 
 # Editors
 .idea/

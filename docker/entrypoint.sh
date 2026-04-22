@@ -24,6 +24,12 @@ echo ">> MySQL is up."
 if [ "${RUN_MIGRATIONS:-1}" = "1" ]; then
     echo ">> Applying migrations ..."
     python manage.py migrate --noinput
+
+    echo ">> Compiling translations ..."
+    python manage.py compilemessages --locale ar || true
+
+    echo ">> Collecting static files ..."
+    python manage.py collectstatic --noinput --clear || true
 fi
 
 exec "$@"

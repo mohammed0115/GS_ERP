@@ -12,7 +12,7 @@ redis==5.*
 
 # Background work
 celery==5.4.*
-django-celery-beat==2.6.*
+django-celery-beat>=2.7
 django-celery-results==2.5.*
 
 # Document / PDF generation
