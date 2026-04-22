@@ -3,13 +3,14 @@ from __future__ import annotations
 
 from django.urls import path
 
-from apps.users.interfaces.http.views import LoginView, LogoutView, MeView, RefreshView
+from apps.users.interfaces.http.views import LoginView, LogoutView, MeView, OTPVerifyView, RefreshView
 
 app_name = "users_api"
 
 urlpatterns = [
-    path("login/", LoginView.as_view(), name="login"),
-    path("refresh/", RefreshView.as_view(), name="refresh"),
-    path("logout/", LogoutView.as_view(), name="logout"),
-    path("me/", MeView.as_view(), name="me"),
+    path("login/",      LoginView.as_view(),     name="login"),
+    path("verify-otp/", OTPVerifyView.as_view(), name="verify_otp"),
+    path("refresh/",    RefreshView.as_view(),   name="refresh"),
+    path("logout/",     LogoutView.as_view(),    name="logout"),
+    path("me/",         MeView.as_view(),        name="me"),
 ]

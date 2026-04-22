@@ -17,15 +17,19 @@ from datetime import datetime, timedelta, timezone
 
 from django import forms
 from django.contrib.auth import authenticate, get_user_model, login
+from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib.auth.models import Group, Permission
 from django.contrib.messages.views import SuccessMessageMixin
+from django.core.mail import send_mail
 from django.db import transaction
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
 from django.views.generic import CreateView, ListView, TemplateView, UpdateView, View
 from django.contrib import messages as django_messages
+from django.conf import settings
 
+from apps.users.infrastructure.models import OTPCode
 from common.forms import BootstrapFormMixin
 
 
@@ -523,6 +527,79 @@ class NotificationMarkAllReadView(LoginRequiredMixin, View):
         ).update(status="read")
         django_messages.success(request, "All notifications marked as read.")
         return redirect("users:notifications")
+
+
+def _send_otp_email(user, code: str) -> None:
+    send_mail(
+        subject="Your GS ERP verification code",
+        message=(
+            f"Hello {user.first_name or user.email},\n\n"
+            f"Your one-time verification code is:\n\n"
+            f"  {code}\n\n"
+            f"This code expires in {settings.OTP_EXPIRY_MINUTES} minutes.\n"
+            f"If you did not request this, please ignore this email.\n\n"
+            f"— GS ERP"
+        ),
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[user.email],
+        fail_silently=False,
+    )
+
+
+class OTPLoginView(View):
+    """Replaces Django's built-in LoginView with an OTP-aware flow."""
+
+    template_name = "auth/login.html"
+
+    def get(self, request):
+        if request.user.is_authenticated:
+            return redirect(settings.LOGIN_REDIRECT_URL)
+        return render(request, self.template_name, {"form": AuthenticationForm()})
+
+    def post(self, request):
+        form = AuthenticationForm(request, data=request.POST)
+        if form.is_valid():
+            user = form.get_user()
+            otp = OTPCode.generate_for(user, expiry_minutes=settings.OTP_EXPIRY_MINUTES)
+            _send_otp_email(user, otp.code)
+            request.session["otp_pending_user_id"] = user.pk
+            return redirect("users:otp_verify")
+        return render(request, self.template_name, {"form": form})
+
+
+class OTPVerifyView(View):
+    template_name = "auth/otp_verify.html"
+
+    def get(self, request):
+        if "otp_pending_user_id" not in request.session:
+            return redirect("users:login")
+        return render(request, self.template_name, {})
+
+    def post(self, request):
+        user_id = request.session.get("otp_pending_user_id")
+        if not user_id:
+            return redirect("users:login")
+
+        code = request.POST.get("code", "").strip()
+        otp = (
+            OTPCode.objects
+            .filter(user_id=user_id, is_used=False)
+            .order_by("-created_at")
+            .first()
+        )
+
+        if not otp or not otp.is_valid() or otp.code != code:
+            django_messages.error(request, "Invalid or expired code. Please try again.")
+            return render(request, self.template_name, {})
+
+        otp.consume()
+        del request.session["otp_pending_user_id"]
+
+        User = get_user_model()
+        user = User.objects.get(pk=user_id)
+        user.backend = "django.contrib.auth.backends.ModelBackend"
+        login(request, user)
+        return redirect(request.GET.get("next") or settings.LOGIN_REDIRECT_URL)
 
 
 class RegisterView(View):

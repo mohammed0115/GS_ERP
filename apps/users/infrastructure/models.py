@@ -15,12 +15,16 @@ always scoped to the active tenant context.
 """
 from __future__ import annotations
 
+import secrets
+import string
+from datetime import timedelta
 from typing import Any
 
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.core.validators import validate_email
 from django.db import models
+from django.utils import timezone
 
 from apps.core.infrastructure.models import TimestampedModel
 from apps.tenancy.infrastructure.models import Branch, Organization
@@ -148,3 +152,36 @@ class OrganizationMember(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.user.email} @ {self.organization.name} ({self.role})"
+
+
+# ---------------------------------------------------------------------------
+# OTP
+# ---------------------------------------------------------------------------
+class OTPCode(TimestampedModel):
+    """One-time password for email-based login verification."""
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="otp_codes")
+    code = models.CharField(max_length=6)
+    expires_at = models.DateTimeField()
+    is_used = models.BooleanField(default=False)
+
+    class Meta:
+        db_table = "users_otp_code"
+        indexes = [models.Index(fields=("user", "is_used", "expires_at"))]
+
+    @classmethod
+    def generate_for(cls, user: "User", expiry_minutes: int = 10) -> "OTPCode":
+        cls.objects.filter(user=user, is_used=False).update(is_used=True)
+        code = "".join(secrets.choice(string.digits) for _ in range(6))
+        return cls.objects.create(
+            user=user,
+            code=code,
+            expires_at=timezone.now() + timedelta(minutes=expiry_minutes),
+        )
+
+    def is_valid(self) -> bool:
+        return not self.is_used and timezone.now() < self.expires_at
+
+    def consume(self) -> None:
+        self.is_used = True
+        self.save(update_fields=["is_used"])

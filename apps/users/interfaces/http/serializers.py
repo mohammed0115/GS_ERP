@@ -20,6 +20,11 @@ class RefreshSerializer(serializers.Serializer):
     refresh = serializers.CharField()
 
 
+class OTPVerifySerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    code = serializers.CharField(min_length=6, max_length=6)
+
+
 class OrganizationMembershipSerializer(serializers.ModelSerializer):
     organization_id = serializers.IntegerField(source="organization.id", read_only=True)
     organization_name = serializers.CharField(source="organization.name", read_only=True)
