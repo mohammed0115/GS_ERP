@@ -161,6 +161,38 @@
     document.getElementById("lines-body").addEventListener("input", updateTotals);
     bindRemove();
     updateTotals();
+
+    document.getElementById("je-form").addEventListener("submit", function (e) {
+        const dr = parseFloat(document.getElementById("total-debit").textContent) || 0;
+        const cr = parseFloat(document.getElementById("total-credit").textContent) || 0;
+        if (dr === 0 && cr === 0) {
+            e.preventDefault();
+            showBalanceError("{% trans 'Entry has no amounts. Add at least two lines.' %}");
+            return;
+        }
+        if (Math.abs(dr - cr) > 0.0001) {
+            e.preventDefault();
+            showBalanceError(
+                "{% trans 'Entry is not balanced' %}: " +
+                "{% trans 'Debit' %} " + dr.toFixed(2) + " ≠ {% trans 'Credit' %} " + cr.toFixed(2) +
+                ". {% trans 'Debits must equal credits before posting.' %}"
+            );
+        }
+    });
+
+    function showBalanceError(msg) {
+        let el = document.getElementById("je-balance-error");
+        if (!el) {
+            el = document.createElement("div");
+            el.id = "je-balance-error";
+            el.className = "alert alert-danger mt-3";
+            el.setAttribute("role", "alert");
+            const form = document.getElementById("je-form");
+            form.insertBefore(el, form.querySelector(".d-flex.justify-content-between"));
+        }
+        el.textContent = msg;
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
 })();
 </script>
 {% endblock %}

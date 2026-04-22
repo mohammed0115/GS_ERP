@@ -163,7 +163,7 @@ class Product(TenantOwnedModel, TimestampedModel, AuditMetaMixin):
         default=ProductTypeChoices.STANDARD,
     )
 
-    category = models.ForeignKey(Category, on_delete=models.PROTECT, related_name="products")
+    category = models.ForeignKey(Category, on_delete=models.PROTECT, related_name="products", null=True, blank=True)
     brand = models.ForeignKey(
         Brand, on_delete=models.PROTECT, related_name="products",
         null=True, blank=True,
