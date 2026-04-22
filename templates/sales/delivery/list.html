@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% load i18n erp_permissions erp_money %}
+
+{% block title %}{% trans "Delivery Notes" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with title=_("Delivery Notes") subtitle=_("Track dispatched goods") %}
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        {% if object_list %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>{% trans "Reference" %}</th>
+                            <th>{% trans "Delivery Date" %}</th>
+                            <th>{% trans "Sale" %}</th>
+                            <th>{% trans "Status" %}</th>
+                            <th style="width: 80px;">&nbsp;</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for obj in object_list %}
+                            <tr>
+                                <td><code>{{ obj.reference }}</code></td>
+                                <td>{{ obj.delivery_date }}</td>
+                                <td>
+                                    {% if obj.sale %}
+                                        <a href="{% url 'sales:detail' obj.sale_id %}">
+                                            {{ obj.sale.reference }}
+                                        </a>
+                                    {% else %}—{% endif %}
+                                </td>
+                                <td>
+                                    {% if obj.status == "draft" %}
+                                        <span class="badge badge-secondary">{% trans "Draft" %}</span>
+                                    {% elif obj.status == "dispatched" %}
+                                        <span class="badge badge-primary">{% trans "Dispatched" %}</span>
+                                    {% elif obj.status == "delivered" %}
+                                        <span class="badge badge-success">{% trans "Delivered" %}</span>
+                                    {% elif obj.status == "cancelled" %}
+                                        <span class="badge badge-danger">{% trans "Cancelled" %}</span>
+                                    {% else %}
+                                        <span class="badge badge-light">{{ obj.status }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>&nbsp;</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="text-center text-muted p-5">
+                <i class="fas fa-truck fa-3x mb-2 opacity-50"></i>
+                <p class="mb-0">{% trans "No delivery notes found." %}</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

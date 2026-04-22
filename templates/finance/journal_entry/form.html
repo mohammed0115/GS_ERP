@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "New Journal Entry" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with title=_("New Journal Entry") subtitle=_("Post a manual double-entry journal entry to the general ledger") %}
+
+<div class="card shadow-sm">
+    <div class="card-header"><strong>{% trans "Journal Entry" %}</strong></div>
+    <div class="card-body">
+        <form method="post" id="je-form" novalidate>
+            {% csrf_token %}
+
+            {# ---- Header ---- #}
+            <div class="row mb-3">
+                <div class="col-md-3">
+                    <label class="font-weight-bold">{% trans "Date" %} *</label>
+                    <input type="date" name="entry_date" class="form-control"
+                           value="{{ post.entry_date|default:'' }}" required>
+                </div>
+                <div class="col-md-3">
+                    <label class="font-weight-bold">{% trans "Reference" %} *</label>
+                    <input type="text" name="reference" class="form-control"
+                           value="{{ post.reference|default:'' }}"
+                           placeholder="JE-2026-001" required>
+                </div>
+                <div class="col-md-2">
+                    <label class="font-weight-bold">{% trans "Currency" %}</label>
+                    <input type="text" name="currency_code" class="form-control"
+                           value="{{ post.currency_code|default:'SAR' }}"
+                           maxlength="3" placeholder="SAR">
+                </div>
+                <div class="col-md-4">
+                    <label class="font-weight-bold">{% trans "Memo" %}</label>
+                    <input type="text" name="memo" class="form-control"
+                           value="{{ post.memo|default:'' }}"
+                           placeholder="{% trans 'Optional description' %}">
+                </div>
+            </div>
+
+            {# ---- Lines ---- #}
+            <h6 class="mt-4 mb-2">{% trans "Lines" %} <small class="text-muted">({% trans "minimum 2, debits must equal credits" %})</small></h6>
+            <div class="table-responsive">
+                <table class="table table-sm" id="lines-table">
+                    <thead class="thead-light">
+                        <tr>
+                            <th style="width:35%">{% trans "Account" %}</th>
+                            <th style="width:20%">{% trans "Debit" %}</th>
+                            <th style="width:20%">{% trans "Credit" %}</th>
+                            <th style="width:20%">{% trans "Memo" %}</th>
+                            <th style="width:5%"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="lines-body">
+                        <tr class="line-row">
+                            <td>
+                                <select name="account_id" class="form-control form-control-sm" required>
+                                    <option value="">— {% trans "select account" %} —</option>
+                                    {% for acc in accounts %}
+                                        <option value="{{ acc.id }}">{{ acc.code }} — {{ acc.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                            <td><input type="number" name="debit" class="form-control form-control-sm debit-col" step="0.0001" min="0" value="0"></td>
+                            <td><input type="number" name="credit" class="form-control form-control-sm credit-col" step="0.0001" min="0" value="0"></td>
+                            <td><input type="text" name="line_memo" class="form-control form-control-sm" placeholder="{% trans 'optional' %}"></td>
+                            <td></td>
+                        </tr>
+                        <tr class="line-row">
+                            <td>
+                                <select name="account_id" class="form-control form-control-sm" required>
+                                    <option value="">— {% trans "select account" %} —</option>
+                                    {% for acc in accounts %}
+                                        <option value="{{ acc.id }}">{{ acc.code }} — {{ acc.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                            <td><input type="number" name="debit" class="form-control form-control-sm debit-col" step="0.0001" min="0" value="0"></td>
+                            <td><input type="number" name="credit" class="form-control form-control-sm credit-col" step="0.0001" min="0" value="0"></td>
+                            <td><input type="text" name="line_memo" class="form-control form-control-sm" placeholder="{% trans 'optional' %}"></td>
+                            <td></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            {# ---- Totals ---- #}
+            <div class="d-flex justify-content-end mb-3">
+                <div class="mr-4 text-right">
+                    <small class="text-muted d-block">{% trans "Total Debit" %}</small>
+                    <strong id="total-debit">0.00</strong>
+                </div>
+                <div class="text-right">
+                    <small class="text-muted d-block">{% trans "Total Credit" %}</small>
+                    <strong id="total-credit">0.00</strong>
+                </div>
+            </div>
+
+            <div class="d-flex justify-content-between">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="add-line">
+                    <i class="fas fa-plus"></i> {% trans "Add line" %}
+                </button>
+                <div>
+                    <a href="{% url 'finance:journal_entry_list' %}" class="btn btn-secondary mr-2">{% trans "Cancel" %}</a>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save"></i> {% trans "Post Entry" %}
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+(function () {
+    const accountOptions = `{% for acc in accounts %}<option value="{{ acc.id }}">{{ acc.code }} — {{ acc.name }}</option>{% endfor %}`;
+
+    function newRow() {
+        const tr = document.createElement("tr");
+        tr.className = "line-row";
+        tr.innerHTML = `
+            <td><select name="account_id" class="form-control form-control-sm" required>
+                <option value="">— {% trans "select account" %} —</option>
+                ${accountOptions}
+            </select></td>
+            <td><input type="number" name="debit" class="form-control form-control-sm debit-col" step="0.0001" min="0" value="0"></td>
+            <td><input type="number" name="credit" class="form-control form-control-sm credit-col" step="0.0001" min="0" value="0"></td>
+            <td><input type="text" name="line_memo" class="form-control form-control-sm" placeholder="{% trans 'optional' %}"></td>
+            <td><button type="button" class="btn btn-xs btn-outline-danger remove-line"><i class="fas fa-times"></i></button></td>`;
+        return tr;
+    }
+
+    document.getElementById("add-line").addEventListener("click", function () {
+        document.getElementById("lines-body").appendChild(newRow());
+        bindRemove();
+        updateTotals();
+    });
+
+    function bindRemove() {
+        document.querySelectorAll(".remove-line").forEach(function (btn) {
+            btn.onclick = function () {
+                const rows = document.querySelectorAll(".line-row");
+                if (rows.length > 2) btn.closest("tr").remove();
+                updateTotals();
+            };
+        });
+    }
+
+    function updateTotals() {
+        let dr = 0, cr = 0;
+        document.querySelectorAll(".debit-col").forEach(function (el) { dr += parseFloat(el.value) || 0; });
+        document.querySelectorAll(".credit-col").forEach(function (el) { cr += parseFloat(el.value) || 0; });
+        document.getElementById("total-debit").textContent = dr.toFixed(4);
+        document.getElementById("total-credit").textContent = cr.toFixed(4);
+        const balanced = Math.abs(dr - cr) < 0.0001;
+        document.getElementById("total-debit").className = balanced ? "text-success" : "text-danger";
+        document.getElementById("total-credit").className = balanced ? "text-success" : "text-danger";
+    }
+
+    document.getElementById("lines-body").addEventListener("input", updateTotals);
+    bindRemove();
+    updateTotals();
+})();
+</script>
+{% endblock %}

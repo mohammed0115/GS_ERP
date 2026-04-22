@@ -1,0 +1,56 @@
+{% extends "_generic/list.html" %}
+{% load i18n erp_permissions %}
+
+{% block page_title %}{% trans "Leave Requests" %}{% endblock %}
+{% block header_title %}{% trans "Leave Requests" %}{% endblock %}
+{% block header_subtitle %}{% trans "Employee leave applications" %}{% endblock %}
+
+{% block create_url %}{% url 'hr:leave_request_create' %}{% endblock %}
+{% block create_label %}{% trans "New Request" %}{% endblock %}
+
+{% block table_head %}
+    <th>{% trans "Employee" %}</th>
+    <th>{% trans "Leave Type" %}</th>
+    <th>{% trans "From" %}</th>
+    <th>{% trans "To" %}</th>
+    <th>{% trans "Days" %}</th>
+    <th>{% trans "Status" %}</th>
+    <th style="width: 140px;">&nbsp;</th>
+{% endblock %}
+
+{% block table_body %}
+    {% for obj in object_list %}
+        <tr>
+            <td>{{ obj.employee.full_name }}</td>
+            <td>{{ obj.leave_type.name }}</td>
+            <td>{{ obj.start_date }}</td>
+            <td>{{ obj.end_date }}</td>
+            <td>{{ obj.days_requested }}</td>
+            <td>
+                {% if obj.status == "pending" %}
+                    <span class="badge badge-warning">{% trans "Pending" %}</span>
+                {% elif obj.status == "approved" %}
+                    <span class="badge badge-success">{% trans "Approved" %}</span>
+                {% elif obj.status == "rejected" %}
+                    <span class="badge badge-danger">{% trans "Rejected" %}</span>
+                {% elif obj.status == "cancelled" %}
+                    <span class="badge badge-secondary">{% trans "Cancelled" %}</span>
+                {% else %}
+                    <span class="badge badge-light">{{ obj.status }}</span>
+                {% endif %}
+            </td>
+            <td class="text-right">
+                {% if obj.status == "pending" and request.user|can:"hr.leave_requests.approve" %}
+                    <a href="{% url 'hr:leave_request_approve' obj.pk %}"
+                       class="btn btn-sm btn-outline-success" title="{% trans 'Approve' %}">
+                        <i class="fas fa-check"></i>
+                    </a>
+                    <a href="{% url 'hr:leave_request_reject' obj.pk %}"
+                       class="btn btn-sm btn-outline-danger" title="{% trans 'Reject' %}">
+                        <i class="fas fa-times"></i>
+                    </a>
+                {% endif %}
+            </td>
+        </tr>
+    {% endfor %}
+{% endblock %}

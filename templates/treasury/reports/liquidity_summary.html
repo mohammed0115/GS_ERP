@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% load i18n erp_money %}
+
+{% block title %}{% trans "Liquidity Summary" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with title=_("Liquidity Summary") subtitle=_("Current balances across all active cashboxes and bank accounts") %}
+
+<div class="d-flex justify-content-end mb-3">
+    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">
+        <i class="fa fa-print"></i> {% trans "Print" %}
+    </button>
+</div>
+
+{% regroup rows by currency_code as currency_groups %}
+{% for group in currency_groups %}
+<h5 class="font-weight-bold mt-4 mb-2">{{ group.grouper }}</h5>
+<div class="card shadow-sm mb-4">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead class="thead-light">
+                <tr>
+                    <th>{% trans "Type" %}</th>
+                    <th>{% trans "Code" %}</th>
+                    <th>{% trans "Name" %}</th>
+                    <th class="text-right">{% trans "Current Balance" %}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in group.list %}
+                <tr>
+                    <td>
+                        {% if row.entity_type == "cashbox" %}
+                            <span class="badge badge-info">{% trans "Cashbox" %}</span>
+                        {% else %}
+                            <span class="badge badge-primary">{% trans "Bank Account" %}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ row.code }}</td>
+                    <td>{{ row.name }}</td>
+                    <td class="text-right font-weight-bold {% if row.current_balance >= 0 %}text-success{% else %}text-danger{% endif %}">
+                        {{ row.current_balance|erp_money }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot class="table-primary font-weight-bold">
+                <tr>
+                    <td colspan="3" class="text-right">{% trans "Total" %} {{ group.grouper }}</td>
+                    <td class="text-right">
+                        {% with total=0 %}
+                        {% for row in group.list %}
+                            {# sum done server-side is cleaner but template-only approach: #}
+                        {% endfor %}
+                        {% endwith %}
+                    </td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+{% empty %}
+<div class="alert alert-info">{% trans "No active cashboxes or bank accounts found." %}</div>
+{% endfor %}
+{% endblock %}

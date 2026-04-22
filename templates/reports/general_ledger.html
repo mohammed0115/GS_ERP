@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "General Ledger" %}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4>{% trans "General Ledger" %}</h4>
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <form method="get" class="form-inline">
+            <div class="form-group mr-2">
+                <label class="mr-1">{% trans "Account" %}</label>
+                <select name="account_id" class="form-control form-control-sm" required>
+                    <option value="">— {% trans "Select account" %} —</option>
+                    {% for acc in accounts %}
+                    <option value="{{ acc.id }}" {% if acc.id == account_id %}selected{% endif %}>
+                        {{ acc.code }} {{ acc.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group mr-2">
+                <label class="mr-1">{% trans "From" %}</label>
+                <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+            </div>
+            <div class="form-group mr-2">
+                <label class="mr-1">{% trans "To" %}</label>
+                <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm">{% trans "Show" %}</button>
+        </form>
+    </div>
+</div>
+
+{% if error %}
+<div class="alert alert-danger">{{ error }}</div>
+{% endif %}
+
+{% if statement %}
+<div class="card shadow-sm">
+    <div class="card-header">
+        <strong>{{ statement.account_code }} — {{ statement.account_name }}</strong>
+        <span class="text-muted ml-2">({{ statement.date_from }} – {{ statement.date_to }})</span>
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-sm table-bordered mb-0">
+            <thead class="thead-light">
+                <tr>
+                    <th>{% trans "Date" %}</th>
+                    <th>{% trans "Entry No." %}</th>
+                    <th>{% trans "Reference" %}</th>
+                    <th>{% trans "Memo" %}</th>
+                    <th class="text-right">{% trans "Debit" %}</th>
+                    <th class="text-right">{% trans "Credit" %}</th>
+                    <th class="text-right">{% trans "Balance" %}</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Opening balance row -->
+                <tr class="table-secondary font-weight-bold">
+                    <td>{{ statement.date_from }}</td>
+                    <td colspan="3">{% trans "Opening Balance" %}</td>
+                    <td></td>
+                    <td></td>
+                    <td class="text-right">{{ statement.opening_balance }}</td>
+                </tr>
+                {% for line in statement.lines %}
+                <tr>
+                    <td>{{ line.entry_date }}</td>
+                    <td>{{ line.entry_number }}</td>
+                    <td>{{ line.reference }}</td>
+                    <td>{{ line.memo }}</td>
+                    <td class="text-right">{% if line.debit %}{{ line.debit }}{% endif %}</td>
+                    <td class="text-right">{% if line.credit %}{{ line.credit }}{% endif %}</td>
+                    <td class="text-right {% if line.running_balance < 0 %}text-danger{% endif %}">
+                        {{ line.running_balance }}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="7" class="text-center text-muted">{% trans "No transactions in this period." %}</td>
+                </tr>
+                {% endfor %}
+                <!-- Closing balance row -->
+                <tr class="table-dark font-weight-bold">
+                    <td colspan="4">{% trans "Closing Balance" %}</td>
+                    <td></td>
+                    <td></td>
+                    <td class="text-right">{{ statement.closing_balance }}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% elif account_id %}
+<div class="alert alert-info">{% trans "No data for the selected parameters." %}</div>
+{% endif %}
+{% endblock %}

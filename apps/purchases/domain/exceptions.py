@@ -68,3 +68,41 @@ class PurchaseReturnExceedsOriginalError(ValidationError):
 
 class PurchaseReturnAlreadyPostedError(ConflictError):
     """Return is no longer a draft."""
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — Purchase Invoice / Vendor Payment / Note exceptions
+# ---------------------------------------------------------------------------
+class VendorInactiveError(PreconditionFailedError):
+    default_code = "vendor_inactive"
+    default_message = "The vendor is inactive and cannot be invoiced or paid."
+
+
+class PurchaseInvoiceHasNoLinesError(ValidationError):
+    default_code = "purchase_invoice_no_lines"
+    default_message = "Purchase invoice must have at least one line."
+
+
+class APAccountMissingError(PreconditionFailedError):
+    default_code = "ap_account_missing"
+    default_message = "Vendor has no Accounts Payable GL account configured."
+
+
+class ExpenseAccountMissingError(PreconditionFailedError):
+    default_code = "expense_account_missing"
+    default_message = "Purchase invoice line has no expense GL account configured."
+
+
+class AllocationExceedsPaymentError(ValidationError):
+    default_code = "allocation_exceeds_payment"
+    default_message = "Allocation amount exceeds available payment balance or invoice open balance."
+
+
+class PurchaseInvoiceAlreadyIssuedError(ConflictError):
+    default_code = "purchase_invoice_already_issued"
+    default_message = "This purchase invoice is already issued and cannot be modified."
+
+
+class VendorCreditNoteExceedsInvoiceError(ValidationError):
+    default_code = "vendor_credit_note_exceeds_invoice"
+    default_message = "Vendor credit note amount exceeds the invoice open balance."

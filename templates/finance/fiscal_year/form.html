@@ -1,0 +1,10 @@
+{% extends "_generic/form.html" %}
+{% load i18n %}
+{% block page_title %}{% trans "New Fiscal Year" %}{% endblock %}
+{% block form_title %}{% trans "Create fiscal year" %}{% endblock %}
+{% block form_fields %}
+    {% include "_partials/form_field.html" with field=form.name cols=6 %}
+    {% include "_partials/form_field.html" with field=form.start_date cols=6 %}
+    {% include "_partials/form_field.html" with field=form.end_date cols=6 %}
+{% endblock %}
+{% block cancel_url %}{% url 'finance:fiscal_year_list' %}{% endblock %}

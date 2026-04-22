@@ -158,6 +158,18 @@ class SaleLine(TenantOwnedModel, TimestampedModel):
         ]
 
 
+# Make Phase-2 invoice/receipt/note models discoverable by Django.
+from apps.sales.infrastructure.invoice_models import (  # noqa: E402, F401
+    SalesInvoice,
+    SalesInvoiceLine,
+    CustomerReceipt,
+    CustomerReceiptAllocation,
+    CreditNote,
+    CreditNoteLine,
+    DebitNote,
+    DebitNoteLine,
+)
+
 # ---------------------------------------------------------------------------
 # Sale return (Sprint 7)
 # ---------------------------------------------------------------------------
@@ -300,5 +312,182 @@ class SaleReturnLine(TenantOwnedModel, TimestampedModel):
                     & models.Q(tax_rate_percent__lte=100)
                 ),
                 name="sales_sale_return_line_percentages_in_range",
+            ),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# SaleQuotation (Gap 3 — ADR-020)
+# ---------------------------------------------------------------------------
+from apps.sales.domain.sale_quotation import QuotationStatus  # noqa: E402
+
+
+class QuotationStatusChoices(models.TextChoices):
+    DRAFT = QuotationStatus.DRAFT.value, "Draft"
+    SENT = QuotationStatus.SENT.value, "Sent"
+    ACCEPTED = QuotationStatus.ACCEPTED.value, "Accepted"
+    CONVERTED = QuotationStatus.CONVERTED.value, "Converted"
+    EXPIRED = QuotationStatus.EXPIRED.value, "Expired"
+    DECLINED = QuotationStatus.DECLINED.value, "Declined"
+
+
+class SaleQuotation(TenantOwnedModel, TimestampedModel, AuditMetaMixin):
+    """
+    Non-committing price quote for a customer.
+
+    No stock movement, no journal entry. Becomes a DRAFT Sale via
+    ConvertQuotationToSale.
+    """
+    reference = models.CharField(max_length=64, db_index=True)
+    quotation_date = models.DateField(db_index=True)
+    valid_until = models.DateField(null=True, blank=True)
+
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name="quotations")
+
+    status = models.CharField(
+        max_length=16, choices=QuotationStatusChoices.choices,
+        default=QuotationStatusChoices.DRAFT, db_index=True,
+    )
+
+    currency_code = models.CharField(max_length=3)
+
+    total_quantity = models.DecimalField(max_digits=18, decimal_places=4, default=0)
+    lines_subtotal = models.DecimalField(max_digits=18, decimal_places=4, default=0)
+    lines_discount = models.DecimalField(max_digits=18, decimal_places=4, default=0)
+    lines_tax = models.DecimalField(max_digits=18, decimal_places=4, default=0)
+    grand_total = models.DecimalField(max_digits=18, decimal_places=4, default=0)
+
+    notes = models.TextField(blank=True, default="")
+
+    # Set once CONVERTED — links back to the produced sale.
+    converted_sale = models.OneToOneField(
+        Sale, on_delete=models.PROTECT,
+        related_name="quotation", null=True, blank=True,
+    )
+    converted_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "sales_sale_quotation"
+        ordering = ("-quotation_date", "-id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("organization", "reference"),
+                name="sales_quotation_unique_reference_per_org",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=("organization", "customer", "status")),
+            models.Index(fields=("organization", "status", "valid_until")),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.reference} [{self.status}]"
+
+
+class SaleQuotationLine(TenantOwnedModel, TimestampedModel):
+    quotation = models.ForeignKey(SaleQuotation, on_delete=models.CASCADE, related_name="lines")
+    product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name="quotation_lines")
+    variant = models.ForeignKey(
+        ProductVariant, on_delete=models.PROTECT, related_name="quotation_lines",
+        null=True, blank=True,
+    )
+
+    line_number = models.PositiveSmallIntegerField()
+    quantity = models.DecimalField(max_digits=18, decimal_places=4)
+    uom_code = models.CharField(max_length=16)
+
+    unit_price = models.DecimalField(max_digits=18, decimal_places=4)
+    discount_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    tax_rate_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+
+    line_subtotal = models.DecimalField(max_digits=18, decimal_places=4)
+    line_discount = models.DecimalField(max_digits=18, decimal_places=4)
+    line_tax = models.DecimalField(max_digits=18, decimal_places=4)
+    line_total = models.DecimalField(max_digits=18, decimal_places=4)
+
+    class Meta:
+        db_table = "sales_sale_quotation_line"
+        ordering = ("quotation_id", "line_number")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("quotation", "line_number"),
+                name="sales_quotation_line_unique_line_number",
+            ),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# DeliveryNote (Gap 4)
+# ---------------------------------------------------------------------------
+from apps.sales.domain.delivery_note import DeliveryStatus  # noqa: E402
+
+
+class DeliveryStatusChoices(models.TextChoices):
+    DRAFT = DeliveryStatus.DRAFT.value, "Draft"
+    DISPATCHED = DeliveryStatus.DISPATCHED.value, "Dispatched"
+    DELIVERED = DeliveryStatus.DELIVERED.value, "Delivered"
+    CANCELLED = DeliveryStatus.CANCELLED.value, "Cancelled"
+
+
+class DeliveryNote(TenantOwnedModel, TimestampedModel, AuditMetaMixin):
+    """
+    Physical shipment record linked to a POSTED Sale.
+
+    A sale may have multiple delivery notes (partial shipments).
+    Cumulative quantity validation is enforced at the use-case layer.
+    """
+    sale = models.ForeignKey(Sale, on_delete=models.PROTECT, related_name="deliveries")
+    reference = models.CharField(max_length=64, db_index=True)
+    delivery_date = models.DateField(db_index=True)
+    status = models.CharField(
+        max_length=16, choices=DeliveryStatusChoices.choices,
+        default=DeliveryStatusChoices.DRAFT, db_index=True,
+    )
+    carrier = models.CharField(max_length=128, blank=True, default="")
+    tracking_number = models.CharField(max_length=128, blank=True, default="")
+    notes = models.TextField(blank=True, default="")
+    dispatched_at = models.DateTimeField(null=True, blank=True)
+    delivered_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "sales_delivery_note"
+        ordering = ("-delivery_date", "-id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("organization", "reference"),
+                name="sales_delivery_note_unique_reference_per_org",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=("organization", "sale", "status")),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.reference} [{self.status}]"
+
+
+class DeliveryNoteLine(TenantOwnedModel, TimestampedModel):
+    delivery_note = models.ForeignKey(
+        DeliveryNote, on_delete=models.CASCADE, related_name="lines",
+    )
+    product = models.ForeignKey(
+        Product, on_delete=models.PROTECT, related_name="delivery_lines",
+    )
+    line_number = models.PositiveSmallIntegerField()
+    quantity = models.DecimalField(max_digits=18, decimal_places=4)
+    uom_code = models.CharField(max_length=16)
+    note = models.TextField(blank=True, default="")
+
+    class Meta:
+        db_table = "sales_delivery_note_line"
+        ordering = ("delivery_note_id", "line_number")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("delivery_note", "line_number"),
+                name="sales_delivery_line_unique_line_number",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(quantity__gt=0),
+                name="sales_delivery_line_quantity_positive",
             ),
         ]

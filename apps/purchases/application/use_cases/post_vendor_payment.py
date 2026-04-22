@@ -1,0 +1,129 @@
+"""
+PostVendorPayment — posts a VendorPayment and creates the GL entry.
+
+GL pattern:
+  DR  vendor.payable_account   (Accounts Payable — reduces the liability)
+  CR  bank_account             (Cash / Bank)
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timezone
+
+from django.db import transaction
+
+from apps.purchases.infrastructure.payable_models import VendorPayment, VendorPaymentStatus
+
+
+@dataclass(frozen=True, slots=True)
+class PostVendorPaymentCommand:
+    payment_id: int
+    actor_id: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PostedVendorPayment:
+    payment_id: int
+    payment_number: str
+    journal_entry_id: int
+
+
+class PostVendorPayment:
+    """Use case. Stateless."""
+
+    def execute(self, command: PostVendorPaymentCommand) -> PostedVendorPayment:
+        try:
+            payment = VendorPayment.objects.select_related(
+                "vendor__payable_account",
+                "bank_account",
+            ).get(pk=command.payment_id)
+        except VendorPayment.DoesNotExist:
+            from apps.finance.domain.exceptions import AccountNotFoundError
+            raise AccountNotFoundError(f"VendorPayment {command.payment_id} not found.")
+
+        if payment.status != VendorPaymentStatus.DRAFT:
+            from apps.finance.domain.exceptions import JournalAlreadyPostedError
+            raise JournalAlreadyPostedError(
+                f"VendorPayment {payment.payment_number or payment.pk} is not in Draft status."
+            )
+
+        if not payment.vendor.is_active:
+            from apps.purchases.domain.exceptions import VendorInactiveError
+            raise VendorInactiveError(f"Vendor {payment.vendor.code} is not active.")
+
+        ap_account = payment.vendor.payable_account
+        if ap_account is None:
+            from apps.purchases.domain.exceptions import APAccountMissingError
+            raise APAccountMissingError(
+                f"Vendor {payment.vendor.code} has no payable_account."
+            )
+
+        from apps.finance.application.use_cases.post_journal_entry import (
+            PostJournalEntry, PostJournalEntryCommand, _assert_period_open,
+        )
+        from apps.finance.domain.entities import JournalEntryDraft
+        from apps.finance.domain.entities import JournalLine as DomainLine
+        from apps.core.domain.value_objects import Currency, Money
+
+        _assert_period_open(payment.payment_date)
+
+        currency_code = payment.currency_code or payment.vendor.currency_code or "SAR"
+        currency = Currency(code=currency_code)
+        payment_number = f"VPAY-{payment.payment_date.year}-{payment.pk:06d}"
+
+        domain_lines = [
+            # DR: AP (reduces the liability to the vendor)
+            DomainLine.debit_only(
+                ap_account.pk,
+                Money(payment.amount, currency),
+                memo=f"Vendor payment {payment_number}",
+            ),
+            # CR: Bank / Cash
+            DomainLine.credit_only(
+                payment.bank_account_id,
+                Money(payment.amount, currency),
+                memo=f"Vendor payment {payment_number}",
+            ),
+        ]
+
+        draft = JournalEntryDraft(
+            entry_date=payment.payment_date,
+            reference=f"VPAY-{payment.pk}",
+            memo=f"Vendor payment {payment_number} — {payment.vendor.name}",
+            lines=tuple(domain_lines),
+        )
+
+        with transaction.atomic():
+            result = PostJournalEntry().execute(
+                PostJournalEntryCommand(
+                    draft=draft,
+                    source_type="vendor_payment",
+                    source_id=payment.pk,
+                )
+            )
+            VendorPayment.objects.filter(pk=payment.pk).update(
+                status=VendorPaymentStatus.POSTED,
+                payment_number=payment_number,
+                journal_entry_id=result.entry_id,
+            )
+
+        from apps.audit.infrastructure.models import record_audit_event
+        record_audit_event(
+            event_type="vendor_payment.posted",
+            object_type="VendorPayment",
+            object_id=payment.pk,
+            actor_id=command.actor_id,
+            summary=f"Posted vendor payment {payment_number} {payment.amount} {currency_code}",
+            payload={
+                "payment_number": payment_number,
+                "vendor_code": payment.vendor.code,
+                "amount": str(payment.amount),
+                "journal_entry_id": result.entry_id,
+            },
+        )
+
+        return PostedVendorPayment(
+            payment_id=payment.pk,
+            payment_number=payment_number,
+            journal_entry_id=result.entry_id,
+        )

@@ -21,6 +21,7 @@ from __future__ import annotations
 from decimal import Decimal, InvalidOperation
 
 from django import template
+from django.urls import NoReverseMatch, reverse
 
 register = template.Library()
 
@@ -37,6 +38,7 @@ def _as_decimal(value) -> Decimal | None:
 
 
 @register.filter(name="money")
+@register.filter(name="erp_money")
 def money(value, currency: str = "") -> str:
     amount = _as_decimal(value)
     if amount is None:
@@ -67,3 +69,22 @@ def qty(value, uom_code: str = "") -> str:
     if "." in text:
         text = text.rstrip("0").rstrip(".")
     return f"{text} {uom_code}".strip()
+
+
+@register.filter(name="get_item")
+def get_item(dictionary, key):
+    """Look up a key in a dict: {{ my_dict|get_item:key }}."""
+    if not isinstance(dictionary, dict):
+        return None
+    return dictionary.get(key)
+
+
+@register.filter(name="url")
+def resolve_url(value: str) -> str:
+    """Resolve a named URL inside a template filter: {{ 'app:name'|url }}."""
+    if not value:
+        return "#"
+    try:
+        return reverse(value)
+    except NoReverseMatch:
+        return "#"

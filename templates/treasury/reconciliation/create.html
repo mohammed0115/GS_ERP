@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% load i18n erp_money %}
+
+{% block title %}{% trans "New Reconciliation" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with title=_("New Bank Reconciliation") back_url="treasury_web:reconciliation_list"|url %}
+
+<div class="card shadow-sm" style="max-width:600px">
+    <div class="card-body">
+        <p class="text-muted small mb-3">
+            {% trans "Select an unreconciled bank statement. Once created you can match lines and then finalize the reconciliation." %}
+        </p>
+        <form method="post">
+            {% csrf_token %}
+            <div class="form-group">
+                <label>{% trans "Bank Statement" %} <span class="text-danger">*</span></label>
+                <select name="statement_id" class="form-control selectpicker" data-live-search="true" required>
+                    <option value="">{% trans "Select…" %}</option>
+                    {% for s in statements %}
+                    <option value="{{ s.pk }}">
+                        {{ s.bank_account.code }} — {{ s.statement_date }}
+                        ({% trans "Closing" %}: {{ s.closing_balance|erp_money }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>{% trans "Notes" %}</label>
+                <textarea name="notes" class="form-control" rows="3"></textarea>
+            </div>
+            <button type="submit" class="btn btn-primary">{% trans "Create Reconciliation" %}</button>
+            <a href="{% url 'treasury_web:reconciliation_list' %}" class="btn btn-outline-secondary ml-2">{% trans "Cancel" %}</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

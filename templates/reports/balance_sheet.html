@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% load i18n erp_money %}
+
+{% block title %}{% trans "Balance Sheet" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with title=_("Balance Sheet") subtitle=_("Assets, liabilities, and equity as of a date") %}
+
+<form method="get" class="card shadow-sm mb-4">
+    <div class="card-body">
+        <div class="form-row align-items-end">
+            <div class="col-md-3">
+                <label>{% trans "As of date" %}</label>
+                <input type="date" name="as_of" class="form-control" value="{{ as_of }}">
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100">{% trans "Generate" %}</button>
+            </div>
+        </div>
+    </div>
+</form>
+
+{% if assets is not None %}
+<div class="row">
+    {# ---- Assets ---- #}
+    <div class="col-md-6">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header"><strong>{% trans "Assets" %}</strong></div>
+            <div class="card-body p-0">
+                <table class="table table-sm mb-0">
+                    <tbody>
+                        {% for row in assets %}
+                        <tr>
+                            <td><code>{{ row.account_code }}</code> {{ row.account_name }}</td>
+                            <td class="text-right">{{ row.balance|money:currency }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="2" class="text-muted text-center p-3">{% trans "No asset accounts." %}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot class="font-weight-bold" style="background:#f8f9fa;">
+                        <tr>
+                            <td>{% trans "Total Assets" %}</td>
+                            <td class="text-right text-success">{{ total_assets|money:currency }}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    {# ---- Liabilities + Equity ---- #}
+    <div class="col-md-6">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header"><strong>{% trans "Liabilities" %}</strong></div>
+            <div class="card-body p-0">
+                <table class="table table-sm mb-0">
+                    <tbody>
+                        {% for row in liabilities %}
+                        <tr>
+                            <td><code>{{ row.account_code }}</code> {{ row.account_name }}</td>
+                            <td class="text-right">{{ row.balance|money:currency }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="2" class="text-muted text-center p-3">{% trans "No liability accounts." %}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot class="font-weight-bold" style="background:#f8f9fa;">
+                        <tr>
+                            <td>{% trans "Total Liabilities" %}</td>
+                            <td class="text-right">{{ total_liabilities|money:currency }}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+
+        <div class="card shadow-sm mb-3">
+            <div class="card-header"><strong>{% trans "Equity" %}</strong></div>
+            <div class="card-body p-0">
+                <table class="table table-sm mb-0">
+                    <tbody>
+                        {% for row in equity %}
+                        <tr>
+                            <td><code>{{ row.account_code }}</code> {{ row.account_name }}</td>
+                            <td class="text-right">{{ row.balance|money:currency }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="2" class="text-muted text-center p-3">{% trans "No equity accounts." %}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot class="font-weight-bold" style="background:#f8f9fa;">
+                        <tr>
+                            <td>{% trans "Total Equity" %}</td>
+                            <td class="text-right">{{ total_equity|money:currency }}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <strong>{% trans "Total Liabilities + Equity" %}</strong>
+                    <strong class="{% if total_liabilities|add:total_equity == total_assets %}text-success{% else %}text-danger{% endif %}">
+                        {{ total_liabilities|add:total_equity|money:currency }}
+                    </strong>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="card shadow-sm"><div class="card-body text-center text-muted p-5">
+    <i class="fas fa-file-invoice-dollar fa-3x mb-3 opacity-50"></i>
+    <p>{% trans "Pick an as-of date and click Generate." %}</p>
+</div></div>
+{% endif %}
+{% endblock %}

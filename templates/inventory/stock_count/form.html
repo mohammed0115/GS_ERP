@@ -12,9 +12,7 @@
 {% endblock %}
 
 {% block content %}
-{% include "_partials/page_header.html" with
-    title=_("New stock count")
-    subtitle=_("Record counted quantities against the expected on-hand values") %}
+{% include "_partials/page_header.html" with title=_("New stock count") subtitle=_("Record counted quantities against the expected on-hand values") %}
 
 {% if not warehouse_selected %}
     {# ---- Step 1: pick warehouse ---- #}

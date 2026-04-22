@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "New Customer Receipt" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with title=_("New Customer Receipt") subtitle=_("Record a payment received — post it to create the accounting entry") %}
+
+<div class="row">
+    <div class="col-md-6">
+        <form method="post">
+            {% csrf_token %}
+            <div class="card shadow-sm mb-3">
+                <div class="card-header">{% trans "Receipt Details" %}</div>
+                <div class="card-body">
+                    {% if form.non_field_errors %}
+                    <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+                    {% endif %}
+                    {% for field in form %}
+                    <div class="mb-2">
+                        {{ field.label_tag }}
+                        {{ field }}
+                        {% if field.errors %}<div class="text-danger small">{{ field.errors }}</div>{% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-save"></i> {% trans "Save Draft" %}
+            </button>
+            <a href="{% url 'sales:receipt_list' %}" class="btn btn-outline-secondary ml-2">{% trans "Cancel" %}</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

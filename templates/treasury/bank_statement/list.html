@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% load i18n erp_money %}
+
+{% block title %}{% trans "Bank Statements" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with title=_("Bank Statements") subtitle=_("Imported bank statements") primary_action_url="treasury_web:bank_statement_create"|url primary_action_label=_("Import Statement") primary_action_icon="fa-plus" %}
+
+<form method="get" class="card shadow-sm mb-3">
+    <div class="card-body row">
+        <div class="col-md-5 mb-2">
+            <label class="small text-muted">{% trans "Bank Account" %}</label>
+            <select name="bank_account_id" class="form-control selectpicker" data-live-search="true">
+                <option value="">{% trans "All" %}</option>
+                {% for ba in bank_accounts %}
+                <option value="{{ ba.pk }}" {% if request.GET.bank_account_id == ba.pk|stringformat:"s" %}selected{% endif %}>
+                    {{ ba.code }} — {{ ba.bank_name }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2 mb-2 d-flex align-items-end">
+            <button class="btn btn-primary btn-block">{% trans "Filter" %}</button>
+        </div>
+    </div>
+</form>
+
+<div class="card shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead class="thead-light">
+                <tr>
+                    <th>{% trans "Statement Date" %}</th>
+                    <th>{% trans "Bank Account" %}</th>
+                    <th class="text-right">{% trans "Opening" %}</th>
+                    <th class="text-right">{% trans "Closing" %}</th>
+                    <th>{% trans "Status" %}</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for s in statements %}
+                <tr>
+                    <td><a href="{% url 'treasury_web:bank_statement_detail' s.pk %}">{{ s.statement_date }}</a></td>
+                    <td>{{ s.bank_account.code }} — {{ s.bank_account.bank_name }}</td>
+                    <td class="text-right">{{ s.opening_balance|erp_money }}</td>
+                    <td class="text-right">{{ s.closing_balance|erp_money }}</td>
+                    <td>
+                        <span class="badge badge-{% if s.status == 'finalized' %}success{% else %}warning{% endif %}">
+                            {{ s.status }}
+                        </span>
+                    </td>
+                    <td>
+                        <a href="{% url 'treasury_web:bank_statement_detail' s.pk %}" class="btn btn-sm btn-outline-secondary">{% trans "View" %}</a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6" class="text-center text-muted py-4">{% trans "No statements found." %}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% include "_partials/pagination.html" %}
+</div>
+{% endblock %}

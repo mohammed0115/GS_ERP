@@ -9,8 +9,9 @@ from apps.users.interfaces.web import views as web_views
 
 app_name = "users"
 urlpatterns = [
-    path("login/",  auth_views.LoginView.as_view(template_name="auth/login.html"),    name="login"),
-    path("logout/", auth_views.LogoutView.as_view(),                                   name="logout"),
+    path("login/",    auth_views.LoginView.as_view(template_name="auth/login.html"),  name="login"),
+    path("logout/",   auth_views.LogoutView.as_view(),                                 name="logout"),
+    path("register/", web_views.RegisterView.as_view(),                                name="register"),
 
     path("password/change/", auth_views.PasswordChangeView.as_view(
         template_name="auth/change_password.html",
@@ -38,6 +39,10 @@ urlpatterns = [
 
     # Self-service profile
     path("profile/", web_views.ProfileView.as_view(), name="profile"),
+
+    # Notifications
+    path("notifications/",          web_views.NotificationListView.as_view(),       name="notifications"),
+    path("notifications/mark-read/", web_views.NotificationMarkAllReadView.as_view(), name="notifications_mark_all_read"),
 
     # Admin: users
     path("users/",                  web_views.UserListView.as_view(),   name="user_list"),

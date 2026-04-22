@@ -93,6 +93,16 @@ class StockMovement(TenantOwnedModel, TimestampedModel):
     # +1 or -1 for ADJUSTMENT, else 0.
     adjustment_sign = models.SmallIntegerField(default=0)
 
+    # Phase 5 — cost tracking
+    unit_cost = models.DecimalField(
+        max_digits=18, decimal_places=4, null=True, blank=True,
+        help_text="Cost per unit at the time of movement (weighted average).",
+    )
+    total_cost = models.DecimalField(
+        max_digits=18, decimal_places=4, null=True, blank=True,
+        help_text="unit_cost × quantity; used for GL valuation entries.",
+    )
+
     class Meta:
         db_table = "inventory_stock_movement"
         ordering = ("-occurred_at", "-id")
@@ -148,6 +158,16 @@ class StockOnHand(TenantOwnedModel, TimestampedModel):
     warehouse = models.ForeignKey(Warehouse, on_delete=models.PROTECT, related_name="stock_on_hand")
     quantity = models.DecimalField(max_digits=18, decimal_places=4, default=0)
     uom_code = models.CharField(max_length=16)
+
+    # Phase 5 — cost projection fields
+    average_cost = models.DecimalField(
+        max_digits=18, decimal_places=4, default=0,
+        help_text="Current weighted-average unit cost for this (product, warehouse).",
+    )
+    inventory_value = models.DecimalField(
+        max_digits=18, decimal_places=4, default=0,
+        help_text="average_cost × quantity; the GL balance for this position.",
+    )
 
     class Meta:
         db_table = "inventory_stock_on_hand"

@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% load i18n erp_money %}
+
+{% block title %}{% trans "Vendor Debit Note" %} {{ object.note_number|default:object.pk }}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with title=object.note_number|default:"Draft Debit Note" subtitle=object.vendor.name %}
+
+<div class="mb-3">
+    <a href="{% url 'purchases:vendor_debit_note_list' %}" class="btn btn-outline-secondary btn-sm">
+        <i class="fas fa-arrow-left"></i> {% trans "Back" %}
+    </a>
+    {% if can_issue %}
+    <form method="post" action="{% url 'purchases:vendor_debit_note_issue' object.pk %}" class="d-inline">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-warning btn-sm">
+            <i class="fas fa-check"></i> {% trans "Issue Debit Note" %}
+        </button>
+    </form>
+    {% endif %}
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header">{% trans "Debit Note Details" %}</div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-5">{% trans "Note #" %}</dt>
+                    <dd class="col-sm-7"><code>{{ object.note_number|default:"—" }}</code></dd>
+
+                    <dt class="col-sm-5">{% trans "Status" %}</dt>
+                    <dd class="col-sm-7">
+                        {% if object.status == "draft" %}<span class="badge badge-secondary">{% trans "Draft" %}</span>
+                        {% elif object.status == "issued" %}<span class="badge badge-info">{% trans "Issued" %}</span>
+                        {% elif object.status == "applied" %}<span class="badge badge-success">{% trans "Applied" %}</span>
+                        {% elif object.status == "cancelled" %}<span class="badge badge-danger">{% trans "Cancelled" %}</span>
+                        {% endif %}
+                    </dd>
+
+                    <dt class="col-sm-5">{% trans "Note Date" %}</dt>
+                    <dd class="col-sm-7">{{ object.note_date }}</dd>
+
+                    <dt class="col-sm-5">{% trans "Currency" %}</dt>
+                    <dd class="col-sm-7">{{ object.currency_code }}</dd>
+
+                    {% if object.related_invoice %}
+                    <dt class="col-sm-5">{% trans "Related Invoice" %}</dt>
+                    <dd class="col-sm-7">
+                        <a href="{% url 'purchases:invoice_detail' object.related_invoice.pk %}">
+                            <code>{{ object.related_invoice.invoice_number }}</code>
+                        </a>
+                    </dd>
+                    {% endif %}
+
+                    {% if object.reason %}
+                    <dt class="col-sm-5">{% trans "Reason" %}</dt>
+                    <dd class="col-sm-7">{{ object.reason }}</dd>
+                    {% endif %}
+
+                    {% if object.journal_entry %}
+                    <dt class="col-sm-5">{% trans "Journal Entry" %}</dt>
+                    <dd class="col-sm-7"><code>#{{ object.journal_entry.pk }}</code></dd>
+                    {% endif %}
+                </dl>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header">{% trans "Amounts" %}</div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-5">{% trans "Subtotal" %}</dt>
+                    <dd class="col-sm-7">{{ object.subtotal|money:object.currency_code }}</dd>
+
+                    <dt class="col-sm-5">{% trans "Tax" %}</dt>
+                    <dd class="col-sm-7">{{ object.tax_total|money:object.currency_code }}</dd>
+
+                    <dt class="col-sm-5 font-weight-bold">{% trans "Grand Total" %}</dt>
+                    <dd class="col-sm-7 font-weight-bold">{{ object.grand_total|money:object.currency_code }}</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-header">{% trans "Line Items" %}</div>
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+            <thead class="thead-light">
+                <tr>
+                    <th>#</th>
+                    <th>{% trans "Description" %}</th>
+                    <th>{% trans "Expense Account" %}</th>
+                    <th class="text-right">{% trans "Qty" %}</th>
+                    <th class="text-right">{% trans "Unit Price" %}</th>
+                    <th>{% trans "Tax" %}</th>
+                    <th class="text-right">{% trans "Tax Amt" %}</th>
+                    <th class="text-right">{% trans "Total" %}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for line in object.lines.all %}
+                <tr>
+                    <td>{{ line.sequence }}</td>
+                    <td>{{ line.description }}</td>
+                    <td><code>{{ line.expense_account.code|default:"—" }}</code></td>
+                    <td class="text-right">{{ line.quantity }}</td>
+                    <td class="text-right">{{ line.unit_price|money:object.currency_code }}</td>
+                    <td>{{ line.tax_code.code|default:"—" }}</td>
+                    <td class="text-right">{{ line.tax_amount|money:object.currency_code }}</td>
+                    <td class="text-right font-weight-bold">{{ line.line_total|money:object.currency_code }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="8" class="text-center text-muted p-3">{% trans "No lines." %}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

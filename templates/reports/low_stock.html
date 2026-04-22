@@ -4,9 +4,7 @@
 {% block title %}{% trans "Low Stock Alert" %}{% endblock %}
 
 {% block content %}
-{% include "_partials/page_header.html" with
-    title=_("Low Stock Alert")
-    subtitle=_("Products at or below their configured alert quantity") %}
+{% include "_partials/page_header.html" with title=_("Low Stock Alert") subtitle=_("Products at or below their configured alert quantity") %}
 
 {% if rows %}
 <div class="card shadow-sm">

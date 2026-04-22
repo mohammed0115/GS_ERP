@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% load i18n %}
-{# ---------------------------------------------------------------------------
+{% comment %} ---------------------------------------------------------------------------
    Base for error pages. Child templates only supply the status number,
    title, message, and icon. We inherit the navbar so the user can still
    escape to the dashboard.
---------------------------------------------------------------------------- #}
+--------------------------------------------------------------------------- {% endcomment %}
 {% block title %}{% block status %}Error{% endblock %} — {% trans "n.erp" %}{% endblock %}
 
 {% block content %}

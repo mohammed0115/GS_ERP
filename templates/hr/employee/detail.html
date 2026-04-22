@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{{ object }}{% endblock %}
+{% block content %}
+{% include "_partials/page_header.html" with title=object %}
+<div class="card shadow-sm">
+    <div class="card-body">
+        <p class="text-muted">{% trans "Details for" %} {{ object }}</p>
+        <a href="../" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left"></i> {% trans "Back" %}
+        </a>
+    </div>
+</div>
+{% endblock %}

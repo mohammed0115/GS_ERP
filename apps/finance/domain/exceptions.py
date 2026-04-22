@@ -14,6 +14,11 @@ class AccountNotFoundError(NotFoundError):
     default_message = "Account not found."
 
 
+class AccountNotPostableError(PreconditionFailedError):
+    default_code = "account_not_postable"
+    default_message = "Account is a summary/group account and cannot receive journal lines."
+
+
 class InvalidAccountTypeError(ValidationError):
     default_code = "invalid_account_type"
     default_message = "Invalid account type."
@@ -46,6 +51,11 @@ class JournalAlreadyPostedError(ConflictError):
     default_message = "Journal entry is already posted and cannot be modified."
 
 
+class JournalAlreadyReversedError(ConflictError):
+    default_code = "journal_already_reversed"
+    default_message = "Journal entry has already been reversed."
+
+
 class JournalLineInvalidError(ValidationError):
     default_code = "journal_line_invalid"
     default_message = "Journal line is invalid."
@@ -61,3 +71,7 @@ class InvalidDebitCreditError(ValidationError):
 class PostingClosedPeriodError(PreconditionFailedError):
     default_code = "posting_closed_period"
     default_message = "Cannot post to a closed accounting period."
+
+
+# Alias used by the PostJournalEntry use case for period / fiscal year locking.
+PeriodClosedError = PostingClosedPeriodError

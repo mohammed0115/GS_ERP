@@ -1,15 +1,10 @@
 {% load i18n %}
-{# ---------------------------------------------------------------------------
+{% comment %} ---------------------------------------------------------------------------
    Page header partial.
 
    Usage:
-     {% include "_partials/page_header.html" with
-         title="Products"
-         subtitle="Manage your product catalog"
-         primary_action_url=product_create_url
-         primary_action_label="Add product"
-         primary_action_icon="fa-plus" %}
---------------------------------------------------------------------------- #}
+     {% include "_partials/page_header.html" with title="Products" subtitle="Manage your product catalog" primary_action_url=product_create_url primary_action_label="Add product" primary_action_icon="fa-plus" %}
+--------------------------------------------------------------------------- {% endcomment %}
 <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
         <h4 class="mb-0">{{ title }}</h4>

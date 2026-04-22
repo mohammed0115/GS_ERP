@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% load i18n erp_money %}
+
+{% block title %}{% trans "Vendor Payment" %} {{ object.payment_number|default:object.pk }}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with title=object.payment_number|default:"Draft Payment" subtitle=object.vendor.name %}
+
+<div class="mb-3">
+    <a href="{% url 'purchases:vendor_payment_list' %}" class="btn btn-outline-secondary btn-sm">
+        <i class="fas fa-arrow-left"></i> {% trans "Back" %}
+    </a>
+    {% if can_post %}
+    <form method="post" action="{% url 'purchases:vendor_payment_post' object.pk %}" class="d-inline">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-primary btn-sm">
+            <i class="fas fa-check"></i> {% trans "Post Payment" %}
+        </button>
+    </form>
+    {% endif %}
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header">{% trans "Payment Details" %}</div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-5">{% trans "Payment #" %}</dt>
+                    <dd class="col-sm-7"><code>{{ object.payment_number|default:"—" }}</code></dd>
+
+                    <dt class="col-sm-5">{% trans "Status" %}</dt>
+                    <dd class="col-sm-7">
+                        {% if object.status == "draft" %}<span class="badge badge-secondary">{% trans "Draft" %}</span>
+                        {% elif object.status == "posted" %}<span class="badge badge-success">{% trans "Posted" %}</span>
+                        {% elif object.status == "cancelled" %}<span class="badge badge-danger">{% trans "Cancelled" %}</span>
+                        {% elif object.status == "reversed" %}<span class="badge badge-warning">{% trans "Reversed" %}</span>
+                        {% endif %}
+                    </dd>
+
+                    <dt class="col-sm-5">{% trans "Payment Date" %}</dt>
+                    <dd class="col-sm-7">{{ object.payment_date }}</dd>
+
+                    <dt class="col-sm-5">{% trans "Method" %}</dt>
+                    <dd class="col-sm-7">{{ object.get_payment_method_display }}</dd>
+
+                    <dt class="col-sm-5">{% trans "Reference" %}</dt>
+                    <dd class="col-sm-7">{{ object.reference|default:"—" }}</dd>
+
+                    <dt class="col-sm-5">{% trans "Bank Account" %}</dt>
+                    <dd class="col-sm-7"><code>{{ object.bank_account.code }}</code> {{ object.bank_account.name }}</dd>
+
+                    {% if object.journal_entry %}
+                    <dt class="col-sm-5">{% trans "Journal Entry" %}</dt>
+                    <dd class="col-sm-7"><code>#{{ object.journal_entry.pk }}</code></dd>
+                    {% endif %}
+                </dl>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header">{% trans "Amounts" %}</div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-5 font-weight-bold">{% trans "Amount" %}</dt>
+                    <dd class="col-sm-7 font-weight-bold">{{ object.amount|money:object.currency_code }}</dd>
+
+                    <dt class="col-sm-5">{% trans "Allocated" %}</dt>
+                    <dd class="col-sm-7">{{ object.allocated_amount|money:object.currency_code }}</dd>
+
+                    <dt class="col-sm-5 text-success font-weight-bold">{% trans "Unallocated" %}</dt>
+                    <dd class="col-sm-7 text-success font-weight-bold">{{ unallocated|money:object.currency_code }}</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Allocations table #}
+<div class="card shadow-sm mb-3">
+    <div class="card-header">{% trans "Invoice Allocations" %}</div>
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+            <thead class="thead-light">
+                <tr>
+                    <th>{% trans "Invoice #" %}</th>
+                    <th>{% trans "Invoice Date" %}</th>
+                    <th class="text-right">{% trans "Invoice Total" %}</th>
+                    <th class="text-right">{% trans "Allocated Here" %}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for alloc in object.allocations.all %}
+                <tr>
+                    <td><a href="{% url 'purchases:invoice_detail' alloc.invoice.pk %}"><code>{{ alloc.invoice.invoice_number|default:alloc.invoice.pk }}</code></a></td>
+                    <td>{{ alloc.invoice.invoice_date }}</td>
+                    <td class="text-right">{{ alloc.invoice.grand_total|money:object.currency_code }}</td>
+                    <td class="text-right font-weight-bold">{{ alloc.allocated_amount|money:object.currency_code }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="4" class="text-center text-muted p-3">{% trans "No allocations yet." %}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{# Allocation modal (only when posted and open invoices exist) #}
+{% if can_allocate and open_invoices %}
+<div class="card shadow-sm">
+    <div class="card-header">{% trans "Allocate to Invoices" %}</div>
+    <div class="card-body">
+        <form method="post" action="{% url 'purchases:vendor_payment_allocate' object.pk %}" id="alloc-form">
+            {% csrf_token %}
+            <input type="hidden" name="allocations_json" id="allocations_json">
+            <table class="table table-sm" id="alloc-table">
+                <thead class="thead-light">
+                    <tr>
+                        <th>{% trans "Invoice #" %}</th>
+                        <th>{% trans "Due" %}</th>
+                        <th class="text-right">{% trans "Open Balance" %}</th>
+                        <th class="text-right" style="width:150px">{% trans "Allocate Amount" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for inv in open_invoices %}
+                    <tr>
+                        <td><code>{{ inv.invoice_number|default:inv.pk }}</code></td>
+                        <td>{{ inv.due_date }}</td>
+                        <td class="text-right">{{ inv.open_amount|money:object.currency_code }}</td>
+                        <td>
+                            <input type="number" class="form-control form-control-sm text-right alloc-amt"
+                                   step="0.0001" min="0" value="0"
+                                   data-invoice-id="{{ inv.pk }}"
+                                   data-max="{{ inv.open_amount }}">
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-link"></i> {% trans "Apply Allocation" %}
+            </button>
+        </form>
+    </div>
+</div>
+
+<script>
+document.getElementById('alloc-form').addEventListener('submit', function () {
+    const rows = [];
+    document.querySelectorAll('.alloc-amt').forEach(function (inp) {
+        const amt = parseFloat(inp.value) || 0;
+        if (amt > 0) {
+            rows.push({ invoice_id: parseInt(inp.dataset.invoiceId), amount: amt });
+        }
+    });
+    document.getElementById('allocations_json').value = JSON.stringify(rows);
+});
+</script>
+{% endif %}
+{% endblock %}

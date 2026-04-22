@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% load i18n erp_money %}
+
+{% block title %}{% trans "Cashboxes" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with title=_("Cashboxes") subtitle=_("Petty-cash & fund accounts") primary_action_url="treasury_web:cashbox_create"|url primary_action_label=_("New Cashbox") primary_action_icon="fa-plus" %}
+
+<form method="get" class="card shadow-sm mb-3">
+    <div class="card-body row">
+        <div class="col-md-4 mb-2">
+            <input type="text" name="q" class="form-control"
+                   value="{{ request.GET.q|default:'' }}"
+                   placeholder="{% trans 'Search code or name' %}">
+        </div>
+        <div class="col-md-3 mb-2 d-flex align-items-center">
+            <div class="custom-control custom-switch">
+                <input type="checkbox" class="custom-control-input" id="inactive" name="inactive"
+                       {% if request.GET.inactive %}checked{% endif %}>
+                <label class="custom-control-label" for="inactive">{% trans "Show inactive" %}</label>
+            </div>
+        </div>
+        <div class="col-md-2 mb-2 d-flex align-items-end">
+            <button class="btn btn-primary btn-block">{% trans "Filter" %}</button>
+        </div>
+    </div>
+</form>
+
+<div class="card shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead class="thead-light">
+                <tr>
+                    <th>{% trans "Code" %}</th>
+                    <th>{% trans "Name" %}</th>
+                    <th>{% trans "Currency" %}</th>
+                    <th class="text-right">{% trans "Balance" %}</th>
+                    <th>{% trans "Status" %}</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for cb in cashboxes %}
+                <tr>
+                    <td><a href="{% url 'treasury_web:cashbox_detail' cb.pk %}">{{ cb.code }}</a></td>
+                    <td>{{ cb.name }}</td>
+                    <td>{{ cb.currency_code }}</td>
+                    <td class="text-right">{{ cb.current_balance|erp_money }}</td>
+                    <td>
+                        {% if cb.is_active %}
+                            <span class="badge badge-success">{% trans "Active" %}</span>
+                        {% else %}
+                            <span class="badge badge-secondary">{% trans "Inactive" %}</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-right">
+                        <a href="{% url 'treasury_web:cashbox_detail' cb.pk %}" class="btn btn-sm btn-outline-secondary">
+                            {% trans "View" %}
+                        </a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6" class="text-center text-muted py-4">{% trans "No cashboxes found." %}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% include "_partials/pagination.html" %}
+</div>
+{% endblock %}

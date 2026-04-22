@@ -7,13 +7,16 @@ django-filter==24.*
 django-cors-headers==4.*
 
 # Persistence / infrastructure
-psycopg[binary]==3.1.*
+mysqlclient==2.2.*
 redis==5.*
 
 # Background work
 celery==5.4.*
 django-celery-beat==2.6.*
 django-celery-results==2.5.*
+
+# Document / PDF generation
+python-barcode==0.16.*
 
 # Config / utilities
 python-decouple==3.8

@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% load i18n erp_money %}
+
+{% block title %}{% trans "AP Aging" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with title=_("Accounts Payable Aging") subtitle=_("Outstanding supplier balances by age bucket") %}
+
+<form method="get" class="card shadow-sm mb-4">
+    <div class="card-body">
+        <div class="form-row align-items-end">
+            <div class="col-md-3">
+                <label>{% trans "As of date" %}</label>
+                <input type="date" name="as_of" class="form-control" value="{{ as_of }}">
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100">{% trans "Generate" %}</button>
+            </div>
+        </div>
+    </div>
+</form>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+            <thead class="thead-light">
+                <tr>
+                    <th>{% trans "Supplier" %}</th>
+                    <th class="text-right">{% trans "Not Due" %}</th>
+                    <th class="text-right">{% trans "1–30 days" %}</th>
+                    <th class="text-right">{% trans "31–60 days" %}</th>
+                    <th class="text-right">{% trans "61–90 days" %}</th>
+                    <th class="text-right">{% trans "Over 90" %}</th>
+                    <th class="text-right">{% trans "Total" %}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                <tr>
+                    <td><code>{{ row.supplier_code }}</code> {{ row.supplier_name }}</td>
+                    <td class="text-right">{{ row.not_due|money:currency }}</td>
+                    <td class="text-right {% if row.days_1_30 > 0 %}text-warning{% endif %}">{{ row.days_1_30|money:currency }}</td>
+                    <td class="text-right {% if row.days_31_60 > 0 %}text-warning{% endif %}">{{ row.days_31_60|money:currency }}</td>
+                    <td class="text-right {% if row.days_61_90 > 0 %}text-danger{% endif %}">{{ row.days_61_90|money:currency }}</td>
+                    <td class="text-right {% if row.over_90 > 0 %}text-danger font-weight-bold{% endif %}">{{ row.over_90|money:currency }}</td>
+                    <td class="text-right font-weight-bold">{{ row.total|money:currency }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="7" class="text-center text-muted p-4">{% trans "No outstanding payables." %}</td></tr>
+                {% endfor %}
+            </tbody>
+            {% if rows %}
+            <tfoot class="font-weight-bold" style="background:#f8f9fa;">
+                <tr>
+                    <td>{% trans "Grand Total" %}</td>
+                    <td colspan="5"></td>
+                    <td class="text-right">{{ grand_total|money:currency }}</td>
+                </tr>
+            </tfoot>
+            {% endif %}
+        </table>
+    </div>
+</div>
+{% endblock %}

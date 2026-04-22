@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from django import forms
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
+from common.mixins import OrgPermissionRequiredMixin
 from django.contrib.messages.views import SuccessMessageMixin
 from django.urls import reverse_lazy
 from django.views.generic import CreateView, DeleteView, ListView, UpdateView
@@ -31,7 +32,7 @@ class WarehouseForm(BootstrapFormMixin, forms.ModelForm):
         fields = ["code", "name", "branch", "is_active"]
 
 
-class WarehouseListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
+class WarehouseListView(LoginRequiredMixin, OrgPermissionRequiredMixin, ListView):
     permission_required = "inventory.warehouses.view"
     model = Warehouse
     template_name = "inventory/warehouse/list.html"
@@ -43,7 +44,7 @@ class WarehouseListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         return super().get_queryset().select_related("branch")
 
 
-class WarehouseCreateView(LoginRequiredMixin, PermissionRequiredMixin,
+class WarehouseCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin,
                           SuccessMessageMixin, CreateView):
     permission_required = "inventory.warehouses.create"
     model = Warehouse
@@ -53,7 +54,7 @@ class WarehouseCreateView(LoginRequiredMixin, PermissionRequiredMixin,
     success_message = "Warehouse created."
 
 
-class WarehouseUpdateView(LoginRequiredMixin, PermissionRequiredMixin,
+class WarehouseUpdateView(LoginRequiredMixin, OrgPermissionRequiredMixin,
                           SuccessMessageMixin, UpdateView):
     permission_required = "inventory.warehouses.update"
     model = Warehouse
@@ -63,7 +64,7 @@ class WarehouseUpdateView(LoginRequiredMixin, PermissionRequiredMixin,
     success_message = "Warehouse updated."
 
 
-class WarehouseDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
+class WarehouseDeleteView(LoginRequiredMixin, OrgPermissionRequiredMixin, DeleteView):
     permission_required = "inventory.warehouses.deactivate"
     model = Warehouse
     template_name = "_partials/confirm_delete.html"
@@ -82,7 +83,7 @@ class WarehouseDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteVie
 # machinery we don't want loaded for Warehouse-only views. The parser is
 # fine with import placement; this is a readability choice.
 import json
-import time
+import uuid
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -108,7 +109,7 @@ from apps.inventory.infrastructure.models import (
 )
 
 
-class AdjustmentListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
+class AdjustmentListView(LoginRequiredMixin, OrgPermissionRequiredMixin, ListView):
     permission_required = "inventory.adjustments.view"
     model = StockAdjustment
     template_name = "inventory/adjustment/list.html"
@@ -141,7 +142,7 @@ class AdjustmentListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         return ctx
 
 
-class AdjustmentDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
+class AdjustmentDetailView(LoginRequiredMixin, OrgPermissionRequiredMixin, DetailView):
     permission_required = "inventory.adjustments.view"
     model = StockAdjustment
     template_name = "inventory/adjustment/detail.html"
@@ -206,7 +207,7 @@ def _parse_adj_lines(raw: str) -> list[_ParsedAdjLine]:
     return out
 
 
-class AdjustmentCreateView(LoginRequiredMixin, PermissionRequiredMixin, FormView):
+class AdjustmentCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, FormView):
     permission_required = "inventory.adjustments.create"
     template_name = "inventory/adjustment/form.html"
     form_class = AdjustmentHeaderForm
@@ -222,7 +223,7 @@ class AdjustmentCreateView(LoginRequiredMixin, PermissionRequiredMixin, FormView
         header = form.cleaned_data
         reference = (header.get("reference") or "").strip()
         if not reference:
-            reference = f"ADJ-{header['adjustment_date'].strftime('%Y%m%d')}-{int(time.time()) % 100000}"
+            reference = f"ADJ-{header['adjustment_date'].strftime('%Y%m%d')}-{uuid.uuid4().hex[:8].upper()}"
 
         try:
             reason = AdjustmentReason(header["reason"])
@@ -281,7 +282,7 @@ from apps.inventory.infrastructure.models import (
 )
 
 
-class TransferListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
+class TransferListView(LoginRequiredMixin, OrgPermissionRequiredMixin, ListView):
     permission_required = "inventory.transfers.view"
     model = StockTransfer
     template_name = "inventory/transfer/list.html"
@@ -313,7 +314,7 @@ class TransferListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         return ctx
 
 
-class TransferDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
+class TransferDetailView(LoginRequiredMixin, OrgPermissionRequiredMixin, DetailView):
     permission_required = "inventory.transfers.view"
     model = StockTransfer
     template_name = "inventory/transfer/detail.html"
@@ -379,7 +380,7 @@ def _parse_trf_lines(raw: str) -> list[_ParsedTrfLine]:
     return out
 
 
-class TransferCreateView(LoginRequiredMixin, PermissionRequiredMixin, FormView):
+class TransferCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, FormView):
     permission_required = "inventory.transfers.create"
     template_name = "inventory/transfer/form.html"
     form_class = TransferHeaderForm
@@ -395,7 +396,7 @@ class TransferCreateView(LoginRequiredMixin, PermissionRequiredMixin, FormView):
         header = form.cleaned_data
         reference = (header.get("reference") or "").strip()
         if not reference:
-            reference = f"TRF-{header['transfer_date'].strftime('%Y%m%d')}-{int(time.time()) % 100000}"
+            reference = f"TRF-{header['transfer_date'].strftime('%Y%m%d')}-{uuid.uuid4().hex[:8].upper()}"
 
         try:
             line_specs = tuple(
@@ -460,7 +461,7 @@ from apps.inventory.infrastructure.models import (
 )
 
 
-class StockCountListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
+class StockCountListView(LoginRequiredMixin, OrgPermissionRequiredMixin, ListView):
     permission_required = "inventory.stock_counts.view"
     model = StockCount
     template_name = "inventory/stock_count/list.html"
@@ -489,7 +490,7 @@ class StockCountListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         return ctx
 
 
-class StockCountDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
+class StockCountDetailView(LoginRequiredMixin, OrgPermissionRequiredMixin, DetailView):
     permission_required = "inventory.stock_counts.view"
     model = StockCount
     template_name = "inventory/stock_count/detail.html"
@@ -522,7 +523,7 @@ class StockCountHeaderForm(BootstrapFormMixin, forms.Form):
     memo = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 2}))
 
 
-class StockCountCreateView(LoginRequiredMixin, PermissionRequiredMixin, FormView):
+class StockCountCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, FormView):
     """Two-phase create: warehouse pick → count sheet.
 
     The phases share this view. Phase detection:
@@ -599,7 +600,7 @@ class StockCountCreateView(LoginRequiredMixin, PermissionRequiredMixin, FormView
         header = form.cleaned_data
         reference = (header.get("reference") or "").strip()
         if not reference:
-            reference = f"CNT-{header['count_date'].strftime('%Y%m%d')}-{int(time.time()) % 100000}"
+            reference = f"CNT-{header['count_date'].strftime('%Y%m%d')}-{uuid.uuid4().hex[:8].upper()}"
 
         lines_data: list[dict] = []
         for key, value in request.POST.items():
@@ -663,7 +664,7 @@ class StockCountCreateView(LoginRequiredMixin, PermissionRequiredMixin, FormView
         )
 
 
-class StockCountFinaliseView(LoginRequiredMixin, PermissionRequiredMixin, View):
+class StockCountFinaliseView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
     """POST-only: run FinaliseStockCount and redirect to the right page.
 
     If a variance adjustment was produced, we redirect to that adjustment
@@ -674,7 +675,7 @@ class StockCountFinaliseView(LoginRequiredMixin, PermissionRequiredMixin, View):
     http_method_names = ["post"]
 
     def post(self, request, pk: int, *args, **kwargs):
-        adjustment_reference = f"ADJ-CNT-{pk}-{int(time.time()) % 100000}"
+        adjustment_reference = f"ADJ-CNT-{pk}-{uuid.uuid4().hex[:8].upper()}"
         try:
             result = FinaliseStockCount().execute(FinaliseStockCountCommand(
                 count_id=pk,

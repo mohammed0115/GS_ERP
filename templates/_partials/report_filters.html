@@ -1,5 +1,5 @@
 {% load i18n %}
-{# ---------------------------------------------------------------------------
+{% comment %} ---------------------------------------------------------------------------
    Report filter bar.
 
    Used by every report page with a date window. Concrete reports override
@@ -7,7 +7,7 @@
 
    Expected context:
      date_from, date_to — ISO strings (pre-populated from request.GET)
---------------------------------------------------------------------------- #}
+--------------------------------------------------------------------------- {% endcomment %}
 <form method="get" class="card shadow-sm mb-3">
     <div class="card-body">
         <div class="row">

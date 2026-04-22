@@ -3,6 +3,21 @@ from __future__ import annotations
 
 from django.db import models
 
+# Phase 3 payable models — re-exported so other apps can import from here
+from apps.purchases.infrastructure.payable_models import (  # noqa: F401
+    PurchaseInvoice,
+    PurchaseInvoiceLine,
+    PurchaseInvoiceStatus,
+    VendorPayment,
+    VendorPaymentAllocation,
+    VendorPaymentStatus,
+    VendorCreditNote,
+    VendorCreditNoteLine,
+    VendorDebitNote,
+    VendorDebitNoteLine,
+    VendorNoteStatus,
+)
+
 from apps.catalog.infrastructure.models import Product, ProductVariant
 from apps.core.infrastructure.models import AuditMetaMixin, TimestampedModel
 from apps.crm.infrastructure.models import Supplier

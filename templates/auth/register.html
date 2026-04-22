@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "Create your company account" %}{% endblock %}
+{% block body_class %}bg-light{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-4 mb-5">
+    <div class="col-md-7 col-lg-6">
+        <div class="card shadow-sm">
+            <div class="card-body p-4">
+                <h3 class="card-title text-center mb-1">{% trans "Create your company account" %}</h3>
+                <p class="text-center text-muted small mb-4">{% trans "Start your free 30-day trial — no credit card required." %}</p>
+
+                {% if form.non_field_errors %}
+                    <div class="alert alert-danger">
+                        {% for err in form.non_field_errors %}{{ err }}<br>{% endfor %}
+                    </div>
+                {% endif %}
+
+                <form method="post" novalidate>
+                    {% csrf_token %}
+
+                    <h6 class="text-muted text-uppercase font-weight-bold mb-3" style="font-size:.75rem; letter-spacing:.08em;">
+                        {% trans "Your details" %}
+                    </h6>
+
+                    <div class="row">
+                        <div class="col-sm-6">
+                            <div class="form-group">
+                                <label for="id_first_name">{% trans "First Name" %} <span class="text-danger">*</span></label>
+                                {{ form.first_name }}
+                                {% if form.first_name.errors %}
+                                    <small class="text-danger">{{ form.first_name.errors|join:", " }}</small>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="col-sm-6">
+                            <div class="form-group">
+                                <label for="id_last_name">{% trans "Last Name" %} <span class="text-danger">*</span></label>
+                                {{ form.last_name }}
+                                {% if form.last_name.errors %}
+                                    <small class="text-danger">{{ form.last_name.errors|join:", " }}</small>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="id_email">{% trans "Work Email" %} <span class="text-danger">*</span></label>
+                        {{ form.email }}
+                        {% if form.email.errors %}
+                            <small class="text-danger">{{ form.email.errors|join:", " }}</small>
+                        {% endif %}
+                    </div>
+
+                    <div class="row">
+                        <div class="col-sm-6">
+                            <div class="form-group">
+                                <label for="id_password">{% trans "Password" %} <span class="text-danger">*</span></label>
+                                {{ form.password }}
+                                {% if form.password.errors %}
+                                    <small class="text-danger">{{ form.password.errors|join:", " }}</small>
+                                {% endif %}
+                                <small class="form-text text-muted">{% trans "Minimum 8 characters." %}</small>
+                            </div>
+                        </div>
+                        <div class="col-sm-6">
+                            <div class="form-group">
+                                <label for="id_confirm_password">{% trans "Confirm Password" %} <span class="text-danger">*</span></label>
+                                {{ form.confirm_password }}
+                                {% if form.confirm_password.errors %}
+                                    <small class="text-danger">{{ form.confirm_password.errors|join:", " }}</small>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr class="my-3">
+
+                    <h6 class="text-muted text-uppercase font-weight-bold mb-3" style="font-size:.75rem; letter-spacing:.08em;">
+                        {% trans "Company details" %}
+                    </h6>
+
+                    <div class="form-group">
+                        <label for="id_company_name">{% trans "Company Name" %} <span class="text-danger">*</span></label>
+                        {{ form.company_name }}
+                        {% if form.company_name.errors %}
+                            <small class="text-danger">{{ form.company_name.errors|join:", " }}</small>
+                        {% endif %}
+                    </div>
+
+                    <div class="row">
+                        <div class="col-sm-6">
+                            <div class="form-group">
+                                <label for="id_country">{% trans "Country" %} <span class="text-danger">*</span></label>
+                                {{ form.country }}
+                                {% if form.country.errors %}
+                                    <small class="text-danger">{{ form.country.errors|join:", " }}</small>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="col-sm-6">
+                            <div class="form-group">
+                                <label for="id_currency">{% trans "Default Currency" %} <span class="text-danger">*</span></label>
+                                {{ form.currency }}
+                                {% if form.currency.errors %}
+                                    <small class="text-danger">{{ form.currency.errors|join:", " }}</small>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary btn-block mt-2">
+                        {% trans "Create Account" %}
+                    </button>
+                </form>
+
+                <p class="text-center text-muted small mt-3 mb-0">
+                    {% trans "Already have an account?" %}
+                    <a href="{% url 'users:login' %}">{% trans "Sign in" %}</a>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Closing Checklist" %} — {{ period }}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with title=_("Closing Checklist") subtitle=period %}
+
+{% if not checklist %}
+<div class="alert alert-info d-flex align-items-center justify-content-between">
+    <span>{% trans "No checklist generated yet for this period." %}</span>
+    <form method="post">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-primary btn-sm">
+            <i class="fa fa-list-check"></i> {% trans "Generate Checklist" %}
+        </button>
+    </form>
+</div>
+{% else %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    {% if checklist.is_complete %}
+    <span class="badge badge-success px-3 py-2"><i class="fa fa-check-circle"></i> {% trans "All items complete" %}</span>
+    <a href="{% url 'finance:close_period' period.pk %}" class="btn btn-success btn-sm">
+        <i class="fa fa-lock"></i> {% trans "Proceed to Close Period" %}
+    </a>
+    {% else %}
+    <span class="badge badge-warning px-3 py-2"><i class="fa fa-clock"></i> {% trans "Checklist incomplete" %}</span>
+    <button class="btn btn-secondary btn-sm" disabled>{% trans "Complete all items to close" %}</button>
+    {% endif %}
+</div>
+
+<div class="card shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead class="thead-light">
+                <tr>
+                    <th>{% trans "Item" %}</th>
+                    <th>{% trans "Status" %}</th>
+                    <th>{% trans "Done By" %}</th>
+                    <th>{% trans "Notes" %}</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in checklist.items.all %}
+                <tr class="{% if item.status == 'done' %}table-success{% elif item.status == 'n/a' %}table-secondary{% endif %}">
+                    <td>{{ item.label }}</td>
+                    <td>
+                        {% if item.status == "done" %}
+                            <span class="badge badge-success">{% trans "Done" %}</span>
+                        {% elif item.status == "n/a" %}
+                            <span class="badge badge-secondary">{% trans "N/A" %}</span>
+                        {% else %}
+                            <span class="badge badge-warning">{% trans "Pending" %}</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-muted small">{{ item.done_by|default:"—" }}</td>
+                    <td class="text-muted small">{{ item.notes|default:"" }}</td>
+                    <td>
+                        {% if item.status != "done" %}
+                        <form method="post" action="{% url 'finance:closing_checklist_item_mark' period.pk item.pk %}" class="d-inline">
+                            {% csrf_token %}
+                            <input type="hidden" name="status" value="done">
+                            <button type="submit" class="btn btn-xs btn-success">{% trans "Mark Done" %}</button>
+                        </form>
+                        <form method="post" action="{% url 'finance:closing_checklist_item_mark' period.pk item.pk %}" class="d-inline">
+                            {% csrf_token %}
+                            <input type="hidden" name="status" value="n/a">
+                            <button type="submit" class="btn btn-xs btn-outline-secondary">{% trans "N/A" %}</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

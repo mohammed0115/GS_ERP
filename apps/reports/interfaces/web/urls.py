@@ -15,4 +15,11 @@ urlpatterns = [
     path("warehouse-stock/", views.WarehouseStockView.as_view(),  name="warehouse_stock"),
     path("due-receivables/", views.DueReceivablesView.as_view(),  name="due_receivables"),
     path("payments/",        views.PaymentsView.as_view(),        name="payments"),
+    path("general-ledger/",  views.GeneralLedgerView.as_view(),  name="general_ledger"),
+    path("trial-balance/",   views.TrialBalanceView.as_view(),    name="trial_balance"),
+    path("balance-sheet/",   views.BalanceSheetView.as_view(),    name="balance_sheet"),
+    path("ar-aging/",            views.ARAgingView.as_view(),            name="ar_aging"),
+    path("ap-aging/",            views.APAgingView.as_view(),            name="ap_aging"),
+    path("customer-statement/",  views.CustomerStatementView.as_view(),  name="customer_statement"),
+    path("vendor-statement/",    views.VendorStatementView.as_view(),    name="vendor_statement"),
 ]

@@ -4,63 +4,58 @@ from __future__ import annotations
 from django.urls import path
 
 from apps.sales.interfaces.web import views
-from common.views import coming_soon
 
 app_name = "sales"
 
-_EDIT_PENDING = [
-    "EditDraftSale use case that rewrites a DRAFT sale's lines atomically",
-    "Draft state resumption (rehydrate lines from Sale + SaleLine rows)",
-    "Status guard: only DRAFT sales editable, everything else is history",
-]
-_QUOTATION_PENDING = [
-    "SaleQuotation document model separate from Sale (no stock/journal side effects)",
-    "ConvertQuotationToSale use case — produces a draft linked back to the quotation",
-    "Expiry + auto-void after N days",
-]
-_RETURN_PENDING = [
-    "SaleReturn document model + ReturnLine (reference to original SaleLine)",
-    "ProcessReturn use case emitting reverse StockMovement + reverse JournalEntry",
-    "Restocking-fee handling for partial returns",
-]
-_DELIVERY_PENDING = [
-    "DeliveryNote document (separate from Sale) tracking shipment state",
-    "RecordDelivery use case transitioning POSTED → DELIVERED on full shipment",
-    "Carrier/tracking number fields and packing slip printout",
-]
-
 urlpatterns = [
+    # ---- POS / legacy sales ----
     path("",                    views.SaleListView.as_view(),    name="list"),
     path("create/",             views.SaleCreateView.as_view(),  name="create"),
     path("<int:pk>/",           views.SaleDetailView.as_view(),  name="detail"),
     path("<int:pk>/invoice/",   views.SaleInvoiceView.as_view(), name="invoice"),
 
-    # JSON endpoint used by create form's autocomplete (also consumed by purchases create).
     path("api/product-search/", views.ProductSearchView.as_view(), name="api_product_search"),
 
-    # -------- Not yet implemented --------
-    path("<int:pk>/edit/", coming_soon(
-        feature_name="Edit draft sale",
-        description="Modify a draft sale before posting.",
-        pending_backend=_EDIT_PENDING,
-        planned_ui=["Reopen the same line-item builder", "Warn if status is not DRAFT"],
-    ), name="edit"),
+    path("<int:pk>/edit/", views.SaleEditView.as_view(), name="edit"),
 
-    path("quotations/", coming_soon(
-        feature_name="Sales quotations",
-        description="Non-committal price quotes for customers.",
-        pending_backend=_QUOTATION_PENDING,
-        planned_ui=["Quotation list with expiry", "Convert-to-sale button"],
-    ), name="quotation_list"),
+    path("quotations/",                     views.SaleQuotationListView.as_view(),  name="quotation_list"),
+    path("quotations/create/",              views.SaleQuotationCreateView.as_view(), name="quotation_create"),
+    path("quotations/<int:pk>/send/",       views.QuotationSendView.as_view(),       name="quotation_send"),
+    path("quotations/<int:pk>/convert/",    views.QuotationConvertView.as_view(),    name="quotation_convert"),
 
     path("returns/",              views.SaleReturnListView.as_view(),   name="return_list"),
     path("returns/create/",       views.SaleReturnCreateView.as_view(), name="return_create"),
     path("returns/<int:pk>/",     views.SaleReturnDetailView.as_view(), name="return_detail"),
 
-    path("deliveries/", coming_soon(
-        feature_name="Delivery notes",
-        description="Track shipment status separately from invoices.",
-        pending_backend=_DELIVERY_PENDING,
-        planned_ui=["Delivery list with status", "Packing slip print"],
-    ), name="delivery_list"),
+    path("deliveries/",                              views.DeliveryNoteListView.as_view(),    name="delivery_list"),
+    path("deliveries/<int:sale_pk>/create/",         views.DeliveryNoteCreateView.as_view(),  name="delivery_create"),
+    path("deliveries/<int:pk>/dispatch/",            views.DeliveryDispatchView.as_view(),    name="delivery_dispatch"),
+    path("deliveries/<int:pk>/confirm/",             views.DeliveryConfirmView.as_view(),     name="delivery_confirm"),
+
+    # ---- Phase 2 — AR cycle ----
+    # SalesInvoice
+    path("invoices/",                         views.SalesInvoiceListView.as_view(),   name="invoice_list"),
+    path("invoices/create/",                  views.SalesInvoiceCreateView.as_view(), name="invoice_create"),
+    path("invoices/<int:pk>/",                views.SalesInvoiceDetailView.as_view(), name="invoice_detail"),
+    path("invoices/<int:pk>/issue/",          views.SalesInvoiceIssueView.as_view(),  name="invoice_issue"),
+    path("invoices/<int:pk>/cancel/",         views.SalesInvoiceCancelView.as_view(), name="invoice_cancel"),
+
+    # CustomerReceipt
+    path("receipts/",                         views.CustomerReceiptListView.as_view(),     name="receipt_list"),
+    path("receipts/create/",                  views.CustomerReceiptCreateView.as_view(),   name="receipt_create"),
+    path("receipts/<int:pk>/",                views.CustomerReceiptDetailView.as_view(),   name="receipt_detail"),
+    path("receipts/<int:pk>/post/",           views.CustomerReceiptPostView.as_view(),     name="receipt_post"),
+    path("receipts/<int:pk>/allocate/",       views.CustomerReceiptAllocateView.as_view(), name="receipt_allocate"),
+
+    # CreditNote
+    path("credit-notes/",                     views.CreditNoteListView.as_view(),   name="credit_note_list"),
+    path("credit-notes/create/",              views.CreditNoteCreateView.as_view(), name="credit_note_create"),
+    path("credit-notes/<int:pk>/",            views.CreditNoteDetailView.as_view(), name="credit_note_detail"),
+    path("credit-notes/<int:pk>/issue/",      views.CreditNoteIssueView.as_view(),  name="credit_note_issue"),
+
+    # DebitNote
+    path("debit-notes/",                      views.DebitNoteListView.as_view(),   name="debit_note_list"),
+    path("debit-notes/create/",               views.DebitNoteCreateView.as_view(), name="debit_note_create"),
+    path("debit-notes/<int:pk>/",             views.DebitNoteDetailView.as_view(), name="debit_note_detail"),
+    path("debit-notes/<int:pk>/issue/",       views.DebitNoteIssueView.as_view(),  name="debit_note_issue"),
 ]

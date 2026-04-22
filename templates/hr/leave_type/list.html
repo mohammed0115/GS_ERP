@@ -1,0 +1,47 @@
+{% extends "_generic/list.html" %}
+{% load i18n erp_permissions %}
+
+{% block page_title %}{% trans "Leave Types" %}{% endblock %}
+{% block header_title %}{% trans "Leave Types" %}{% endblock %}
+{% block header_subtitle %}{% trans "Annual leave, sick leave, and other leave categories" %}{% endblock %}
+
+{% block create_url %}{% url 'hr:leave_type_create' %}{% endblock %}
+{% block create_label %}{% trans "Add Leave Type" %}{% endblock %}
+
+{% block table_head %}
+    <th>{% trans "Name" %}</th>
+    <th>{% trans "Days Allowed" %}</th>
+    <th>{% trans "Paid" %}</th>
+    <th>{% trans "Active" %}</th>
+    <th style="width: 120px;">&nbsp;</th>
+{% endblock %}
+
+{% block table_body %}
+    {% for obj in object_list %}
+        <tr>
+            <td>{{ obj.name }}</td>
+            <td>{{ obj.days_allowed }}</td>
+            <td>
+                {% if obj.is_paid %}
+                    <span class="badge badge-success">{% trans "Yes" %}</span>
+                {% else %}
+                    <span class="badge badge-secondary">{% trans "No" %}</span>
+                {% endif %}
+            </td>
+            <td>
+                {% if obj.is_active %}
+                    <span class="badge badge-success">{% trans "Active" %}</span>
+                {% else %}
+                    <span class="badge badge-secondary">{% trans "Inactive" %}</span>
+                {% endif %}
+            </td>
+            <td class="text-right">
+                {% if request.user|can:"hr.leave_types.update" %}
+                    <a href="{% url 'hr:leave_type_edit' obj.pk %}" class="btn btn-sm btn-outline-warning">
+                        <i class="fas fa-pen"></i>
+                    </a>
+                {% endif %}
+            </td>
+        </tr>
+    {% endfor %}
+{% endblock %}

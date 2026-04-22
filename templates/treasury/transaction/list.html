@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% load i18n erp_money %}
+
+{% block title %}{% trans "Treasury Transactions" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with title=_("Treasury Transactions") subtitle=_("Cash inflows and outflows") primary_action_url="treasury_web:transaction_create"|url primary_action_label=_("New Transaction") primary_action_icon="fa-plus" %}
+
+<form method="get" class="card shadow-sm mb-3">
+    <div class="card-body row">
+        <div class="col-md-3 mb-2">
+            <label class="small text-muted">{% trans "Status" %}</label>
+            <select name="status" class="form-control selectpicker">
+                <option value="">{% trans "All" %}</option>
+                {% for val, lbl in treasury_status_choices %}
+                <option value="{{ val }}" {% if request.GET.status == val %}selected{% endif %}>{{ lbl }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-3 mb-2">
+            <label class="small text-muted">{% trans "Type" %}</label>
+            <select name="txn_type" class="form-control selectpicker">
+                <option value="">{% trans "All" %}</option>
+                {% for val, lbl in transaction_type_choices %}
+                <option value="{{ val }}" {% if request.GET.txn_type == val %}selected{% endif %}>{{ lbl }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2 mb-2">
+            <label class="small text-muted">{% trans "From" %}</label>
+            <input type="date" name="date_from" class="form-control" value="{{ request.GET.date_from|default:'' }}">
+        </div>
+        <div class="col-md-2 mb-2">
+            <label class="small text-muted">{% trans "To" %}</label>
+            <input type="date" name="date_to" class="form-control" value="{{ request.GET.date_to|default:'' }}">
+        </div>
+        <div class="col-md-2 mb-2 d-flex align-items-end">
+            <button class="btn btn-primary btn-block">{% trans "Filter" %}</button>
+        </div>
+    </div>
+</form>
+
+<div class="card shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead class="thead-light">
+                <tr>
+                    <th>{% trans "Date" %}</th>
+                    <th>{% trans "Number" %}</th>
+                    <th>{% trans "Type" %}</th>
+                    <th>{% trans "Party" %}</th>
+                    <th>{% trans "Contra" %}</th>
+                    <th class="text-right">{% trans "Amount" %}</th>
+                    <th>{% trans "Status" %}</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for txn in transactions %}
+                <tr>
+                    <td>{{ txn.transaction_date }}</td>
+                    <td><a href="{% url 'treasury_web:transaction_detail' txn.pk %}">{{ txn.transaction_number|default:txn.pk }}</a></td>
+                    <td>
+                        {% if txn.transaction_type == "inflow" %}
+                            <span class="badge badge-success">{% trans "Inflow" %}</span>
+                        {% elif txn.transaction_type == "outflow" %}
+                            <span class="badge badge-danger">{% trans "Outflow" %}</span>
+                        {% else %}
+                            <span class="badge badge-secondary">{% trans "Adjustment" %}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ txn.cashbox.code|default:txn.bank_account.code }}</td>
+                    <td class="text-muted small">{{ txn.contra_account.code }}</td>
+                    <td class="text-right">{{ txn.amount|erp_money }}</td>
+                    <td>
+                        <span class="badge badge-{% if txn.status == 'posted' %}success{% elif txn.status == 'reversed' %}danger{% else %}warning{% endif %}">
+                            {{ txn.status }}
+                        </span>
+                    </td>
+                    <td>
+                        <a href="{% url 'treasury_web:transaction_detail' txn.pk %}" class="btn btn-sm btn-outline-secondary">{% trans "View" %}</a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="8" class="text-center text-muted py-4">{% trans "No transactions found." %}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% include "_partials/pagination.html" %}
+</div>
+{% endblock %}

@@ -8,7 +8,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
         build-essential \
-        libpq-dev \
+        default-libmysqlclient-dev \
+        pkg-config \
         curl \
  && rm -rf /var/lib/apt/lists/*
 

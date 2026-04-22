@@ -28,6 +28,7 @@ from decimal import Decimal, InvalidOperation
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
+from common.mixins import OrgPermissionRequiredMixin
 from django.db.models import Q, Sum
 from django.http import JsonResponse
 from django.shortcuts import redirect, render
@@ -66,7 +67,7 @@ def _find_open_session(user_id: int) -> CashRegisterSession | None:
 # Terminal
 # ---------------------------------------------------------------------------
 @method_decorator(ensure_csrf_cookie, name="dispatch")
-class POSTerminalView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
+class POSTerminalView(LoginRequiredMixin, OrgPermissionRequiredMixin, TemplateView):
     permission_required = "pos.pos.use"
     template_name = "pos/terminal.html"
 
@@ -94,7 +95,7 @@ class POSTerminalView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView)
 # ---------------------------------------------------------------------------
 # Register open / close
 # ---------------------------------------------------------------------------
-class OpenRegisterView(LoginRequiredMixin, PermissionRequiredMixin, FormView):
+class OpenRegisterView(LoginRequiredMixin, OrgPermissionRequiredMixin, FormView):
     permission_required = "pos.cash_register.open"
     template_name = "pos/register_open.html"
     form_class = OpenRegisterForm
@@ -123,7 +124,7 @@ class OpenRegisterView(LoginRequiredMixin, PermissionRequiredMixin, FormView):
         return super().form_valid(form)
 
 
-class CloseRegisterView(LoginRequiredMixin, PermissionRequiredMixin, FormView):
+class CloseRegisterView(LoginRequiredMixin, OrgPermissionRequiredMixin, FormView):
     """
     Close-register form.
 
@@ -206,7 +207,7 @@ class CloseRegisterView(LoginRequiredMixin, PermissionRequiredMixin, FormView):
 # Checkout — JSON endpoint the terminal POSTs to
 # ---------------------------------------------------------------------------
 @method_decorator(login_required, name="dispatch")
-class POSCheckoutView(PermissionRequiredMixin, View):
+class POSCheckoutView(OrgPermissionRequiredMixin, View):
     """
     POST body (JSON):
         {

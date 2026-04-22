@@ -4,6 +4,8 @@
 {% block page_title %}{% trans "Chart of Accounts" %}{% endblock %}
 {% block header_title %}{% trans "Chart of Accounts" %}{% endblock %}
 {% block header_subtitle %}{% trans "General ledger account structure" %}{% endblock %}
+{% block create_url %}{% url 'finance:account_create' %}{% endblock %}
+{% block create_label %}{% trans "New Account" %}{% endblock %}
 
 {% block table_head %}
     <th>{% trans "Code" %}</th>
@@ -11,6 +13,7 @@
     <th>{% trans "Type" %}</th>
     <th>{% trans "Parent" %}</th>
     <th class="text-center">{% trans "Status" %}</th>
+    <th></th>
 {% endblock %}
 
 {% block table_body %}
@@ -37,6 +40,11 @@
             <td class="text-center">
                 {% if obj.is_active %}<span class="badge badge-success">{% trans "Active" %}</span>
                 {% else %}<span class="badge badge-secondary">{% trans "Inactive" %}</span>{% endif %}
+            </td>
+            <td class="text-right">
+                <a href="{% url 'finance:account_edit' obj.pk %}" class="btn btn-xs btn-outline-secondary">
+                    <i class="fas fa-pencil-alt"></i> {% trans "Edit" %}
+                </a>
             </td>
         </tr>
     {% endfor %}

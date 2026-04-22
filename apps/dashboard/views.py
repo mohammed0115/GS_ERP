@@ -48,10 +48,11 @@ def home(request):
         date_from=thirty_days_ago, date_to=today, limit=10,
     )
 
-    currency = "USD"  # TODO: derive from tenant settings
+    org = getattr(request, "organization", None)
+    currency = (org.default_currency_code if org else None) or "SAR"
 
     context = {
-        "site_title": "N-ERP",
+        "site_title": "GS ERP",
         "currency": currency,
         "kpis": {
             "today_sales": today_sales,

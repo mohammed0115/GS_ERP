@@ -83,13 +83,9 @@ def _account_currency_code(account: Account) -> str:
     """
     Currency attribution for a Chart-of-Accounts node.
 
-    For Sprint 2.1 the chart is single-currency per organization (derived from
-    the org default). Multi-currency accounts are planned in Sprint 2.1b and
-    will store `currency_code` directly on `Account`.
+    Prefers the currency seen on existing posted lines; falls back to the
+    organization's default_currency_code (set on Organization.default_currency_code).
     """
-    # Peek at any posted line for the account to determine its currency; if
-    # none exists yet, fall back to the organization default (TODO: move this
-    # to an explicit Account.currency_code column in 2.1b).
     first_line = (
         JournalLine.objects
         .filter(account_id=account.pk, entry__is_posted=True)
@@ -98,5 +94,14 @@ def _account_currency_code(account: Account) -> str:
     )
     if first_line:
         return first_line
-    # Fallback: assume USD until org default currency is wired (sprint 2.1b).
-    return "USD"
+    # Fall back to the organization's functional currency.
+    from apps.tenancy.infrastructure.models import Organization
+    from apps.tenancy.domain import context as tenant_context
+    ctx = tenant_context.current()
+    if ctx:
+        try:
+            org = Organization.objects.get(pk=ctx.organization_id)
+            return org.default_currency_code or "SAR"
+        except Organization.DoesNotExist:
+            pass
+    return "SAR"

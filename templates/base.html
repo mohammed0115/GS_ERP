@@ -1,5 +1,5 @@
 {% load static i18n erp_permissions erp_money %}<!DOCTYPE html>
-{# ---------------------------------------------------------------------------
+{% comment %} ---------------------------------------------------------------------------
    Base template — the single top-level layout.
 
    Direct port of resources/views/layout/main.blade.php from the legacy
@@ -19,7 +19,7 @@
      {% block title %}   — page title
      {% block content %} — main content area
      {% block scripts %} — page-specific scripts (goes after global scripts)
---------------------------------------------------------------------------- #}
+--------------------------------------------------------------------------- {% endcomment %}
 <html lang="{{ LANGUAGE_CODE|default:'en' }}" dir="{{ LANGUAGE_BIDI|yesno:'rtl,ltr' }}">
 <head>
     <meta charset="utf-8">
@@ -27,7 +27,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="all,follow">
 
-    <title>{% block title %}{% trans "Dashboard" %}{% endblock %} — {{ site_title|default:"N-ERP" }}</title>
+    <title>{% block title %}{% trans "Dashboard" %}{% endblock %} — {{ site_title|default:"GS ERP" }}</title>
 
     {# ------- CSS ------- #}
     {# Bootstrap 4.6 — last pre-bootstrap-5 release, matches legacy markup #}
@@ -95,7 +95,7 @@
         </main>
 
         <footer class="main-footer text-center py-3 text-muted small">
-            &copy; {% now "Y" %} {{ site_title|default:"N-ERP" }}. All rights reserved.
+            &copy; {% now "Y" %} {{ site_title|default:"GS ERP" }}. All rights reserved.
         </footer>
     </div>
 </div>
@@ -132,9 +132,28 @@
 
     /* Default DataTables init for any .datatable class */
     $(function () {
-        $('.datatable').DataTable({ responsive: true, pageLength: 25 });
-        $('.selectpicker').selectpicker();
-        $('.datepicker').datepicker({ format: 'yyyy-mm-dd', autoclose: true });
+        if ($.fn.DataTable) {
+            $('.datatable').DataTable({ responsive: true, pageLength: 25 });
+        }
+        if ($.fn.selectpicker) { $('.selectpicker').selectpicker(); }
+        if ($.fn.datepicker)   { $('.datepicker').datepicker({ format: 'yyyy-mm-dd', autoclose: true }); }
+
+        /* Sidebar accordion — explicit collapse toggle so it works even if
+           Bootstrap's data-api fails to wire up on first load. */
+        $('.sidebar-nav [data-toggle="collapse"]').on('click', function (e) {
+            e.preventDefault();
+            var target = $(this).attr('href') || $(this).data('target');
+            var $target = $(target);
+            if ($target.hasClass('show')) {
+                $target.collapse('hide');
+                $(this).attr('aria-expanded', 'false');
+            } else {
+                /* Close all other open menus (accordion behaviour) */
+                $('.sidebar-nav .collapse.show').collapse('hide');
+                $target.collapse('show');
+                $(this).attr('aria-expanded', 'true');
+            }
+        });
     });
 })();
 </script>

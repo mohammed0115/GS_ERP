@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% load i18n erp_money %}
+
+{% block title %}
+    {% if object %}{% trans "Edit Quotation" %}{% else %}{% trans "New Quotation" %}{% endif %}
+{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with title=_("New quotation") subtitle=_("Compose lines and send to customer") %}
+
+<form method="post" novalidate>
+    {% csrf_token %}
+
+    {% if form.non_field_errors %}
+        <div class="alert alert-danger">
+            {% for err in form.non_field_errors %}{{ err }}<br>{% endfor %}
+        </div>
+    {% endif %}
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-header"><strong>{% trans "Quotation details" %}</strong></div>
+        <div class="card-body">
+            <div class="row">
+                {% include "_partials/form_field.html" with field=form.customer cols=4 %}
+                {% include "_partials/form_field.html" with field=form.quotation_date cols=4 %}
+                {% include "_partials/form_field.html" with field=form.valid_until cols=4 %}
+            </div>
+            <div class="row">
+                {% include "_partials/form_field.html" with field=form.notes cols=12 %}
+            </div>
+        </div>
+    </div>
+
+    <div class="text-right mt-3">
+        <a href="{% url 'sales:quotation_list' %}" class="btn btn-outline-secondary mr-2">
+            {% trans "Cancel" %}
+        </a>
+        <button type="submit" class="btn btn-primary">
+            <i class="fas fa-save"></i> {% trans "Save quotation" %}
+        </button>
+    </div>
+</form>
+{% endblock %}

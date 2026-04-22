@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Close Period" %} — {{ period }}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with title=_("Close Fiscal Period") subtitle=period %}
+
+<div class="alert alert-warning">
+    <strong>{% trans "Warning:" %}</strong>
+    {% trans "Closing this period is a significant action. Ensure the closing checklist is complete before proceeding. You will need to provide the Retained Earnings and Income Summary GL accounts." %}
+</div>
+
+<div class="card shadow-sm" style="max-width: 600px;">
+    <div class="card-body">
+        <form method="post">
+            {% csrf_token %}
+
+            <div class="form-group mb-3">
+                <label class="small text-muted">{% trans "Retained Earnings Account" %} <span class="text-danger">*</span></label>
+                <select name="retained_earnings_account_id" class="form-control selectpicker" data-live-search="true" required>
+                    <option value="">{% trans "Select account…" %}</option>
+                    {% for acct in equity_accounts %}
+                    <option value="{{ acct.pk }}">{{ acct.code }} — {{ acct.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group mb-3">
+                <label class="small text-muted">{% trans "Income Summary Account" %} <span class="text-danger">*</span></label>
+                <select name="income_summary_account_id" class="form-control selectpicker" data-live-search="true" required>
+                    <option value="">{% trans "Select account…" %}</option>
+                    {% for acct in equity_accounts %}
+                    <option value="{{ acct.pk }}">{{ acct.code }} — {{ acct.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group mb-4">
+                <label class="small text-muted">{% trans "Currency Code" %}</label>
+                <input type="text" name="currency_code" class="form-control" value="SAR" maxlength="3" required>
+            </div>
+
+            <div class="d-flex gap-2">
+                <a href="{% url 'finance:closing_checklist' period.pk %}" class="btn btn-outline-secondary">
+                    <i class="fa fa-arrow-left"></i> {% trans "Back to Checklist" %}
+                </a>
+                <button type="submit" class="btn btn-danger" onclick="return confirm('{% trans "Are you sure you want to close this period? This will lock all postings." %}')">
+                    <i class="fa fa-lock"></i> {% trans "Close Period" %}
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

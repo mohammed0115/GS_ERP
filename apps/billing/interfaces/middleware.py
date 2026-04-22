@@ -34,6 +34,9 @@ _EXEMPT_PREFIXES: tuple[str, ...] = (
     "/admin/",
     "/static/",
     "/media/",
+    "/accounts/",   # login / logout / password reset
+    "/health/",     # health-check endpoint
+    "/__debug__/",  # Django debug toolbar
 )
 
 

@@ -4,12 +4,7 @@
 {% block title %}{% trans "Stock Adjustments" %}{% endblock %}
 
 {% block content %}
-{% include "_partials/page_header.html" with
-    title=_("Stock Adjustments")
-    subtitle=_("Manual stock corrections — shrinkage, damage, found inventory")
-    primary_action_url=create_url
-    primary_action_label=_("New adjustment")
-    primary_action_icon="fa-plus" %}
+{% include "_partials/page_header.html" with title=_("Stock Adjustments") subtitle=_("Manual stock corrections — shrinkage, damage, found inventory") primary_action_url=create_url primary_action_label=_("New adjustment") primary_action_icon="fa-plus" %}
 
 <form method="get" class="card shadow-sm mb-3">
     <div class="card-body">

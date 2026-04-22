@@ -164,10 +164,116 @@ class PayrollSpec:
         return self.gross_salary + self.allowances
 
 
+# ---------------------------------------------------------------------------
+# LeaveRequest domain
+# ---------------------------------------------------------------------------
+class LeaveStatus(str, Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    CANCELLED = "cancelled"
+
+
+@dataclass(frozen=True, slots=True)
+class LeaveRequestSpec:
+    employee_id: int
+    leave_type_id: int
+    start_date: DateType
+    end_date: DateType
+    days_requested: int
+    reason: str = ""
+
+    def __post_init__(self) -> None:
+        from apps.hr.domain.exceptions import LeaveRequestError
+        if self.employee_id <= 0:
+            raise LeaveRequestError("employee_id must be positive.")
+        if self.leave_type_id <= 0:
+            raise LeaveRequestError("leave_type_id must be positive.")
+        if self.end_date < self.start_date:
+            raise LeaveRequestError("end_date cannot be before start_date.")
+        if self.days_requested < 1:
+            raise LeaveRequestError("days_requested must be at least 1.")
+
+    @property
+    def calendar_days(self) -> int:
+        return (self.end_date - self.start_date).days + 1
+
+
+# ---------------------------------------------------------------------------
+# Evaluation domain
+# ---------------------------------------------------------------------------
+class EvaluationRatingEnum(str, Enum):
+    EXCEPTIONAL = "exceptional"
+    EXCEEDS = "exceeds"
+    MEETS = "meets"
+    BELOW = "below"
+    UNSATISFACTORY = "unsatisfactory"
+
+
+class EvaluationStatusEnum(str, Enum):
+    DRAFT = "draft"
+    SUBMITTED = "submitted"
+    ACKNOWLEDGED = "acknowledged"
+
+
+@dataclass(frozen=True, slots=True)
+class EvaluationSpec:
+    employee_id: int
+    period_year: int
+    period_quarter: int   # 0 = annual, 1-4 = quarterly
+    rating: EvaluationRatingEnum
+    goals_met_pct: Decimal = Decimal("0")
+    strengths: str = ""
+    areas_for_improvement: str = ""
+
+    def __post_init__(self) -> None:
+        from apps.hr.domain.exceptions import EvaluationError
+        if self.employee_id <= 0:
+            raise EvaluationError("employee_id must be positive.")
+        if self.period_quarter < 0 or self.period_quarter > 4:
+            raise EvaluationError("period_quarter must be 0..4.")
+        if not (Decimal("0") <= self.goals_met_pct <= Decimal("100")):
+            raise EvaluationError("goals_met_pct must be 0..100.")
+
+
+# ---------------------------------------------------------------------------
+# Training domain
+# ---------------------------------------------------------------------------
+class TrainingStatusEnum(str, Enum):
+    ENROLLED = "enrolled"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True, slots=True)
+class TrainingEnrollmentSpec:
+    employee_id: int
+    program_id: int
+    start_date: DateType
+
+    def __post_init__(self) -> None:
+        from apps.hr.domain.exceptions import TrainingError
+        if self.employee_id <= 0:
+            raise TrainingError("employee_id must be positive.")
+        if self.program_id <= 0:
+            raise TrainingError("program_id must be positive.")
+        if not isinstance(self.start_date, DateType):
+            raise TrainingError("start_date must be a date.")
+
+
 __all__ = [
     "AttendanceSpec",
     "AttendanceStatus",
+    "EvaluationRatingEnum",
+    "EvaluationSpec",
+    "EvaluationStatusEnum",
     "HolidaySpec",
     "HolidayStatus",
+    "LeaveRequestSpec",
+    "LeaveStatus",
     "PayrollSpec",
+    "TrainingEnrollmentSpec",
+    "TrainingStatusEnum",
 ]

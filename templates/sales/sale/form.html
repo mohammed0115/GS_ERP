@@ -29,9 +29,7 @@
 {% endblock %}
 
 {% block content %}
-{% include "_partials/page_header.html" with
-    title=_("New sale")
-    subtitle=_("Compose lines, review totals, and post to the ledger") %}
+{% include "_partials/page_header.html" with title=_("New sale") subtitle=_("Compose lines, review totals, and post to the ledger") %}
 
 <form method="post" id="sale-form" class="sale-builder" novalidate>
     {% csrf_token %}
@@ -42,7 +40,7 @@
         </div>
     {% endif %}
 
-    {# ---- Header ---- #}
+    {% comment %} ---- Header ---- {% endcomment %}
     <div class="card shadow-sm mb-3">
         <div class="card-body">
             <div class="row">
@@ -59,7 +57,7 @@
         </div>
     </div>
 
-    {# ---- Line items ---- #}
+    {% comment %} ---- Line items ---- {% endcomment %}
     <div class="card shadow-sm mb-3">
         <div class="card-header d-flex justify-content-between align-items-center">
             <strong>{% trans "Items" %}</strong>
@@ -82,7 +80,7 @@
                     </tr>
                 </thead>
                 <tbody id="lines-body">
-                    {# Rows inserted by JS. Hidden line-template at bottom. #}
+                    {% comment %} Rows inserted by JS. Hidden line-template at bottom. {% endcomment %}
                 </tbody>
                 <tfoot>
                     <tr class="totals-row">
@@ -110,7 +108,7 @@
         </div>
     </div>
 
-    {# ---- Actions ---- #}
+    {% comment %} ---- Actions ---- {% endcomment %}
     <div class="d-flex justify-content-end mb-4">
         <a href="{% url 'sales:list' %}" class="btn btn-secondary mr-2">{% trans "Cancel" %}</a>
         <button type="submit" class="btn btn-primary" id="post-btn">
@@ -118,12 +116,12 @@
         </button>
     </div>
 
-    {# Hidden JSON payload of lines — the server reads this, not any
-       individual <input name=…> because lines are dynamic. #}
+    {% comment %} Hidden JSON payload of lines — the server reads this, not any
+       individual <input name=…> because lines are dynamic. {% endcomment %}
     <input type="hidden" name="lines_json" id="lines_json" value="[]">
 </form>
 
-{# ---- Row template (cloned by JS) ---- #}
+{% comment %} ---- Row template (cloned by JS) ---- {% endcomment %}
 <template id="line-row-template">
     <tr class="line-row">
         <td>

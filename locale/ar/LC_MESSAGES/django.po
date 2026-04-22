@@ -1,0 +1,789 @@
+# Arabic translations for GS ERP.
+# Copyright (C) 2026 GS ERP Team
+# This file is distributed under the same license as the GS ERP package.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: GS ERP 1.0\n"
+"Report-Msgid-Bugs-To: support@gs-erp.com\n"
+"POT-Creation-Date: 2026-04-22 00:00+0000\n"
+"PO-Revision-Date: 2026-04-22 00:00+0000\n"
+"Last-Translator: GS ERP Team\n"
+"Language-Team: Arabic\n"
+"Language: ar\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=6; plural=n==0 ? 0 : n==1 ? 1 : n==2 ? 2 : n%100>=3 "
+"&& n%100<=10 ? 3 : n%100>=11 && n%100<=99 ? 4 : 5;\n"
+
+# ---------------------------------------------------------------------------
+# Navigation / Menu
+# ---------------------------------------------------------------------------
+msgid "Dashboard"
+msgstr "لوحة التحكم"
+
+msgid "Catalog"
+msgstr "كتالوج المنتجات"
+
+msgid "Inventory"
+msgstr "المخزون"
+
+msgid "Sales"
+msgstr "المبيعات"
+
+msgid "Purchases"
+msgstr "المشتريات"
+
+msgid "CRM"
+msgstr "إدارة العملاء"
+
+msgid "Finance"
+msgstr "المالية"
+
+msgid "HR"
+msgstr "الموارد البشرية"
+
+msgid "POS"
+msgstr "نقطة البيع"
+
+msgid "Reports"
+msgstr "التقارير"
+
+msgid "Settings"
+msgstr "الإعدادات"
+
+msgid "Logout"
+msgstr "تسجيل الخروج"
+
+msgid "Log out"
+msgstr "تسجيل الخروج"
+
+msgid "People"
+msgstr "الأشخاص"
+
+msgid "Treasury"
+msgstr "الخزينة"
+
+msgid "Point of Sale"
+msgstr "نقطة البيع"
+
+msgid "Notifications"
+msgstr "الإشعارات"
+
+msgid "Profile"
+msgstr "الملف الشخصي"
+
+msgid "Change Password"
+msgstr "تغيير كلمة المرور"
+
+# ---------------------------------------------------------------------------
+# Auth
+# ---------------------------------------------------------------------------
+msgid "Sign in"
+msgstr "تسجيل الدخول"
+
+msgid "Forgot your password?"
+msgstr "نسيت كلمة المرور؟"
+
+msgid "Remember me"
+msgstr "تذكرني"
+
+msgid "Don't have an account?"
+msgstr "ليس لديك حساب؟"
+
+msgid "Create your company"
+msgstr "إنشاء شركتك"
+
+msgid "Your recent alerts and messages"
+msgstr "التنبيهات والرسائل الأخيرة"
+
+msgid "Mark all read"
+msgstr "تعيين الكل كمقروء"
+
+msgid "No notifications yet."
+msgstr "لا توجد إشعارات بعد."
+
+# ---------------------------------------------------------------------------
+# Common actions
+# ---------------------------------------------------------------------------
+msgid "Save"
+msgstr "حفظ"
+
+msgid "Cancel"
+msgstr "إلغاء"
+
+msgid "Delete"
+msgstr "حذف"
+
+msgid "Edit"
+msgstr "تعديل"
+
+msgid "Create"
+msgstr "إنشاء"
+
+msgid "Search"
+msgstr "بحث"
+
+msgid "Filter"
+msgstr "تصفية"
+
+msgid "Export"
+msgstr "تصدير"
+
+msgid "Print"
+msgstr "طباعة"
+
+msgid "Confirm"
+msgstr "تأكيد"
+
+msgid "Back"
+msgstr "رجوع"
+
+msgid "Submit"
+msgstr "إرسال"
+
+msgid "Approve"
+msgstr "موافقة"
+
+msgid "Reject"
+msgstr "رفض"
+
+msgid "Post"
+msgstr "ترحيل"
+
+msgid "Post Sale"
+msgstr "ترحيل البيع"
+
+msgid "Issue Invoice"
+msgstr "إصدار الفاتورة"
+
+msgid "Dispatch"
+msgstr "إرسال"
+
+msgid "Confirm Delivery"
+msgstr "تأكيد الاستلام"
+
+msgid "Convert to Sale"
+msgstr "تحويل إلى بيع"
+
+# ---------------------------------------------------------------------------
+# Status labels
+# ---------------------------------------------------------------------------
+msgid "Draft"
+msgstr "مسودة"
+
+msgid "Posted"
+msgstr "مُرحَّل"
+
+msgid "Issued"
+msgstr "مُصدَر"
+
+msgid "Paid"
+msgstr "مدفوع"
+
+msgid "Partially Paid"
+msgstr "مدفوع جزئياً"
+
+msgid "Cancelled"
+msgstr "ملغى"
+
+msgid "Pending"
+msgstr "قيد الانتظار"
+
+msgid "Approved"
+msgstr "موافق عليه"
+
+msgid "Rejected"
+msgstr "مرفوض"
+
+msgid "Active"
+msgstr "نشط"
+
+msgid "Inactive"
+msgstr "غير نشط"
+
+msgid "Open"
+msgstr "مفتوح"
+
+msgid "Closed"
+msgstr "مغلق"
+
+msgid "Converted"
+msgstr "محوَّل"
+
+msgid "Expired"
+msgstr "منتهي الصلاحية"
+
+msgid "Declined"
+msgstr "مرفوض"
+
+msgid "Delivered"
+msgstr "مُسلَّم"
+
+msgid "Dispatched"
+msgstr "مُرسَل"
+
+msgid "Completed"
+msgstr "مكتمل"
+
+msgid "In Progress"
+msgstr "جارٍ"
+
+# ---------------------------------------------------------------------------
+# Catalog
+# ---------------------------------------------------------------------------
+msgid "Products"
+msgstr "المنتجات"
+
+msgid "Product"
+msgstr "المنتج"
+
+msgid "Categories"
+msgstr "التصنيفات"
+
+msgid "Category"
+msgstr "التصنيف"
+
+msgid "Units of Measure"
+msgstr "وحدات القياس"
+
+msgid "Unit of Measure"
+msgstr "وحدة القياس"
+
+msgid "SKU"
+msgstr "رمز المنتج (SKU)"
+
+msgid "Barcode"
+msgstr "الباركود"
+
+msgid "Print Barcodes"
+msgstr "طباعة الباركود"
+
+msgid "Cost Price"
+msgstr "سعر التكلفة"
+
+msgid "Sale Price"
+msgstr "سعر البيع"
+
+msgid "Reorder Point"
+msgstr "نقطة إعادة الطلب"
+
+# ---------------------------------------------------------------------------
+# Inventory
+# ---------------------------------------------------------------------------
+msgid "Warehouses"
+msgstr "المستودعات"
+
+msgid "Warehouse"
+msgstr "المستودع"
+
+msgid "Stock on Hand"
+msgstr "المخزون الحالي"
+
+msgid "Stock Movements"
+msgstr "حركات المخزون"
+
+msgid "Stock Adjustment"
+msgstr "تسوية المخزون"
+
+msgid "Stock Transfer"
+msgstr "تحويل المخزون"
+
+msgid "Quantity"
+msgstr "الكمية"
+
+msgid "Inbound"
+msgstr "وارد"
+
+msgid "Outbound"
+msgstr "صادر"
+
+# ---------------------------------------------------------------------------
+# CRM
+# ---------------------------------------------------------------------------
+msgid "Customers"
+msgstr "العملاء"
+
+msgid "Customer"
+msgstr "العميل"
+
+msgid "Suppliers"
+msgstr "الموردون"
+
+msgid "Supplier"
+msgstr "المورد"
+
+msgid "Vendor"
+msgstr "المورد"
+
+msgid "Billers"
+msgstr "جهات الإصدار"
+
+msgid "Biller"
+msgstr "جهة الإصدار"
+
+msgid "Phone"
+msgstr "الهاتف"
+
+msgid "Email"
+msgstr "البريد الإلكتروني"
+
+msgid "Address"
+msgstr "العنوان"
+
+msgid "Tax Number"
+msgstr "الرقم الضريبي"
+
+msgid "Credit Limit"
+msgstr "حد الائتمان"
+
+# ---------------------------------------------------------------------------
+# Sales
+# ---------------------------------------------------------------------------
+msgid "Sale"
+msgstr "بيع"
+
+msgid "Quotations"
+msgstr "عروض الأسعار"
+
+msgid "Quotation"
+msgstr "عرض السعر"
+
+msgid "Sales Invoices"
+msgstr "فواتير المبيعات"
+
+msgid "Sales Invoice"
+msgstr "فاتورة مبيعات"
+
+msgid "Customer Receipts"
+msgstr "تحصيلات العملاء"
+
+msgid "Credit Notes"
+msgstr "إشعارات الخصم"
+
+msgid "Debit Notes"
+msgstr "إشعارات الإضافة"
+
+msgid "Returns"
+msgstr "المرتجعات"
+
+msgid "Delivery Notes"
+msgstr "مذكرات التسليم"
+
+msgid "Invoice Number"
+msgstr "رقم الفاتورة"
+
+msgid "Invoice Date"
+msgstr "تاريخ الفاتورة"
+
+msgid "Due Date"
+msgstr "تاريخ الاستحقاق"
+
+msgid "Subtotal"
+msgstr "المجموع الجزئي"
+
+msgid "Discount"
+msgstr "الخصم"
+
+msgid "Tax"
+msgstr "الضريبة"
+
+msgid "Grand Total"
+msgstr "الإجمالي"
+
+msgid "Amount Paid"
+msgstr "المبلغ المدفوع"
+
+msgid "Amount Due"
+msgstr "المبلغ المستحق"
+
+# ---------------------------------------------------------------------------
+# Purchases
+# ---------------------------------------------------------------------------
+msgid "Purchase Orders"
+msgstr "أوامر الشراء"
+
+msgid "Purchase Invoice"
+msgstr "فاتورة مورد"
+
+msgid "Vendor Payments"
+msgstr "دفعات الموردين"
+
+msgid "Vendor Credit Notes"
+msgstr "إشعارات خصم الموردين"
+
+# ---------------------------------------------------------------------------
+# Finance
+# ---------------------------------------------------------------------------
+msgid "Chart of Accounts"
+msgstr "دليل الحسابات"
+
+msgid "Account"
+msgstr "الحساب"
+
+msgid "Journal Entries"
+msgstr "القيود اليومية"
+
+msgid "Journal Entry"
+msgstr "قيد يومي"
+
+msgid "Fiscal Years"
+msgstr "السنوات المالية"
+
+msgid "Accounting Periods"
+msgstr "الفترات المحاسبية"
+
+msgid "Expenses"
+msgstr "المصروفات"
+
+msgid "Tax Codes"
+msgstr "رموز الضريبة"
+
+msgid "Money Transfers"
+msgstr "تحويلات مالية"
+
+msgid "Trial Balance"
+msgstr "ميزان المراجعة"
+
+msgid "Profit and Loss"
+msgstr "الأرباح والخسائر"
+
+msgid "Balance Sheet"
+msgstr "الميزانية العمومية"
+
+msgid "Debit"
+msgstr "مدين"
+
+msgid "Credit"
+msgstr "دائن"
+
+msgid "Opening Balance"
+msgstr "الرصيد الافتتاحي"
+
+msgid "Closing Balance"
+msgstr "الرصيد الختامي"
+
+# ---------------------------------------------------------------------------
+# HR
+# ---------------------------------------------------------------------------
+msgid "Employees"
+msgstr "الموظفون"
+
+msgid "Employee"
+msgstr "الموظف"
+
+msgid "Departments"
+msgstr "الأقسام"
+
+msgid "Department"
+msgstr "القسم"
+
+msgid "Job Titles"
+msgstr "المسميات الوظيفية"
+
+msgid "Job Title"
+msgstr "المسمى الوظيفي"
+
+msgid "Leave Requests"
+msgstr "طلبات الإجازات"
+
+msgid "Leave Types"
+msgstr "أنواع الإجازات"
+
+msgid "Attendance"
+msgstr "الحضور والانصراف"
+
+msgid "Payroll"
+msgstr "الرواتب"
+
+msgid "Evaluations"
+msgstr "التقييمات"
+
+msgid "Training Programs"
+msgstr "برامج التدريب"
+
+msgid "Benefits"
+msgstr "المزايا الوظيفية"
+
+msgid "Base Salary"
+msgstr "الراتب الأساسي"
+
+msgid "Hire Date"
+msgstr "تاريخ التعيين"
+
+# ---------------------------------------------------------------------------
+# POS
+# ---------------------------------------------------------------------------
+msgid "Open Session"
+msgstr "فتح الجلسة"
+
+msgid "Close Session"
+msgstr "إغلاق الجلسة"
+
+msgid "Opening Cash"
+msgstr "النقد الافتتاحي"
+
+msgid "Closing Cash"
+msgstr "النقد الختامي"
+
+msgid "Cart"
+msgstr "السلة"
+
+msgid "Payment"
+msgstr "الدفع"
+
+msgid "Change"
+msgstr "الباقي"
+
+msgid "Receipt"
+msgstr "الإيصال"
+
+msgid "Cash"
+msgstr "نقداً"
+
+msgid "Card"
+msgstr "بطاقة"
+
+# ---------------------------------------------------------------------------
+# Error messages
+# ---------------------------------------------------------------------------
+msgid "This field is required."
+msgstr "هذا الحقل مطلوب."
+
+msgid "Invalid value."
+msgstr "قيمة غير صحيحة."
+
+msgid "Insufficient stock."
+msgstr "المخزون غير كافٍ."
+
+msgid "Period is closed."
+msgstr "الفترة المحاسبية مغلقة."
+
+msgid "Not found."
+msgstr "العنصر غير موجود."
+
+msgid "You do not have permission to perform this action."
+msgstr "ليس لديك صلاحية لتنفيذ هذا الإجراء."
+
+msgid "Please correct the errors below."
+msgstr "يرجى تصحيح الأخطاء أدناه."
+
+# ---------------------------------------------------------------------------
+# Success messages
+# ---------------------------------------------------------------------------
+msgid "Saved successfully."
+msgstr "تم الحفظ بنجاح."
+
+msgid "Posted successfully."
+msgstr "تم الترحيل بنجاح."
+
+msgid "Invoice issued successfully."
+msgstr "تم إصدار الفاتورة بنجاح."
+
+msgid "Payment recorded successfully."
+msgstr "تم تسجيل الدفعة بنجاح."
+
+msgid "Stock adjusted successfully."
+msgstr "تم تسوية المخزون بنجاح."
+
+msgid "Transfer completed successfully."
+msgstr "تم التحويل بنجاح."
+
+# ---------------------------------------------------------------------------
+# Sidebar — Catalog
+# ---------------------------------------------------------------------------
+msgid "Add Product"
+msgstr "إضافة منتج"
+
+msgid "Brands"
+msgstr "العلامات التجارية"
+
+msgid "Units"
+msgstr "وحدات القياس"
+
+msgid "Taxes"
+msgstr "الضرائب"
+
+msgid "Print Barcode"
+msgstr "طباعة الباركود"
+
+# ---------------------------------------------------------------------------
+# Sidebar — Inventory
+# ---------------------------------------------------------------------------
+msgid "Adjustments"
+msgstr "تسويات المخزون"
+
+msgid "Transfers"
+msgstr "التحويلات"
+
+msgid "Stock Count"
+msgstr "جرد المخزون"
+
+# ---------------------------------------------------------------------------
+# Sidebar — Purchases
+# ---------------------------------------------------------------------------
+msgid "Purchase List"
+msgstr "قائمة المشتريات"
+
+msgid "Add Purchase"
+msgstr "إضافة مشتريات"
+
+# ---------------------------------------------------------------------------
+# Sidebar — Sales
+# ---------------------------------------------------------------------------
+msgid "Sales List"
+msgstr "قائمة المبيعات"
+
+msgid "Add Sale"
+msgstr "إضافة بيع"
+
+msgid "Deliveries"
+msgstr "التسليمات"
+
+# ---------------------------------------------------------------------------
+# Sidebar — CRM / People
+# ---------------------------------------------------------------------------
+msgid "Customer Groups"
+msgstr "مجموعات العملاء"
+
+# ---------------------------------------------------------------------------
+# Sidebar — Finance
+# ---------------------------------------------------------------------------
+msgid "Expense Categories"
+msgstr "فئات المصروفات"
+
+msgid "Payments"
+msgstr "المدفوعات"
+
+msgid "Period Closing"
+msgstr "إغلاق الفترة"
+
+# ---------------------------------------------------------------------------
+# Sidebar — Treasury
+# ---------------------------------------------------------------------------
+msgid "Cashboxes"
+msgstr "الصناديق النقدية"
+
+msgid "Bank Accounts"
+msgstr "الحسابات البنكية"
+
+msgid "Transactions"
+msgstr "المعاملات"
+
+msgid "Bank Statements"
+msgstr "كشوفات البنك"
+
+msgid "Reconciliation"
+msgstr "التسوية البنكية"
+
+msgid "Payment Methods"
+msgstr "طرق الدفع"
+
+# ---------------------------------------------------------------------------
+# Sidebar — HR
+# ---------------------------------------------------------------------------
+msgid "Record Attendance"
+msgstr "تسجيل الحضور"
+
+msgid "Holidays"
+msgstr "أيام العطل"
+
+msgid "Training Records"
+msgstr "سجلات التدريب"
+
+# ---------------------------------------------------------------------------
+# Sidebar — Reports
+# ---------------------------------------------------------------------------
+msgid "Profit & Loss"
+msgstr "الأرباح والخسائر"
+
+msgid "Daily Sales"
+msgstr "المبيعات اليومية"
+
+msgid "Best Sellers"
+msgstr "الأكثر مبيعاً"
+
+msgid "Low Stock Alert"
+msgstr "تنبيه نقص المخزون"
+
+msgid "Warehouse Stock"
+msgstr "مخزون المستودع"
+
+msgid "Due Receivables"
+msgstr "المستحقات المتأخرة"
+
+msgid "General Ledger"
+msgstr "دفتر الأستاذ العام"
+
+msgid "AR Aging"
+msgstr "تقادم الذمم المدينة"
+
+msgid "AP Aging"
+msgstr "تقادم الذمم الدائنة"
+
+msgid "Customer Statement"
+msgstr "كشف حساب العميل"
+
+msgid "Vendor Statement"
+msgstr "كشف حساب المورد"
+
+msgid "Cashbox Ledger"
+msgstr "دفتر الصندوق"
+
+msgid "Bank Ledger"
+msgstr "دفتر البنك"
+
+msgid "Liquidity Summary"
+msgstr "ملخص السيولة"
+
+# ---------------------------------------------------------------------------
+# Sidebar — Settings
+# ---------------------------------------------------------------------------
+msgid "Company Settings"
+msgstr "إعدادات الشركة"
+
+msgid "Currencies"
+msgstr "العملات"
+
+msgid "Users"
+msgstr "المستخدمون"
+
+msgid "Roles"
+msgstr "الأدوار"
+
+# ---------------------------------------------------------------------------
+# Generic list / form
+# ---------------------------------------------------------------------------
+msgid "New"
+msgstr "جديد"
+
+msgid "No records yet."
+msgstr "لا توجد سجلات بعد."
+
+msgid "Actions"
+msgstr "الإجراءات"
+
+msgid "Name"
+msgstr "الاسم"
+
+msgid "Status"
+msgstr "الحالة"
+
+msgid "Date"
+msgstr "التاريخ"
+
+msgid "Total"
+msgstr "الإجمالي"
+
+msgid "Notes"
+msgstr "ملاحظات"
+
+msgid "Description"
+msgstr "الوصف"
+
+msgid "Code"
+msgstr "الرمز"
+
+msgid "Reference"
+msgstr "المرجع"

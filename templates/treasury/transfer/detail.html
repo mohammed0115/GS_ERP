@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% load i18n erp_money %}
+
+{% block title %}{{ transfer.transfer_number|default:transfer.pk }} — {% trans "Transfer" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with title=transfer.transfer_number|default:transfer.pk subtitle=_("Internal Transfer") back_url="treasury_web:transfer_list"|url %}
+
+<div class="col-md-5 mb-4 px-0">
+    <div class="card shadow-sm h-100">
+        <div class="card-header font-weight-bold">{% trans "Details" %}</div>
+        <div class="card-body">
+            <dl class="row mb-0">
+                <dt class="col-sm-5">{% trans "Date" %}</dt><dd class="col-sm-7">{{ transfer.transfer_date }}</dd>
+                <dt class="col-sm-5">{% trans "From" %}</dt>
+                <dd class="col-sm-7">{{ transfer.from_cashbox.code|default:transfer.from_bank_account.code }}</dd>
+                <dt class="col-sm-5">{% trans "To" %}</dt>
+                <dd class="col-sm-7">{{ transfer.to_cashbox.code|default:transfer.to_bank_account.code }}</dd>
+                <dt class="col-sm-5">{% trans "Amount" %}</dt>
+                <dd class="col-sm-7 font-weight-bold">{{ transfer.amount|erp_money }} {{ transfer.currency_code }}</dd>
+                {% if transfer.reference %}
+                <dt class="col-sm-5">{% trans "Reference" %}</dt><dd class="col-sm-7">{{ transfer.reference }}</dd>
+                {% endif %}
+                <dt class="col-sm-5">{% trans "Status" %}</dt>
+                <dd class="col-sm-7">
+                    <span class="badge badge-{% if transfer.status == 'posted' %}success{% elif transfer.status == 'reversed' %}danger{% else %}warning{% endif %}">
+                        {{ transfer.status }}
+                    </span>
+                </dd>
+                {% if transfer.journal_entry %}
+                <dt class="col-sm-5">{% trans "Journal Entry" %}</dt>
+                <dd class="col-sm-7">{{ transfer.journal_entry_id }}</dd>
+                {% endif %}
+                {% if transfer.posted_by %}
+                <dt class="col-sm-5">{% trans "Posted By" %}</dt><dd class="col-sm-7">{{ transfer.posted_by }}</dd>
+                {% endif %}
+                {% if transfer.notes %}
+                <dt class="col-sm-5">{% trans "Notes" %}</dt><dd class="col-sm-7">{{ transfer.notes }}</dd>
+                {% endif %}
+            </dl>
+        </div>
+        <div class="card-footer d-flex flex-wrap gap-2">
+            {% if transfer.status == "draft" %}
+            <form method="post" action="{% url 'treasury_web:transfer_post' transfer.pk %}"
+                  onsubmit="return confirm('{% trans "Post this transfer?" %}')">
+                {% csrf_token %}
+                <button class="btn btn-success btn-sm">{% trans "Post" %}</button>
+            </form>
+            {% endif %}
+            {% if transfer.status == "posted" %}
+            <form method="post" action="{% url 'treasury_web:transfer_reverse' transfer.pk %}"
+                  onsubmit="return confirm('{% trans "Reverse this transfer?" %}')">
+                {% csrf_token %}
+                <button class="btn btn-danger btn-sm">{% trans "Reverse" %}</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

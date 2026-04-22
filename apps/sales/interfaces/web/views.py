@@ -25,6 +25,7 @@ from decimal import Decimal, InvalidOperation
 from django import forms
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
+from common.mixins import OrgPermissionRequiredMixin
 from django.db.models import Q
 from django.http import HttpResponseRedirect, JsonResponse
 from django.urls import reverse, reverse_lazy
@@ -42,10 +43,23 @@ from apps.sales.infrastructure.models import Sale, SaleStatusChoices
 from common.forms import BootstrapFormMixin
 
 
+def _current_org(request):
+    from apps.tenancy.domain import context as tenant_context
+    from apps.tenancy.infrastructure.models import Organization
+    ctx = tenant_context.current()
+    if ctx:
+        try:
+            return Organization.objects.get(pk=ctx.organization_id)
+        except Organization.DoesNotExist:
+            pass
+    member = request.user.memberships.filter(role="admin", is_active=True).first()
+    return member.organization if member else None
+
+
 # ---------------------------------------------------------------------------
 # List / Detail / Invoice (unchanged from Chunk C.1)
 # ---------------------------------------------------------------------------
-class SaleListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
+class SaleListView(LoginRequiredMixin, OrgPermissionRequiredMixin, ListView):
     permission_required = "sales.sales.view"
     model = Sale
     template_name = "sales/sale/list.html"
@@ -83,7 +97,7 @@ class SaleListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         return ctx
 
 
-class SaleDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
+class SaleDetailView(LoginRequiredMixin, OrgPermissionRequiredMixin, DetailView):
     permission_required = "sales.sales.view"
     model = Sale
     template_name = "sales/sale/detail.html"
@@ -206,7 +220,7 @@ def _parse_lines(raw: str) -> list[_ParsedLine]:
     return out
 
 
-class SaleCreateView(LoginRequiredMixin, PermissionRequiredMixin, FormView):
+class SaleCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, FormView):
     """Compose and post a new sale through `PostSale`."""
     permission_required = "sales.sales.create"
     template_name = "sales/sale/form.html"
@@ -279,8 +293,8 @@ class SaleCreateView(LoginRequiredMixin, PermissionRequiredMixin, FormView):
             memo=header.get("memo") or "",
         )
 
-        import time
-        reference = f"SAL-{header['sale_date'].strftime('%Y%m%d')}-{int(time.time()) % 100000}"
+        import uuid
+        reference = f"SAL-{header['sale_date'].strftime('%Y%m%d')}-{uuid.uuid4().hex[:8].upper()}"
 
         try:
             posted = PostSale().execute(PostSaleCommand(
@@ -309,9 +323,115 @@ class SaleCreateView(LoginRequiredMixin, PermissionRequiredMixin, FormView):
 
 
 # ---------------------------------------------------------------------------
+# Edit draft sale
+# ---------------------------------------------------------------------------
+class SaleEditView(LoginRequiredMixin, OrgPermissionRequiredMixin, FormView):
+    """Rewrite lines of a DRAFT sale atomically via EditDraftSale use case."""
+    permission_required = "sales.sales.create"
+    template_name = "sales/sale/form.html"
+    form_class = SaleHeaderForm
+
+    def get_object(self):
+        from apps.sales.infrastructure.models import Sale as SaleModel
+        from django.shortcuts import get_object_or_404
+        return get_object_or_404(SaleModel, pk=self.kwargs["pk"])
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["sale"] = self.get_object()
+        ctx["edit_mode"] = True
+        ctx["warehouses"] = Warehouse.objects.filter(is_active=True).order_by("code")
+        return ctx
+
+    def get_initial(self):
+        sale = self.get_object()
+        return {
+            "customer": sale.customer_id,
+            "biller": sale.biller_id,
+            "sale_date": sale.sale_date,
+            "currency_code": sale.currency_code,
+            "memo": sale.memo,
+        }
+
+    def form_valid(self, form):
+        from apps.sales.application.use_cases.edit_draft_sale import (
+            EditDraftSale, EditDraftSaleCommand,
+            SaleNotDraftError, SaleNotFoundError,
+        )
+
+        raw_lines = self.request.POST.get("lines_json", "[]")
+        try:
+            parsed = _parse_lines(raw_lines)
+        except ValueError as exc:
+            form.add_error(None, str(exc))
+            return self.form_invalid(form)
+
+        header = form.cleaned_data
+        currency = Currency(header["currency_code"])
+
+        product_ids = [p.product_id for p in parsed]
+        products = {
+            p.pk: p for p in
+            Product.objects.filter(pk__in=product_ids).select_related("unit")
+        }
+
+        line_specs: list[SaleLineSpec] = []
+        for p in parsed:
+            prod = products.get(p.product_id)
+            if prod is None:
+                form.add_error(None, f"Product #{p.product_id} not found.")
+                return self.form_invalid(form)
+            try:
+                line_specs.append(SaleLineSpec(
+                    product_id=p.product_id,
+                    warehouse_id=p.warehouse_id,
+                    quantity=Quantity(p.quantity, prod.unit.code),
+                    unit_price=Money(p.unit_price, currency),
+                    discount_percent=p.discount_percent,
+                    tax_rate_percent=p.tax_rate_percent,
+                ))
+            except Exception as exc:
+                form.add_error(None, f"Invalid line for {prod.code}: {exc}")
+                return self.form_invalid(form)
+
+        if not line_specs:
+            form.add_error(None, "Add at least one line.")
+            return self.form_invalid(form)
+
+        draft = SaleDraft(
+            lines=tuple(line_specs),
+            order_discount=Money.zero(currency),
+            shipping=Money.zero(currency),
+            memo=header.get("memo") or "",
+        )
+
+        try:
+            result = EditDraftSale().execute(EditDraftSaleCommand(
+                organization_id=_current_org(self.request).pk,
+                sale_id=self.kwargs["pk"],
+                draft=draft,
+                reference=self.get_object().reference,
+                sale_date=header["sale_date"],
+                customer_id=header["customer"].pk,
+                biller_id=header["biller"].pk,
+                memo=header.get("memo") or "",
+            ))
+        except SaleNotDraftError as exc:
+            form.add_error(None, str(exc))
+            return self.form_invalid(form)
+        except SaleNotFoundError as exc:
+            from django.http import Http404
+            raise Http404(str(exc))
+
+        from django.contrib import messages as msg
+        msg.success(self.request, f"Draft sale #{result.sale_id} updated.")
+        return HttpResponseRedirect(reverse("sales:detail", args=[result.sale_id]))
+
+
+# ---------------------------------------------------------------------------
 # Product search — JSON endpoint for the line-item autocomplete
 # ---------------------------------------------------------------------------
-class ProductSearchView(LoginRequiredMixin, PermissionRequiredMixin, View):
+class ProductSearchView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
     """
     Returns up to 15 products matching the query string in `q` (matches on
     code or name, case-insensitive). Used by the sales/purchase create
@@ -346,6 +466,145 @@ class ProductSearchView(LoginRequiredMixin, PermissionRequiredMixin, View):
 
 
 # ---------------------------------------------------------------------------
+# SaleQuotation (Gap 3)
+# ---------------------------------------------------------------------------
+from apps.sales.infrastructure.models import (
+    SaleQuotation, SaleQuotationLine, QuotationStatusChoices,
+)
+
+
+class SaleQuotationListView(LoginRequiredMixin, OrgPermissionRequiredMixin, ListView):
+    permission_required = "sales.quotations.view"
+    model = SaleQuotation
+    template_name = "sales/quotation/list.html"
+    context_object_name = "object_list"
+    paginate_by = 25
+
+    def get_queryset(self):
+        qs = super().get_queryset().select_related("customer").order_by("-quotation_date", "-id")
+        status = self.request.GET.get("status", "").strip()
+        if status:
+            qs = qs.filter(status=status)
+        return qs
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["status_choices"] = QuotationStatusChoices.choices
+        ctx["active_status"] = self.request.GET.get("status", "")
+        return ctx
+
+
+class SaleQuotationCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, FormView):
+    permission_required = "sales.quotations.create"
+    template_name = "sales/quotation/form.html"
+    form_class = SaleHeaderForm   # reuse sale header form
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["warehouses"] = Warehouse.objects.filter(is_active=True).order_by("code")
+        ctx["quotation_mode"] = True
+        return ctx
+
+    def form_valid(self, form):
+        from apps.sales.application.use_cases.quotation_cases import (
+            CreateQuotation, CreateQuotationCommand,
+        )
+        from datetime import datetime
+
+        raw_lines = self.request.POST.get("lines_json", "[]")
+        try:
+            import json as _json
+            lines_data = _json.loads(raw_lines)
+        except Exception as exc:
+            form.add_error(None, f"Invalid lines: {exc}")
+            return self.form_invalid(form)
+
+        header = form.cleaned_data
+        valid_until_str = self.request.POST.get("valid_until", "")
+        valid_until = None
+        if valid_until_str:
+            try:
+                valid_until = datetime.strptime(valid_until_str, "%Y-%m-%d").date()
+            except ValueError:
+                pass
+
+        try:
+            quotation = CreateQuotation().execute(CreateQuotationCommand(
+                organization_id=_current_org(self.request).pk,
+                customer_id=header["customer"].pk,
+                quotation_date=header["sale_date"],
+                currency_code=header["currency_code"],
+                lines_json=lines_data,
+                valid_until=valid_until,
+                notes=header.get("memo") or "",
+                created_by_id=self.request.user.pk,
+            ))
+        except Exception as exc:
+            form.add_error(None, str(exc))
+            return self.form_invalid(form)
+
+        messages.success(self.request, f"Quotation {quotation.reference} created.")
+        return HttpResponseRedirect(reverse_lazy("sales:quotation_list"))
+
+
+class QuotationSendView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
+    permission_required = "sales.quotations.update"
+
+    def post(self, request, pk):
+        from apps.sales.application.use_cases.quotation_cases import (
+            SendQuotation, QuotationStatusCommand, QuotationStatusError,
+        )
+        try:
+            SendQuotation().execute(QuotationStatusCommand(
+                organization_id=_current_org(request).pk, quotation_id=pk,
+            ))
+            messages.success(request, "Quotation marked as sent.")
+        except QuotationStatusError as exc:
+            messages.error(request, str(exc))
+        return HttpResponseRedirect(reverse_lazy("sales:quotation_list"))
+
+
+class QuotationConvertView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
+    permission_required = "sales.quotations.convert"
+
+    def post(self, request, pk):
+        from apps.sales.application.use_cases.quotation_cases import (
+            AcceptQuotation, ConvertQuotationToSale,
+            QuotationStatusCommand, ConvertQuotationCommand,
+            QuotationStatusError, QuotationNotFoundError,
+        )
+        try:
+            AcceptQuotation().execute(QuotationStatusCommand(
+                organization_id=_current_org(request).pk, quotation_id=pk,
+            ))
+        except QuotationStatusError:
+            pass  # may already be ACCEPTED
+
+        biller_id = request.POST.get("biller_id")
+        debit_account_id = request.POST.get("debit_account_id")
+        revenue_account_id = request.POST.get("revenue_account_id")
+
+        if not all([biller_id, debit_account_id, revenue_account_id]):
+            messages.error(request, "Biller, debit account, and revenue account are required.")
+            return HttpResponseRedirect(reverse_lazy("sales:quotation_list"))
+
+        try:
+            sale = ConvertQuotationToSale().execute(ConvertQuotationCommand(
+                organization_id=_current_org(request).pk,
+                quotation_id=pk,
+                biller_id=int(biller_id),
+                debit_account_id=int(debit_account_id),
+                revenue_account_id=int(revenue_account_id),
+                converted_by_id=request.user.pk,
+            ))
+            messages.success(request, f"Quotation converted to draft sale #{sale.pk}.")
+            return HttpResponseRedirect(reverse("sales:detail", args=[sale.pk]))
+        except (QuotationStatusError, QuotationNotFoundError) as exc:
+            messages.error(request, str(exc))
+            return HttpResponseRedirect(reverse_lazy("sales:quotation_list"))
+
+
+# ---------------------------------------------------------------------------
 # Sale Return (Sprint 7d)
 # ---------------------------------------------------------------------------
 from apps.sales.application.use_cases.process_sale_return import (
@@ -360,7 +619,7 @@ from apps.sales.infrastructure.models import (
 )
 
 
-class SaleReturnListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
+class SaleReturnListView(LoginRequiredMixin, OrgPermissionRequiredMixin, ListView):
     permission_required = "sales.returns.view"
     model = SaleReturn
     template_name = "sales/sale_return/list.html"
@@ -387,7 +646,7 @@ class SaleReturnListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         return ctx
 
 
-class SaleReturnDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
+class SaleReturnDetailView(LoginRequiredMixin, OrgPermissionRequiredMixin, DetailView):
     permission_required = "sales.returns.view"
     model = SaleReturn
     template_name = "sales/sale_return/detail.html"
@@ -502,7 +761,7 @@ def _parse_return_lines(raw: str) -> list[_ParsedRetLine]:
     return out
 
 
-class SaleReturnCreateView(LoginRequiredMixin, PermissionRequiredMixin, FormView):
+class SaleReturnCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, FormView):
     permission_required = "sales.returns.create"
     template_name = "sales/sale_return/form.html"
     form_class = SaleReturnHeaderForm
@@ -622,8 +881,8 @@ class SaleReturnCreateView(LoginRequiredMixin, PermissionRequiredMixin, FormView
             )
             return self.form_invalid(form)
 
-        import time
-        reference = f"SRET-{header['return_date'].strftime('%Y%m%d')}-{int(time.time()) % 100000}"
+        import uuid
+        reference = f"SRET-{header['return_date'].strftime('%Y%m%d')}-{uuid.uuid4().hex[:8].upper()}"
 
         try:
             spec = SaleReturnSpec(
@@ -664,3 +923,770 @@ class SaleReturnCreateView(LoginRequiredMixin, PermissionRequiredMixin, FormView
             f"{len(posted.movement_ids)} stock movement(s).",
         )
         return HttpResponseRedirect(reverse("sales:return_detail", args=[posted.return_id]))
+
+
+# ===========================================================================
+# Phase 2 — Sales Invoice (AR cycle)
+# ===========================================================================
+from apps.sales.infrastructure.invoice_models import (
+    SalesInvoice,
+    SalesInvoiceLine,
+    SalesInvoiceStatus,
+    CustomerReceipt,
+    CustomerReceiptAllocation,
+    ReceiptStatus,
+    CreditNote,
+    CreditNoteLine,
+    DebitNote,
+    DebitNoteLine,
+    NoteStatus,
+)
+from apps.finance.infrastructure.tax_models import TaxCode
+from apps.finance.infrastructure.models import Account, AccountTypeChoices
+
+
+# ---------------------------------------------------------------------------
+# DeliveryNote (Gap 4)
+# ---------------------------------------------------------------------------
+from apps.sales.infrastructure.models import (  # noqa: E402
+    DeliveryNote, DeliveryNoteLine, DeliveryStatusChoices,
+)
+
+
+class DeliveryNoteListView(LoginRequiredMixin, OrgPermissionRequiredMixin, ListView):
+    permission_required = "sales.sales.view"
+    model = DeliveryNote
+    template_name = "sales/delivery/list.html"
+    context_object_name = "object_list"
+    paginate_by = 25
+
+    def get_queryset(self):
+        return super().get_queryset().select_related("sale").order_by("-delivery_date", "-id")
+
+
+class DeliveryNoteCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
+    permission_required = "sales.sales.create"
+    template_name = "sales/delivery/create.html"
+
+    def get(self, request, sale_pk):
+        from apps.sales.infrastructure.models import Sale as SaleModel
+        from django.shortcuts import get_object_or_404, render
+        sale = get_object_or_404(SaleModel, pk=sale_pk, organization=_current_org(request))
+        return render(request, self.template_name, {"sale": sale})
+
+    def post(self, request, sale_pk):
+        from apps.sales.application.use_cases.delivery_cases import (
+            RecordDelivery, RecordDeliveryCommand, DeliveryNoteError,
+        )
+        import json as _json
+        from datetime import datetime
+
+        try:
+            lines_data = _json.loads(request.POST.get("lines_json", "[]"))
+            delivery_date_str = request.POST.get("delivery_date", "")
+            delivery_date = datetime.strptime(delivery_date_str, "%Y-%m-%d").date()
+        except (ValueError, Exception) as exc:
+            messages.error(request, f"Invalid input: {exc}")
+            return HttpResponseRedirect(request.path)
+
+        try:
+            note = RecordDelivery().execute(RecordDeliveryCommand(
+                organization_id=_current_org(request).pk,
+                sale_id=sale_pk,
+                delivery_date=delivery_date,
+                lines=lines_data,
+                carrier=request.POST.get("carrier", ""),
+                tracking_number=request.POST.get("tracking_number", ""),
+                notes=request.POST.get("notes", ""),
+                created_by_id=request.user.pk,
+            ))
+            messages.success(request, f"Delivery note {note.reference} created.")
+        except DeliveryNoteError as exc:
+            messages.error(request, str(exc))
+        return HttpResponseRedirect(reverse_lazy("sales:delivery_list"))
+
+
+class DeliveryDispatchView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
+    permission_required = "sales.sales.create"
+
+    def post(self, request, pk):
+        from apps.sales.application.use_cases.delivery_cases import (
+            DispatchDelivery, DeliveryStatusCommand, DeliveryNoteError,
+        )
+        try:
+            DispatchDelivery().execute(DeliveryStatusCommand(
+                organization_id=_current_org(request).pk, delivery_note_id=pk,
+            ))
+            messages.success(request, "Delivery note marked as dispatched.")
+        except DeliveryNoteError as exc:
+            messages.error(request, str(exc))
+        return HttpResponseRedirect(reverse_lazy("sales:delivery_list"))
+
+
+class DeliveryConfirmView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
+    permission_required = "sales.sales.create"
+
+    def post(self, request, pk):
+        from apps.sales.application.use_cases.delivery_cases import (
+            ConfirmDelivery, DeliveryStatusCommand, DeliveryNoteError,
+        )
+        try:
+            ConfirmDelivery().execute(DeliveryStatusCommand(
+                organization_id=_current_org(request).pk, delivery_note_id=pk,
+            ))
+            messages.success(request, "Delivery confirmed.")
+        except DeliveryNoteError as exc:
+            messages.error(request, str(exc))
+        return HttpResponseRedirect(reverse_lazy("sales:delivery_list"))
+
+
+# ---------------------------------------------------------------------------
+# SalesInvoice
+# ---------------------------------------------------------------------------
+class SalesInvoiceListView(LoginRequiredMixin, OrgPermissionRequiredMixin, ListView):
+    permission_required = "sales.salesinvoice.view"
+    model = SalesInvoice
+    template_name = "sales/invoice/list.html"
+    context_object_name = "object_list"
+    paginate_by = 25
+
+    def get_queryset(self):
+        qs = (
+            super().get_queryset()
+            .select_related("customer")
+            .order_by("-invoice_date", "-id")
+        )
+        status = self.request.GET.get("status")
+        if status:
+            qs = qs.filter(status=status)
+        customer_q = self.request.GET.get("customer", "").strip()
+        if customer_q:
+            qs = qs.filter(
+                Q(customer__code__icontains=customer_q) | Q(customer__name__icontains=customer_q)
+            )
+        date_from = self.request.GET.get("date_from")
+        if date_from:
+            qs = qs.filter(invoice_date__gte=date_from)
+        date_to = self.request.GET.get("date_to")
+        if date_to:
+            qs = qs.filter(invoice_date__lte=date_to)
+        return qs
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["status_choices"] = SalesInvoiceStatus.choices
+        ctx["create_url"] = reverse_lazy("sales:invoice_create")
+        return ctx
+
+
+class SalesInvoiceDetailView(LoginRequiredMixin, OrgPermissionRequiredMixin, DetailView):
+    permission_required = "sales.salesinvoice.view"
+    model = SalesInvoice
+    template_name = "sales/invoice/detail.html"
+
+    def get_queryset(self):
+        return (
+            super().get_queryset()
+            .select_related("customer", "journal_entry")
+            .prefetch_related("lines__tax_code", "lines__revenue_account")
+        )
+
+
+class SalesInvoiceHeaderForm(BootstrapFormMixin, forms.Form):
+    customer = forms.ModelChoiceField(
+        queryset=Customer.objects.all_tenants().filter(is_active=True),
+    )
+    invoice_date = forms.DateField(
+        widget=forms.DateInput(attrs={"type": "date"}),
+        initial=date.today,
+    )
+    due_date = forms.DateField(
+        widget=forms.DateInput(attrs={"type": "date"}),
+        initial=date.today,
+    )
+    currency_code = forms.CharField(max_length=3, min_length=3, initial="SAR")
+    notes = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 2}))
+
+    def clean(self):
+        cleaned = super().clean()
+        inv_date = cleaned.get("invoice_date")
+        due = cleaned.get("due_date")
+        if inv_date and due and due < inv_date:
+            self.add_error("due_date", "Due date must be on or after invoice date.")
+        return cleaned
+
+
+class SalesInvoiceCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, FormView):
+    permission_required = "sales.salesinvoice.create"
+    template_name = "sales/invoice/form.html"
+    form_class = SalesInvoiceHeaderForm
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["tax_codes"] = TaxCode.objects.filter(is_active=True).order_by("code")
+        ctx["revenue_accounts"] = (
+            Account.objects.filter(is_active=True, account_type=AccountTypeChoices.INCOME)
+            .order_by("code")
+        )
+        return ctx
+
+    def form_valid(self, form):
+        raw_lines = self.request.POST.get("lines_json", "[]")
+        try:
+            lines_data = json.loads(raw_lines)
+        except json.JSONDecodeError:
+            form.add_error(None, "Invalid lines payload.")
+            return self.form_invalid(form)
+
+        if not lines_data:
+            form.add_error(None, "At least one line is required.")
+            return self.form_invalid(form)
+
+        cd = form.cleaned_data
+        from django.db import transaction as db_transaction
+        try:
+            with db_transaction.atomic():
+                inv = SalesInvoice(
+                    customer=cd["customer"],
+                    invoice_date=cd["invoice_date"],
+                    due_date=cd["due_date"],
+                    currency_code=cd["currency_code"],
+                    notes=cd.get("notes") or "",
+                    status=SalesInvoiceStatus.DRAFT,
+                    subtotal=Decimal("0"),
+                    discount_total=Decimal("0"),
+                    tax_total=Decimal("0"),
+                    grand_total=Decimal("0"),
+                    allocated_amount=Decimal("0"),
+                )
+                inv.save()
+
+                subtotal = Decimal("0")
+                tax_total = Decimal("0")
+                for seq, row in enumerate(lines_data, start=1):
+                    qty = Decimal(str(row.get("quantity") or "0"))
+                    price = Decimal(str(row.get("unit_price") or "0"))
+                    disc = Decimal(str(row.get("discount_amount") or "0"))
+                    tax_amount = Decimal(str(row.get("tax_amount") or "0"))
+                    line_subtotal = (qty * price) - disc
+                    line_total = line_subtotal + tax_amount
+
+                    tax_code_id = row.get("tax_code_id") or None
+                    revenue_acc_id = row.get("revenue_account_id") or None
+
+                    SalesInvoiceLine(
+                        invoice=inv,
+                        sequence=seq,
+                        item_code=row.get("item_code") or "",
+                        description=row.get("description") or "",
+                        quantity=qty,
+                        unit_price=price,
+                        discount_amount=disc,
+                        tax_code_id=tax_code_id,
+                        tax_amount=tax_amount,
+                        line_subtotal=line_subtotal,
+                        line_total=line_total,
+                        revenue_account_id=revenue_acc_id,
+                    ).save()
+                    subtotal += line_subtotal
+                    tax_total += tax_amount
+
+                SalesInvoice.objects.filter(pk=inv.pk).update(
+                    subtotal=subtotal,
+                    tax_total=tax_total,
+                    grand_total=subtotal + tax_total,
+                )
+        except Exception as exc:
+            form.add_error(None, f"Could not create invoice: {exc}")
+            return self.form_invalid(form)
+
+        messages.success(self.request, f"Invoice #{inv.pk} created as draft.")
+        return HttpResponseRedirect(reverse("sales:invoice_detail", args=[inv.pk]))
+
+
+class SalesInvoiceIssueView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
+    """POST-only: issue a draft SalesInvoice."""
+    permission_required = "sales.salesinvoice.issue"
+
+    def post(self, request, pk):
+        from apps.sales.application.use_cases.issue_sales_invoice import (
+            IssueSalesInvoice, IssueSalesInvoiceCommand,
+        )
+        try:
+            result = IssueSalesInvoice().execute(
+                IssueSalesInvoiceCommand(invoice_id=pk, actor_id=request.user.pk)
+            )
+            messages.success(
+                request,
+                f"Invoice {result.invoice_number} issued — JE #{result.journal_entry_id}.",
+            )
+        except Exception as exc:
+            messages.error(request, f"Could not issue invoice: {exc}")
+        return HttpResponseRedirect(reverse("sales:invoice_detail", args=[pk]))
+
+
+class SalesInvoiceCancelView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
+    """POST-only: cancel a SalesInvoice (draft or issued)."""
+    permission_required = "sales.salesinvoice.cancel"
+
+    def post(self, request, pk):
+        from apps.sales.application.use_cases.cancel_sales_invoice import (
+            CancelSalesInvoice, CancelSalesInvoiceCommand,
+        )
+        try:
+            CancelSalesInvoice().execute(
+                CancelSalesInvoiceCommand(invoice_id=pk, actor_id=request.user.pk)
+            )
+            messages.success(request, f"Invoice #{pk} cancelled.")
+        except Exception as exc:
+            messages.error(request, f"Could not cancel invoice: {exc}")
+        return HttpResponseRedirect(reverse("sales:invoice_detail", args=[pk]))
+
+
+# ---------------------------------------------------------------------------
+# CustomerReceipt
+# ---------------------------------------------------------------------------
+class CustomerReceiptListView(LoginRequiredMixin, OrgPermissionRequiredMixin, ListView):
+    permission_required = "sales.customerreceipt.view"
+    model = CustomerReceipt
+    template_name = "sales/receipt/list.html"
+    context_object_name = "object_list"
+    paginate_by = 25
+
+    def get_queryset(self):
+        qs = (
+            super().get_queryset()
+            .select_related("customer")
+            .order_by("-receipt_date", "-id")
+        )
+        status = self.request.GET.get("status")
+        if status:
+            qs = qs.filter(status=status)
+        customer_q = self.request.GET.get("customer", "").strip()
+        if customer_q:
+            qs = qs.filter(
+                Q(customer__code__icontains=customer_q) | Q(customer__name__icontains=customer_q)
+            )
+        return qs
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["status_choices"] = ReceiptStatus.choices
+        ctx["create_url"] = reverse_lazy("sales:receipt_create")
+        return ctx
+
+
+class CustomerReceiptDetailView(LoginRequiredMixin, OrgPermissionRequiredMixin, DetailView):
+    permission_required = "sales.customerreceipt.view"
+    model = CustomerReceipt
+    template_name = "sales/receipt/detail.html"
+
+    def get_queryset(self):
+        return (
+            super().get_queryset()
+            .select_related("customer", "bank_account", "journal_entry")
+            .prefetch_related("allocations__invoice")
+        )
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        receipt: CustomerReceipt = self.object  # type: ignore[assignment]
+        if receipt.status == ReceiptStatus.POSTED:
+            ctx["open_invoices"] = SalesInvoice.objects.filter(
+                customer=receipt.customer,
+                status__in=[SalesInvoiceStatus.ISSUED, SalesInvoiceStatus.PARTIALLY_PAID],
+            ).order_by("due_date")
+        else:
+            ctx["open_invoices"] = []
+        return ctx
+
+
+class CustomerReceiptCreateForm(BootstrapFormMixin, forms.Form):
+    customer = forms.ModelChoiceField(
+        queryset=Customer.objects.all_tenants().filter(is_active=True),
+    )
+    receipt_date = forms.DateField(
+        widget=forms.DateInput(attrs={"type": "date"}),
+        initial=date.today,
+    )
+    amount = forms.DecimalField(max_digits=18, decimal_places=4, min_value=Decimal("0.0001"))
+    currency_code = forms.CharField(max_length=3, initial="SAR")
+    payment_method = forms.ChoiceField(choices=[
+        ("cash", "Cash"), ("bank_transfer", "Bank Transfer"),
+        ("cheque", "Cheque"), ("card", "Card"), ("other", "Other"),
+    ])
+    reference = forms.CharField(max_length=64, required=False)
+    bank_account = forms.ModelChoiceField(
+        queryset=Account.objects.all_tenants().filter(
+            is_active=True, account_type=AccountTypeChoices.ASSET,
+        ),
+        label="Bank / Cash account",
+    )
+
+
+class CustomerReceiptCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, FormView):
+    permission_required = "sales.customerreceipt.create"
+    template_name = "sales/receipt/form.html"
+    form_class = CustomerReceiptCreateForm
+
+    def form_valid(self, form):
+        cd = form.cleaned_data
+        receipt = CustomerReceipt(
+            customer=cd["customer"],
+            receipt_date=cd["receipt_date"],
+            amount=cd["amount"],
+            currency_code=cd["currency_code"],
+            payment_method=cd["payment_method"],
+            reference=cd.get("reference") or "",
+            bank_account=cd["bank_account"],
+            status=ReceiptStatus.DRAFT,
+            allocated_amount=Decimal("0"),
+        )
+        receipt.save()
+        messages.success(self.request, f"Receipt #{receipt.pk} created as draft.")
+        return HttpResponseRedirect(reverse("sales:receipt_detail", args=[receipt.pk]))
+
+
+class CustomerReceiptPostView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
+    """POST-only: post a draft CustomerReceipt."""
+    permission_required = "sales.customerreceipt.post"
+
+    def post(self, request, pk):
+        from apps.sales.application.use_cases.post_customer_receipt import (
+            PostCustomerReceipt, PostCustomerReceiptCommand,
+        )
+        try:
+            result = PostCustomerReceipt().execute(
+                PostCustomerReceiptCommand(receipt_id=pk, actor_id=request.user.pk)
+            )
+            messages.success(
+                request,
+                f"Receipt {result.receipt_number} posted — JE #{result.journal_entry_id}.",
+            )
+        except Exception as exc:
+            messages.error(request, f"Could not post receipt: {exc}")
+        return HttpResponseRedirect(reverse("sales:receipt_detail", args=[pk]))
+
+
+class CustomerReceiptAllocateView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
+    """POST-only: allocate a receipt to one or more invoices (JSON body)."""
+    permission_required = "sales.customerreceipt.allocate"
+
+    def post(self, request, pk):
+        from apps.sales.application.use_cases.allocate_receipt import (
+            AllocateReceiptService, AllocateReceiptCommand, AllocationSpec,
+        )
+        try:
+            data = json.loads(request.POST.get("allocations_json", "[]"))
+            specs = tuple(
+                AllocationSpec(invoice_id=int(a["invoice_id"]), amount=Decimal(str(a["amount"])))
+                for a in data
+            )
+            result = AllocateReceiptService().execute(
+                AllocateReceiptCommand(receipt_id=pk, allocations=specs)
+            )
+            messages.success(
+                request,
+                f"Allocated {result.total_allocated} across {len(result.invoices_updated)} invoice(s). "
+                f"Remaining: {result.unallocated_remaining}.",
+            )
+        except Exception as exc:
+            messages.error(request, f"Allocation failed: {exc}")
+        return HttpResponseRedirect(reverse("sales:receipt_detail", args=[pk]))
+
+
+# ---------------------------------------------------------------------------
+# CreditNote
+# ---------------------------------------------------------------------------
+class CreditNoteListView(LoginRequiredMixin, OrgPermissionRequiredMixin, ListView):
+    permission_required = "sales.creditnote.view"
+    model = CreditNote
+    template_name = "sales/credit_note/list.html"
+    context_object_name = "object_list"
+    paginate_by = 25
+
+    def get_queryset(self):
+        return (
+            super().get_queryset()
+            .select_related("customer")
+            .order_by("-note_date", "-id")
+        )
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["status_choices"] = NoteStatus.choices
+        ctx["create_url"] = reverse_lazy("sales:credit_note_create")
+        return ctx
+
+
+class CreditNoteDetailView(LoginRequiredMixin, OrgPermissionRequiredMixin, DetailView):
+    permission_required = "sales.creditnote.view"
+    model = CreditNote
+    template_name = "sales/credit_note/detail.html"
+
+    def get_queryset(self):
+        return (
+            super().get_queryset()
+            .select_related("customer", "related_invoice", "journal_entry")
+            .prefetch_related("lines__tax_code", "lines__revenue_account")
+        )
+
+
+class CreditNoteCreateForm(BootstrapFormMixin, forms.Form):
+    customer = forms.ModelChoiceField(
+        queryset=Customer.objects.all_tenants().filter(is_active=True),
+    )
+    note_date = forms.DateField(
+        widget=forms.DateInput(attrs={"type": "date"}),
+        initial=date.today,
+    )
+    reason = forms.CharField(max_length=256, required=False)
+    related_invoice = forms.ModelChoiceField(
+        queryset=SalesInvoice.objects.all_tenants().filter(
+            status__in=[
+                SalesInvoiceStatus.ISSUED,
+                SalesInvoiceStatus.PARTIALLY_PAID,
+            ]
+        ),
+        required=False,
+        label="Related invoice (optional)",
+    )
+    currency_code = forms.CharField(max_length=3, initial="SAR")
+
+
+class CreditNoteCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, FormView):
+    permission_required = "sales.creditnote.create"
+    template_name = "sales/credit_note/form.html"
+    form_class = CreditNoteCreateForm
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["tax_codes"] = TaxCode.objects.filter(is_active=True).order_by("code")
+        ctx["revenue_accounts"] = (
+            Account.objects.filter(is_active=True, account_type=AccountTypeChoices.INCOME)
+            .order_by("code")
+        )
+        return ctx
+
+    def form_valid(self, form):
+        raw_lines = self.request.POST.get("lines_json", "[]")
+        try:
+            lines_data = json.loads(raw_lines)
+        except json.JSONDecodeError:
+            form.add_error(None, "Invalid lines payload.")
+            return self.form_invalid(form)
+
+        if not lines_data:
+            form.add_error(None, "At least one line is required.")
+            return self.form_invalid(form)
+
+        cd = form.cleaned_data
+        from django.db import transaction as db_transaction
+        try:
+            with db_transaction.atomic():
+                subtotal = Decimal("0")
+                tax_total = Decimal("0")
+                for row in lines_data:
+                    qty = Decimal(str(row.get("quantity") or "0"))
+                    price = Decimal(str(row.get("unit_price") or "0"))
+                    tax_amount = Decimal(str(row.get("tax_amount") or "0"))
+                    subtotal += qty * price
+                    tax_total += tax_amount
+
+                cn = CreditNote(
+                    customer=cd["customer"],
+                    note_date=cd["note_date"],
+                    reason=cd.get("reason") or "",
+                    related_invoice=cd.get("related_invoice"),
+                    currency_code=cd["currency_code"],
+                    status=NoteStatus.DRAFT,
+                    subtotal=subtotal,
+                    tax_total=tax_total,
+                    grand_total=subtotal + tax_total,
+                )
+                cn.save()
+
+                for seq, row in enumerate(lines_data, start=1):
+                    qty = Decimal(str(row.get("quantity") or "0"))
+                    price = Decimal(str(row.get("unit_price") or "0"))
+                    tax_amount = Decimal(str(row.get("tax_amount") or "0"))
+                    CreditNoteLine(
+                        credit_note=cn,
+                        sequence=seq,
+                        description=row.get("description") or "",
+                        quantity=qty,
+                        unit_price=price,
+                        tax_code_id=row.get("tax_code_id") or None,
+                        tax_amount=tax_amount,
+                        line_total=(qty * price) + tax_amount,
+                        revenue_account_id=row.get("revenue_account_id") or None,
+                    ).save()
+        except Exception as exc:
+            form.add_error(None, f"Could not create credit note: {exc}")
+            return self.form_invalid(form)
+
+        messages.success(self.request, f"Credit note #{cn.pk} created as draft.")
+        return HttpResponseRedirect(reverse("sales:credit_note_detail", args=[cn.pk]))
+
+
+class CreditNoteIssueView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
+    permission_required = "sales.creditnote.issue"
+
+    def post(self, request, pk):
+        from apps.sales.application.use_cases.issue_credit_note import (
+            IssueCreditNote, IssueCreditNoteCommand,
+        )
+        try:
+            result = IssueCreditNote().execute(
+                IssueCreditNoteCommand(credit_note_id=pk, actor_id=request.user.pk)
+            )
+            messages.success(
+                request,
+                f"Credit note {result.note_number} issued — JE #{result.journal_entry_id}.",
+            )
+        except Exception as exc:
+            messages.error(request, f"Could not issue credit note: {exc}")
+        return HttpResponseRedirect(reverse("sales:credit_note_detail", args=[pk]))
+
+
+# ---------------------------------------------------------------------------
+# DebitNote
+# ---------------------------------------------------------------------------
+class DebitNoteListView(LoginRequiredMixin, OrgPermissionRequiredMixin, ListView):
+    permission_required = "sales.debitnote.view"
+    model = DebitNote
+    template_name = "sales/debit_note/list.html"
+    context_object_name = "object_list"
+    paginate_by = 25
+
+    def get_queryset(self):
+        return (
+            super().get_queryset()
+            .select_related("customer")
+            .order_by("-note_date", "-id")
+        )
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["status_choices"] = NoteStatus.choices
+        ctx["create_url"] = reverse_lazy("sales:debit_note_create")
+        return ctx
+
+
+class DebitNoteDetailView(LoginRequiredMixin, OrgPermissionRequiredMixin, DetailView):
+    permission_required = "sales.debitnote.view"
+    model = DebitNote
+    template_name = "sales/debit_note/detail.html"
+
+    def get_queryset(self):
+        return (
+            super().get_queryset()
+            .select_related("customer", "journal_entry")
+            .prefetch_related("lines__tax_code", "lines__revenue_account")
+        )
+
+
+class DebitNoteCreateForm(BootstrapFormMixin, forms.Form):
+    customer = forms.ModelChoiceField(
+        queryset=Customer.objects.all_tenants().filter(is_active=True),
+    )
+    note_date = forms.DateField(
+        widget=forms.DateInput(attrs={"type": "date"}),
+        initial=date.today,
+    )
+    reason = forms.CharField(max_length=256, required=False)
+    currency_code = forms.CharField(max_length=3, initial="SAR")
+
+
+class DebitNoteCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, FormView):
+    permission_required = "sales.debitnote.create"
+    template_name = "sales/debit_note/form.html"
+    form_class = DebitNoteCreateForm
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["tax_codes"] = TaxCode.objects.filter(is_active=True).order_by("code")
+        ctx["revenue_accounts"] = (
+            Account.objects.filter(is_active=True, account_type=AccountTypeChoices.INCOME)
+            .order_by("code")
+        )
+        return ctx
+
+    def form_valid(self, form):
+        raw_lines = self.request.POST.get("lines_json", "[]")
+        try:
+            lines_data = json.loads(raw_lines)
+        except json.JSONDecodeError:
+            form.add_error(None, "Invalid lines payload.")
+            return self.form_invalid(form)
+
+        if not lines_data:
+            form.add_error(None, "At least one line is required.")
+            return self.form_invalid(form)
+
+        cd = form.cleaned_data
+        from django.db import transaction as db_transaction
+        try:
+            with db_transaction.atomic():
+                subtotal = Decimal("0")
+                tax_total = Decimal("0")
+                for row in lines_data:
+                    qty = Decimal(str(row.get("quantity") or "0"))
+                    price = Decimal(str(row.get("unit_price") or "0"))
+                    tax_amount = Decimal(str(row.get("tax_amount") or "0"))
+                    subtotal += qty * price
+                    tax_total += tax_amount
+
+                dn = DebitNote(
+                    customer=cd["customer"],
+                    note_date=cd["note_date"],
+                    reason=cd.get("reason") or "",
+                    currency_code=cd["currency_code"],
+                    status=NoteStatus.DRAFT,
+                    subtotal=subtotal,
+                    tax_total=tax_total,
+                    grand_total=subtotal + tax_total,
+                )
+                dn.save()
+
+                for seq, row in enumerate(lines_data, start=1):
+                    qty = Decimal(str(row.get("quantity") or "0"))
+                    price = Decimal(str(row.get("unit_price") or "0"))
+                    tax_amount = Decimal(str(row.get("tax_amount") or "0"))
+                    DebitNoteLine(
+                        debit_note=dn,
+                        sequence=seq,
+                        description=row.get("description") or "",
+                        quantity=qty,
+                        unit_price=price,
+                        tax_code_id=row.get("tax_code_id") or None,
+                        tax_amount=tax_amount,
+                        line_total=(qty * price) + tax_amount,
+                        revenue_account_id=row.get("revenue_account_id") or None,
+                    ).save()
+        except Exception as exc:
+            form.add_error(None, f"Could not create debit note: {exc}")
+            return self.form_invalid(form)
+
+        messages.success(self.request, f"Debit note #{dn.pk} created as draft.")
+        return HttpResponseRedirect(reverse("sales:debit_note_detail", args=[dn.pk]))
+
+
+class DebitNoteIssueView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
+    permission_required = "sales.debitnote.issue"
+
+    def post(self, request, pk):
+        from apps.sales.application.use_cases.issue_debit_note import (
+            IssueDebitNote, IssueDebitNoteCommand,
+        )
+        try:
+            result = IssueDebitNote().execute(
+                IssueDebitNoteCommand(debit_note_id=pk, actor_id=request.user.pk)
+            )
+            messages.success(
+                request,
+                f"Debit note {result.note_number} issued — JE #{result.journal_entry_id}.",
+            )
+        except Exception as exc:
+            messages.error(request, f"Could not issue debit note: {exc}")
+        return HttpResponseRedirect(reverse("sales:debit_note_detail", args=[pk]))

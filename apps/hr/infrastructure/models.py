@@ -11,6 +11,115 @@ from apps.tenancy.infrastructure.models import Branch, TenantOwnedModel
 
 
 # ---------------------------------------------------------------------------
+# JobTitle
+# ---------------------------------------------------------------------------
+class JobTitle(TenantOwnedModel, TimestampedModel):
+    """Normalised job titles catalogue."""
+    name = models.CharField(max_length=128)
+    level = models.PositiveSmallIntegerField(default=1, help_text="Seniority level (1=junior).")
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        db_table = "hr_job_title"
+        ordering = ("level", "name")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("organization", "name"),
+                name="hr_job_title_unique_name_per_org",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+# ---------------------------------------------------------------------------
+# LeaveType
+# ---------------------------------------------------------------------------
+class LeaveType(TenantOwnedModel, TimestampedModel):
+    """Leave type catalogue (annual, sick, unpaid, etc.)."""
+    code = models.CharField(max_length=16, db_index=True)
+    name = models.CharField(max_length=64)
+    max_days_per_year = models.PositiveSmallIntegerField(
+        default=0, help_text="0 = unlimited."
+    )
+    is_paid = models.BooleanField(default=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        db_table = "hr_leave_type"
+        ordering = ("code",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=("organization", "code"),
+                name="hr_leave_type_unique_code_per_org",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.code} — {self.name}"
+
+
+# ---------------------------------------------------------------------------
+# LeaveRequest
+# ---------------------------------------------------------------------------
+class LeaveRequestStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    APPROVED = "approved", "Approved"
+    REJECTED = "rejected", "Rejected"
+    CANCELLED = "cancelled", "Cancelled"
+
+
+class LeaveRequest(TenantOwnedModel, TimestampedModel):
+    employee = models.ForeignKey(
+        "hr.Employee", on_delete=models.CASCADE, related_name="leave_requests",
+    )
+    leave_type = models.ForeignKey(
+        LeaveType, on_delete=models.PROTECT, related_name="requests",
+    )
+    start_date = models.DateField(db_index=True)
+    end_date = models.DateField()
+    days_requested = models.PositiveSmallIntegerField()
+    reason = models.TextField(blank=True, default="")
+    status = models.CharField(
+        max_length=16,
+        choices=LeaveRequestStatus.choices,
+        default=LeaveRequestStatus.PENDING,
+        db_index=True,
+    )
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        related_name="approved_leave_requests", null=True, blank=True,
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    rejection_reason = models.TextField(blank=True, default="")
+
+    class Meta:
+        db_table = "hr_leave_request"
+        ordering = ("-start_date",)
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(end_date__gte=models.F("start_date")),
+                name="hr_leave_request_end_after_start",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(days_requested__gte=1),
+                name="hr_leave_request_days_positive",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=("organization", "employee", "status")),
+            models.Index(fields=("organization", "leave_type", "status")),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f"LeaveRequest #{self.pk} {self.employee_id} "
+            f"{self.start_date}..{self.end_date} [{self.status}]"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Department
 # ---------------------------------------------------------------------------
 class Department(TenantOwnedModel, TimestampedModel):
@@ -58,6 +167,10 @@ class Employee(TenantOwnedModel, TimestampedModel, AuditMetaMixin):
     )
 
     job_title = models.CharField(max_length=128, blank=True, default="")
+    job_title_ref = models.ForeignKey(
+        "hr.JobTitle", on_delete=models.SET_NULL,
+        related_name="employees", null=True, blank=True,
+    )
     hire_date = models.DateField(null=True, blank=True)
     end_date = models.DateField(null=True, blank=True)
 
@@ -210,3 +323,188 @@ class Payroll(TenantOwnedModel, TimestampedModel, AuditMetaMixin):
 
     def __str__(self) -> str:
         return f"Payroll {self.employee_id} {self.period_year}-{self.period_month:02d}"
+
+
+# ---------------------------------------------------------------------------
+# EmployeeEvaluation (Performance Management)
+# ---------------------------------------------------------------------------
+class EvaluationRating(models.TextChoices):
+    EXCEPTIONAL = "exceptional", "Exceptional"
+    EXCEEDS = "exceeds", "Exceeds Expectations"
+    MEETS = "meets", "Meets Expectations"
+    BELOW = "below", "Below Expectations"
+    UNSATISFACTORY = "unsatisfactory", "Unsatisfactory"
+
+
+class EvaluationStatus(models.TextChoices):
+    DRAFT = "draft", "Draft"
+    SUBMITTED = "submitted", "Submitted"
+    ACKNOWLEDGED = "acknowledged", "Acknowledged"
+
+
+class EmployeeEvaluation(TenantOwnedModel, TimestampedModel):
+    employee = models.ForeignKey(
+        Employee, on_delete=models.CASCADE, related_name="evaluations",
+    )
+    period_year = models.PositiveSmallIntegerField()
+    period_quarter = models.PositiveSmallIntegerField(
+        help_text="1-4; use 0 for annual review."
+    )
+    rating = models.CharField(
+        max_length=16, choices=EvaluationRating.choices, default=EvaluationRating.MEETS,
+    )
+    goals_met_pct = models.DecimalField(
+        max_digits=5, decimal_places=2, default=0,
+        help_text="Percentage of goals achieved (0-100).",
+    )
+    strengths = models.TextField(blank=True, default="")
+    areas_for_improvement = models.TextField(blank=True, default="")
+    reviewer = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        related_name="conducted_evaluations", null=True, blank=True,
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(
+        max_length=16, choices=EvaluationStatus.choices,
+        default=EvaluationStatus.DRAFT, db_index=True,
+    )
+
+    class Meta:
+        db_table = "hr_employee_evaluation"
+        ordering = ("-period_year", "-period_quarter", "employee_id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("employee", "period_year", "period_quarter"),
+                name="hr_evaluation_unique_period_per_employee",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(period_quarter__lte=4),
+                name="hr_evaluation_quarter_max_4",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(goals_met_pct__gte=0) & models.Q(goals_met_pct__lte=100)
+                ),
+                name="hr_evaluation_goals_pct_range",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=("organization", "employee", "period_year")),
+        ]
+
+    def __str__(self) -> str:
+        q = f"Q{self.period_quarter}" if self.period_quarter else "Annual"
+        return f"Evaluation {self.employee_id} {self.period_year}-{q} [{self.rating}]"
+
+
+# ---------------------------------------------------------------------------
+# TrainingProgram + EmployeeTraining
+# ---------------------------------------------------------------------------
+class TrainingProgram(TenantOwnedModel, TimestampedModel):
+    code = models.CharField(max_length=32, db_index=True)
+    name = models.CharField(max_length=128)
+    description = models.TextField(blank=True, default="")
+    duration_days = models.PositiveSmallIntegerField(default=1)
+    provider = models.CharField(max_length=128, blank=True, default="")
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        db_table = "hr_training_program"
+        ordering = ("code",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=("organization", "code"),
+                name="hr_training_program_unique_code_per_org",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.code} — {self.name}"
+
+
+class TrainingStatus(models.TextChoices):
+    ENROLLED = "enrolled", "Enrolled"
+    IN_PROGRESS = "in_progress", "In Progress"
+    COMPLETED = "completed", "Completed"
+    CANCELLED = "cancelled", "Cancelled"
+    FAILED = "failed", "Failed"
+
+
+class EmployeeTraining(TenantOwnedModel, TimestampedModel):
+    employee = models.ForeignKey(
+        Employee, on_delete=models.CASCADE, related_name="trainings",
+    )
+    program = models.ForeignKey(
+        TrainingProgram, on_delete=models.PROTECT, related_name="enrollments",
+    )
+    start_date = models.DateField()
+    end_date = models.DateField(null=True, blank=True)
+    status = models.CharField(
+        max_length=16, choices=TrainingStatus.choices,
+        default=TrainingStatus.ENROLLED, db_index=True,
+    )
+    score = models.DecimalField(
+        max_digits=5, decimal_places=2, null=True, blank=True,
+        help_text="Score out of 100.",
+    )
+    certificate_number = models.CharField(max_length=128, blank=True, default="")
+
+    class Meta:
+        db_table = "hr_employee_training"
+        ordering = ("-start_date",)
+        indexes = [
+            models.Index(fields=("organization", "employee", "status")),
+        ]
+
+    def __str__(self) -> str:
+        return f"Training {self.employee_id} — {self.program_id} [{self.status}]"
+
+
+# ---------------------------------------------------------------------------
+# Benefit + EmployeeBenefit
+# ---------------------------------------------------------------------------
+class Benefit(TenantOwnedModel, TimestampedModel):
+    """Benefit catalogue (health insurance, housing allowance, etc.)."""
+    name = models.CharField(max_length=128)
+    description = models.TextField(blank=True, default="")
+    is_taxable = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        db_table = "hr_benefit"
+        ordering = ("name",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=("organization", "name"),
+                name="hr_benefit_unique_name_per_org",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class EmployeeBenefit(TenantOwnedModel, TimestampedModel):
+    employee = models.ForeignKey(
+        Employee, on_delete=models.CASCADE, related_name="benefits",
+    )
+    benefit = models.ForeignKey(
+        Benefit, on_delete=models.PROTECT, related_name="enrollments",
+    )
+    enrollment_date = models.DateField()
+    end_date = models.DateField(null=True, blank=True)
+    amount = models.DecimalField(
+        max_digits=18, decimal_places=4, default=0,
+        help_text="Monthly benefit value in employee's salary currency.",
+    )
+    note = models.TextField(blank=True, default="")
+
+    class Meta:
+        db_table = "hr_employee_benefit"
+        ordering = ("-enrollment_date",)
+        indexes = [
+            models.Index(fields=("organization", "employee", "benefit")),
+        ]
+
+    def __str__(self) -> str:
+        return f"Benefit {self.employee_id} — {self.benefit_id}"

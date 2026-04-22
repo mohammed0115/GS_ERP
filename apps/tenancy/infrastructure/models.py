@@ -19,6 +19,7 @@ Do NOT instantiate `TenantOwnedManager` directly. Apply it by inheriting from
 """
 from __future__ import annotations
 
+import logging
 from typing import Any, ClassVar, Self
 
 from django.db import models
@@ -31,14 +32,52 @@ from apps.tenancy.domain.exceptions import (
     TenantContextMissingError,
 )
 
+_tenancy_log = logging.getLogger(__name__)
+
 
 # ---------------------------------------------------------------------------
 # Organization / Branch
 # ---------------------------------------------------------------------------
 class Organization(TimestampedModel):
     name = models.CharField(max_length=128)
+    legal_name = models.CharField(
+        max_length=256,
+        blank=True,
+        default="",
+        help_text="Official registered legal name (for invoices and reports).",
+    )
+    code = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text="Short internal identifier (e.g. 'ACME').",
+    )
     slug = models.SlugField(max_length=64, unique=True, db_index=True)
+    country = models.CharField(
+        max_length=2,
+        blank=True,
+        default="SA",
+        help_text="ISO-3166-1 alpha-2 country code (SA = Saudi Arabia, EG = Egypt, …).",
+    )
+    timezone = models.CharField(
+        max_length=64,
+        blank=True,
+        default="Asia/Riyadh",
+        help_text="IANA timezone name used for date display and period boundaries.",
+    )
+    language = models.CharField(
+        max_length=8,
+        blank=True,
+        default="ar",
+        help_text="Default UI language code (ar / en).",
+    )
     is_active = models.BooleanField(default=True, db_index=True)
+    default_currency_code = models.CharField(
+        max_length=3,
+        default="SAR",
+        help_text="ISO-4217 code used as the functional currency for reports (e.g. SAR, EGP, USD).",
+    )
 
     class Meta:
         db_table = "tenancy_organization"
@@ -114,6 +153,21 @@ class TenantOwnedQuerySet(QuerySet):
     def all(self) -> Self:  # type: ignore[override]
         if self._tenant_scope_disabled:
             return super().all()
+        ctx = tenant_context.current()
+        if ctx is None:
+            # Called outside a request context (e.g. Django form class
+            # definition, management commands, system checks).  Return an
+            # unscoped clone so we don't crash; the caller is responsible
+            # for never iterating this clone without setting context first.
+            # In practice, form classes always override the queryset in
+            # __init__ before rendering choices.
+            _tenancy_log.debug(
+                "TenantOwnedQuerySet.all() called without tenant context "
+                "on model %s — returning unscoped clone.",
+                self.model.__name__ if self.model else "unknown",
+            )
+            clone: Self = super().all()
+            return clone
         return self._tenant_filtered()
 
     def filter(self, *args: Any, **kwargs: Any) -> Self:

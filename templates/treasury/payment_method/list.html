@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% load i18n erp_money %}
+
+{% block title %}{% trans "Payment Methods" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with title=_("Payment Methods") subtitle=_("Global payment method lookup") primary_action_url="treasury_web:payment_method_create"|url primary_action_label=_("New Method") primary_action_icon="fa-plus" %}
+
+<div class="card shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead class="thead-light">
+                <tr>
+                    <th>{% trans "Code" %}</th>
+                    <th>{% trans "Name" %}</th>
+                    <th>{% trans "Type" %}</th>
+                    <th>{% trans "Ref. Required?" %}</th>
+                    <th>{% trans "Status" %}</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for m in methods %}
+                <tr>
+                    <td>{{ m.code }}</td>
+                    <td>{{ m.name }}</td>
+                    <td>{{ m.get_method_type_display }}</td>
+                    <td>
+                        {% if m.requires_reference %}
+                            <span class="badge badge-warning">{% trans "Yes" %}</span>
+                        {% else %}
+                            <span class="text-muted">{% trans "No" %}</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if m.is_active %}
+                            <span class="badge badge-success">{% trans "Active" %}</span>
+                        {% else %}
+                            <span class="badge badge-secondary">{% trans "Inactive" %}</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-right">
+                        <form method="post" action="{% url 'treasury_web:payment_method_toggle' m.pk %}" class="d-inline">
+                            {% csrf_token %}
+                            <button class="btn btn-sm btn-outline-secondary">
+                                {% if m.is_active %}{% trans "Deactivate" %}{% else %}{% trans "Activate" %}{% endif %}
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6" class="text-center text-muted py-4">{% trans "No payment methods." %}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% include "_partials/pagination.html" %}
+</div>
+{% endblock %}

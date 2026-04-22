@@ -7,7 +7,7 @@ Every view:
   3. Renders the matching template with the DTO rows, plus per-report
      aggregates (totals, chart labels/values) computed from the rows.
 
-Permissions are enforced via PermissionRequiredMixin against the codes
+Permissions are enforced via OrgPermissionRequiredMixin against the codes
 registered by `apps.reports.apps.ReportsConfig.ready()`.
 """
 from __future__ import annotations
@@ -18,10 +18,12 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
+from common.mixins import OrgPermissionRequiredMixin
 from django.utils.translation import gettext_lazy as _
 from django.views.generic import TemplateView
 
 from apps.reports.application import selectors
+from apps.tenancy.domain import context as tenant_context
 
 
 MONTHS = [
@@ -30,6 +32,19 @@ MONTHS = [
     (7,  _("July")),     (8,  _("August")),    (9,  _("September")),
     (10, _("October")),  (11, _("November")),  (12, _("December")),
 ]
+
+
+def _org_currency() -> str:
+    """Return the active organization's functional currency code."""
+    from apps.tenancy.infrastructure.models import Organization
+    ctx = tenant_context.current()
+    if ctx is None:
+        return "SAR"
+    try:
+        org = Organization.objects.get(pk=ctx.organization_id)
+        return org.default_currency_code or "SAR"
+    except Organization.DoesNotExist:
+        return "SAR"
 
 
 def _parse_date(value: str | None) -> date | None:
@@ -51,7 +66,7 @@ def _parse_int(value, default: int) -> int:
 # ---------------------------------------------------------------------------
 # Profit & Loss
 # ---------------------------------------------------------------------------
-class ProfitLossView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
+class ProfitLossView(LoginRequiredMixin, OrgPermissionRequiredMixin, TemplateView):
     permission_required = "reports.reports.profit_loss"
     template_name = "reports/profit_loss.html"
 
@@ -69,7 +84,7 @@ class ProfitLossView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
             ctx["row"] = None
 
         ctx.update({
-            "currency": "USD",  # TODO: derive from tenant settings
+            "currency": _org_currency(),
             "date_from": date_from.isoformat(),
             "date_to": date_to.isoformat(),
         })
@@ -79,7 +94,7 @@ class ProfitLossView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
 # ---------------------------------------------------------------------------
 # Daily sales
 # ---------------------------------------------------------------------------
-class DailySalesView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
+class DailySalesView(LoginRequiredMixin, OrgPermissionRequiredMixin, TemplateView):
     permission_required = "reports.reports.daily_sales"
     template_name = "reports/daily_sales.html"
 
@@ -103,7 +118,7 @@ class DailySalesView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
             "total_orders": total_orders,
             "total_qty": total_qty,
             "total_sales": total_sales,
-            "currency": "USD",
+            "currency": _org_currency(),
             "chart_labels": json.dumps([r.sale_date.isoformat() for r in rows]),
             "chart_values": json.dumps([str(r.total_sales) for r in rows]),
         })
@@ -113,7 +128,7 @@ class DailySalesView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
 # ---------------------------------------------------------------------------
 # Best sellers
 # ---------------------------------------------------------------------------
-class BestSellersView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
+class BestSellersView(LoginRequiredMixin, OrgPermissionRequiredMixin, TemplateView):
     permission_required = "reports.reports.best_sellers"
     template_name = "reports/best_sellers.html"
 
@@ -129,7 +144,7 @@ class BestSellersView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView)
             "date_from": date_from.isoformat(),
             "date_to": date_to.isoformat(),
             "rows": rows,
-            "currency": "USD",
+            "currency": _org_currency(),
             "chart_labels": json.dumps([r.product_code for r in rows]),
             "chart_values": json.dumps([str(r.quantity_sold) for r in rows]),
         })
@@ -139,7 +154,7 @@ class BestSellersView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView)
 # ---------------------------------------------------------------------------
 # Low stock
 # ---------------------------------------------------------------------------
-class LowStockView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
+class LowStockView(LoginRequiredMixin, OrgPermissionRequiredMixin, TemplateView):
     permission_required = "reports.reports.low_stock"
     template_name = "reports/low_stock.html"
 
@@ -152,7 +167,7 @@ class LowStockView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
 # ---------------------------------------------------------------------------
 # Warehouse stock
 # ---------------------------------------------------------------------------
-class WarehouseStockView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
+class WarehouseStockView(LoginRequiredMixin, OrgPermissionRequiredMixin, TemplateView):
     permission_required = "reports.reports.warehouse_stock"
     template_name = "reports/warehouse_stock.html"
 
@@ -168,7 +183,7 @@ class WarehouseStockView(LoginRequiredMixin, PermissionRequiredMixin, TemplateVi
 # ---------------------------------------------------------------------------
 # Due receivables
 # ---------------------------------------------------------------------------
-class DueReceivablesView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
+class DueReceivablesView(LoginRequiredMixin, OrgPermissionRequiredMixin, TemplateView):
     permission_required = "reports.reports.due_report"
     template_name = "reports/due_receivables.html"
 
@@ -183,7 +198,7 @@ class DueReceivablesView(LoginRequiredMixin, PermissionRequiredMixin, TemplateVi
             "as_of": as_of.isoformat(),
             "rows": rows,
             "total_due": total,
-            "currency": "USD",
+            "currency": _org_currency(),
         })
         return ctx
 
@@ -191,7 +206,7 @@ class DueReceivablesView(LoginRequiredMixin, PermissionRequiredMixin, TemplateVi
 # ---------------------------------------------------------------------------
 # Payments
 # ---------------------------------------------------------------------------
-class PaymentsView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
+class PaymentsView(LoginRequiredMixin, OrgPermissionRequiredMixin, TemplateView):
     permission_required = "reports.reports.payment_report"
     template_name = "reports/payments.html"
 
@@ -212,6 +227,286 @@ class PaymentsView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
             "rows": rows,
             "total_count": total_count,
             "total_amount": total_amount,
-            "currency": "USD",
+            "currency": _org_currency(),
+        })
+        return ctx
+
+
+# ---------------------------------------------------------------------------
+# General Ledger
+# ---------------------------------------------------------------------------
+class GeneralLedgerView(LoginRequiredMixin, OrgPermissionRequiredMixin, TemplateView):
+    permission_required = "reports.reports.general_ledger"
+    template_name = "reports/general_ledger.html"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        today = date.today()
+        default_from = today.replace(day=1)
+
+        date_from = _parse_date(self.request.GET.get("date_from")) or default_from
+        date_to = _parse_date(self.request.GET.get("date_to")) or today
+        account_id = _parse_int(self.request.GET.get("account_id"), 0) or None
+
+        from apps.finance.infrastructure.models import Account
+        accounts = list(
+            Account.objects.filter(is_active=True, is_postable=True)
+            .order_by("code")
+            .values("id", "code", "name")
+        )
+
+        statement = None
+        if account_id and self.request.GET.get("account_id"):
+            try:
+                statement = selectors.general_ledger(
+                    account_id=account_id,
+                    date_from=date_from,
+                    date_to=date_to,
+                )
+            except Exception as exc:
+                ctx["error"] = str(exc)
+
+        ctx.update({
+            "date_from": date_from.isoformat(),
+            "date_to": date_to.isoformat(),
+            "account_id": account_id,
+            "accounts": accounts,
+            "statement": statement,
+            "currency": _org_currency(),
+        })
+        return ctx
+
+
+# ---------------------------------------------------------------------------
+# Trial Balance
+# ---------------------------------------------------------------------------
+class TrialBalanceView(LoginRequiredMixin, OrgPermissionRequiredMixin, TemplateView):
+    permission_required = "reports.reports.trial_balance"
+    template_name = "reports/trial_balance.html"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        today = date.today()
+        default_from = today.replace(day=1)
+
+        date_from = _parse_date(self.request.GET.get("date_from")) or default_from
+        date_to = _parse_date(self.request.GET.get("date_to")) or today
+        # Legacy: allow ?as_of= for backward compat
+        as_of = _parse_date(self.request.GET.get("as_of"))
+
+        has_params = any([
+            self.request.GET.get("date_from"),
+            self.request.GET.get("date_to"),
+            self.request.GET.get("as_of"),
+        ])
+
+        if has_params:
+            if as_of is not None:
+                rows = selectors.trial_balance(as_of=as_of)
+                eff_date_from = None
+                eff_date_to = as_of
+            else:
+                rows = selectors.trial_balance(date_from=date_from, date_to=date_to)
+                eff_date_from = date_from
+                eff_date_to = date_to
+
+            total_opening = sum((r.opening_balance for r in rows), start=Decimal("0"))
+            total_period_dr = sum((r.period_debit for r in rows), start=Decimal("0"))
+            total_period_cr = sum((r.period_credit for r in rows), start=Decimal("0"))
+            total_closing = sum((r.closing_balance for r in rows), start=Decimal("0"))
+        else:
+            rows = None
+            eff_date_from = date_from
+            eff_date_to = date_to
+            total_opening = total_period_dr = total_period_cr = total_closing = Decimal("0")
+
+        ctx.update({
+            "date_from": date_from.isoformat(),
+            "date_to": date_to.isoformat(),
+            "as_of": as_of.isoformat() if as_of else None,
+            "rows": rows,
+            "total_opening": total_opening,
+            "total_period_debit": total_period_dr,
+            "total_period_credit": total_period_cr,
+            "total_closing": total_closing,
+            # Legacy compat
+            "total_debit": total_period_dr,
+            "total_credit": total_period_cr,
+            "currency": _org_currency(),
+        })
+        return ctx
+
+
+# ---------------------------------------------------------------------------
+# Balance Sheet
+# ---------------------------------------------------------------------------
+class BalanceSheetView(LoginRequiredMixin, OrgPermissionRequiredMixin, TemplateView):
+    permission_required = "reports.reports.balance_sheet"
+    template_name = "reports/balance_sheet.html"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        today = date.today()
+        as_of = _parse_date(self.request.GET.get("as_of")) or today
+
+        if self.request.GET.get("as_of"):
+            rows = selectors.balance_sheet(as_of=as_of)
+            assets = [r for r in rows if r.section == "asset"]
+            liabilities = [r for r in rows if r.section == "liability"]
+            equity = [r for r in rows if r.section == "equity"]
+            total_assets = sum((r.balance for r in assets), start=Decimal("0"))
+            total_liabilities = sum((r.balance for r in liabilities), start=Decimal("0"))
+            total_equity = sum((r.balance for r in equity), start=Decimal("0"))
+        else:
+            assets = liabilities = equity = None
+            total_assets = total_liabilities = total_equity = Decimal("0")
+
+        ctx.update({
+            "as_of": as_of.isoformat(),
+            "assets": assets,
+            "liabilities": liabilities,
+            "equity": equity,
+            "total_assets": total_assets,
+            "total_liabilities": total_liabilities,
+            "total_equity": total_equity,
+            "currency": _org_currency(),
+        })
+        return ctx
+
+
+# ---------------------------------------------------------------------------
+# AR Aging
+# ---------------------------------------------------------------------------
+class ARAgingView(LoginRequiredMixin, OrgPermissionRequiredMixin, TemplateView):
+    permission_required = "reports.reports.ar_aging"
+    template_name = "reports/ar_aging.html"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        today = date.today()
+        as_of = _parse_date(self.request.GET.get("as_of")) or today
+
+        rows = selectors.ar_aging(as_of=as_of)
+        total = sum((r.total for r in rows), start=Decimal("0"))
+
+        ctx.update({
+            "as_of": as_of.isoformat(),
+            "rows": rows,
+            "grand_total": total,
+            "currency": _org_currency(),
+        })
+        return ctx
+
+
+# ---------------------------------------------------------------------------
+# AP Aging
+# ---------------------------------------------------------------------------
+class APAgingView(LoginRequiredMixin, OrgPermissionRequiredMixin, TemplateView):
+    permission_required = "reports.reports.ap_aging"
+    template_name = "reports/ap_aging.html"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        today = date.today()
+        as_of = _parse_date(self.request.GET.get("as_of")) or today
+
+        rows = selectors.ap_aging(as_of=as_of)
+        total = sum((r.total for r in rows), start=Decimal("0"))
+
+        ctx.update({
+            "as_of": as_of.isoformat(),
+            "rows": rows,
+            "grand_total": total,
+            "currency": _org_currency(),
+        })
+        return ctx
+
+
+# ---------------------------------------------------------------------------
+# Customer Statement
+# ---------------------------------------------------------------------------
+class CustomerStatementView(LoginRequiredMixin, OrgPermissionRequiredMixin, TemplateView):
+    permission_required = "reports.reports.customer_statement"
+    template_name = "reports/customer_statement.html"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        today = date.today()
+        default_from = today.replace(day=1)
+
+        date_from = _parse_date(self.request.GET.get("date_from")) or default_from
+        date_to = _parse_date(self.request.GET.get("date_to")) or today
+        customer_id = _parse_int(self.request.GET.get("customer_id"), 0) or None
+
+        from apps.crm.infrastructure.models import Customer
+        customers = list(
+            Customer.objects.filter(is_active=True)
+            .order_by("code")
+            .values("id", "code", "name")
+        )
+
+        statement = None
+        if customer_id and self.request.GET.get("customer_id"):
+            try:
+                statement = selectors.customer_statement(
+                    customer_id=customer_id,
+                    date_from=date_from,
+                    date_to=date_to,
+                )
+            except Exception as exc:
+                ctx["error"] = str(exc)
+
+        ctx.update({
+            "date_from": date_from.isoformat(),
+            "date_to": date_to.isoformat(),
+            "customer_id": customer_id,
+            "customers": customers,
+            "statement": statement,
+            "currency": _org_currency(),
+        })
+        return ctx
+
+
+# ---------------------------------------------------------------------------
+# Vendor Statement
+# ---------------------------------------------------------------------------
+class VendorStatementView(LoginRequiredMixin, OrgPermissionRequiredMixin, TemplateView):
+    permission_required = "reports.reports.vendor_statement"
+    template_name = "reports/vendor_statement.html"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        today = date.today()
+        default_from = today.replace(day=1)
+
+        date_from = _parse_date(self.request.GET.get("date_from")) or default_from
+        date_to = _parse_date(self.request.GET.get("date_to")) or today
+        vendor_id = _parse_int(self.request.GET.get("vendor_id"), 0) or None
+
+        from apps.crm.infrastructure.models import Supplier
+        vendors = list(
+            Supplier.objects.filter(is_active=True)
+            .order_by("code")
+            .values("id", "code", "name")
+        )
+
+        statement = None
+        if vendor_id and self.request.GET.get("vendor_id"):
+            try:
+                statement = selectors.vendor_statement(
+                    vendor_id=vendor_id,
+                    date_from=date_from,
+                    date_to=date_to,
+                )
+            except Exception as exc:
+                ctx["error"] = str(exc)
+
+        ctx.update({
+            "date_from": date_from.isoformat(),
+            "date_to": date_to.isoformat(),
+            "vendor_id": vendor_id,
+            "vendors": vendors,
+            "statement": statement,
+            "currency": _org_currency(),
         })
         return ctx

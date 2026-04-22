@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% load i18n erp_money %}
+
+{% block title %}{% trans "New Treasury Transaction" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with title=_("New Treasury Transaction") back_url="treasury_web:transaction_list"|url %}
+
+<div class="card shadow-sm" style="max-width:680px">
+    <div class="card-body">
+        <form method="post" id="txnForm">
+            {% csrf_token %}
+            <div class="form-group">
+                <label>{% trans "Transaction Type" %} <span class="text-danger">*</span></label>
+                <select name="transaction_type" class="form-control" required>
+                    {% for val, lbl in transaction_type_choices %}
+                    <option value="{{ val }}">{{ lbl }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>{% trans "Date" %} <span class="text-danger">*</span></label>
+                <input type="date" name="transaction_date" class="form-control" value="{{ today }}" required>
+            </div>
+
+            <div class="card border-info mb-3">
+                <div class="card-header small text-info font-weight-bold">{% trans "Treasury Party (select exactly one)" %}</div>
+                <div class="card-body pb-2">
+                    <div class="form-group">
+                        <label>{% trans "Cashbox" %}</label>
+                        <select name="cashbox_id" class="form-control selectpicker" data-live-search="true">
+                            <option value="">{% trans "— None —" %}</option>
+                            {% for cb in cashboxes %}
+                            <option value="{{ cb.pk }}">{{ cb.code }} — {{ cb.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group mb-0">
+                        <label>{% trans "Bank Account" %}</label>
+                        <select name="bank_account_id" class="form-control selectpicker" data-live-search="true">
+                            <option value="">{% trans "— None —" %}</option>
+                            {% for ba in bank_accounts %}
+                            <option value="{{ ba.pk }}">{{ ba.code }} — {{ ba.bank_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>{% trans "Contra Account" %} <span class="text-danger">*</span></label>
+                <select name="contra_account_id" class="form-control selectpicker" data-live-search="true" required>
+                    <option value="">{% trans "Select GL account…" %}</option>
+                    {% for acc in gl_accounts %}
+                    <option value="{{ acc.pk }}">{{ acc.code }} — {{ acc.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="row">
+                <div class="col-md-7 form-group">
+                    <label>{% trans "Amount" %} <span class="text-danger">*</span></label>
+                    <input type="number" name="amount" class="form-control" min="0.0001" step="0.0001" required>
+                </div>
+                <div class="col-md-5 form-group">
+                    <label>{% trans "Currency" %}</label>
+                    <input type="text" name="currency_code" class="form-control" value="SAR" maxlength="3">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>{% trans "Payment Method" %}</label>
+                <select name="payment_method_id" class="form-control selectpicker" data-live-search="true">
+                    <option value="">{% trans "— None —" %}</option>
+                    {% for pm in payment_methods %}
+                    <option value="{{ pm.pk }}">{{ pm.code }} — {{ pm.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>{% trans "Reference" %}</label>
+                <input type="text" name="reference" class="form-control" maxlength="64">
+            </div>
+            <div class="form-group">
+                <label>{% trans "Notes" %}</label>
+                <textarea name="notes" class="form-control" rows="3"></textarea>
+            </div>
+            <button type="submit" class="btn btn-primary">{% trans "Save Draft" %}</button>
+            <a href="{% url 'treasury_web:transaction_list' %}" class="btn btn-outline-secondary ml-2">{% trans "Cancel" %}</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "Create Payroll Batch" %}{% endblock %}
+{% block content %}
+{% include "_partials/page_header.html" with title=_("Create Payroll Batch") %}
+<div class="card shadow-sm">
+    <div class="card-body">
+        <form method="post" novalidate>
+            {% csrf_token %}
+            {% if form.non_field_errors %}
+                <div class="alert alert-danger">
+                    {% for err in form.non_field_errors %}{{ err }}<br>{% endfor %}
+                </div>
+            {% endif %}
+            {% for field in form %}
+                {% include "_partials/form_field.html" with field=field cols=6 %}
+            {% endfor %}
+            <div class="text-right mt-3">
+                <a href="../" class="btn btn-outline-secondary mr-2">{% trans "Cancel" %}</a>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save"></i> {% trans "Save" %}
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% load i18n erp_permissions erp_money %}
+
+{% block title %}{% trans "Quotations" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with title=_("Quotations") subtitle=_("Sales quotations sent to customers") primary_action_url=create_url primary_action_label=_("New quotation") primary_action_icon="fa-plus" %}
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        {% if object_list %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>{% trans "Reference" %}</th>
+                            <th>{% trans "Date" %}</th>
+                            <th>{% trans "Valid Until" %}</th>
+                            <th>{% trans "Customer" %}</th>
+                            <th>{% trans "Status" %}</th>
+                            <th class="text-right">{% trans "Total" %}</th>
+                            <th style="width: 120px;">&nbsp;</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for obj in object_list %}
+                            <tr>
+                                <td><code>{{ obj.reference }}</code></td>
+                                <td>{{ obj.quotation_date }}</td>
+                                <td>{{ obj.valid_until }}</td>
+                                <td>{{ obj.customer.name }}</td>
+                                <td>
+                                    {% if obj.status == "draft" %}
+                                        <span class="badge badge-secondary">{% trans "Draft" %}</span>
+                                    {% elif obj.status == "sent" %}
+                                        <span class="badge badge-info">{% trans "Sent" %}</span>
+                                    {% elif obj.status == "accepted" %}
+                                        <span class="badge badge-success">{% trans "Accepted" %}</span>
+                                    {% elif obj.status == "converted" %}
+                                        <span class="badge badge-primary">{% trans "Converted" %}</span>
+                                    {% elif obj.status == "declined" %}
+                                        <span class="badge badge-danger">{% trans "Declined" %}</span>
+                                    {% elif obj.status == "expired" %}
+                                        <span class="badge badge-warning">{% trans "Expired" %}</span>
+                                    {% else %}
+                                        <span class="badge badge-light">{{ obj.status }}</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-right">{{ obj.grand_total|money:obj.currency_code }}</td>
+                                <td class="text-right">
+                                    {% if obj.status == "draft" and request.user|can:"sales.quotations.update" %}
+                                        <a href="{% url 'sales:quotation_send' obj.pk %}"
+                                           class="btn btn-sm btn-outline-info" title="{% trans 'Send' %}">
+                                            <i class="fas fa-paper-plane"></i>
+                                        </a>
+                                    {% endif %}
+                                    {% if obj.status == "accepted" and request.user|can:"sales.quotations.update" %}
+                                        <a href="{% url 'sales:quotation_convert' obj.pk %}"
+                                           class="btn btn-sm btn-outline-success" title="{% trans 'Convert to Sale' %}">
+                                            <i class="fas fa-exchange-alt"></i>
+                                        </a>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="text-center text-muted p-5">
+                <i class="fas fa-file-alt fa-3x mb-2 opacity-50"></i>
+                <p class="mb-0">{% trans "No quotations found." %}</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+{% if is_paginated %}
+    <nav class="mt-3">
+        <ul class="pagination justify-content-center">
+            {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}">&laquo;</a>
+                </li>
+            {% endif %}
+            <li class="page-item disabled">
+                <span class="page-link">
+                    {% blocktrans with current=page_obj.number total=page_obj.paginator.num_pages %}
+                        Page {{ current }} of {{ total }}
+                    {% endblocktrans %}
+                </span>
+            </li>
+            {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.next_page_number }}">&raquo;</a>
+                </li>
+            {% endif %}
+        </ul>
+    </nav>
+{% endif %}
+{% endblock %}

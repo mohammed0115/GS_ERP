@@ -1,9 +1,9 @@
 {% extends "_generic/list.html" %}
-{% load i18n erp_permissions %}
+{% load i18n erp_permissions erp_money %}
 
 {% block page_title %}{% trans "Users" %}{% endblock %}
-{% block header_title %}{% trans "Users" %}{% endblock %}
-{% block header_subtitle %}{% trans "User accounts with access to the system" %}{% endblock %}
+{% block header_title %}{% trans "Users" %}{% if org %} <small class="text-muted font-weight-normal">— {{ org.name }}</small>{% endif %}{% endblock %}
+{% block header_subtitle %}{% trans "Manage user accounts and roles within your organisation" %}{% endblock %}
 
 {% block create_url %}{% url 'users:user_create' %}{% endblock %}
 {% block create_label %}{% trans "Add User" %}{% endblock %}
@@ -12,27 +12,31 @@
     <th>{% trans "Email" %}</th>
     <th>{% trans "Name" %}</th>
     <th>{% trans "Phone" %}</th>
-    <th class="text-center">{% trans "Staff" %}</th>
+    <th class="text-center">{% trans "Role" %}</th>
+    <th class="text-center">{% trans "Branch" %}</th>
     <th class="text-center">{% trans "Active" %}</th>
     <th class="text-center">{% trans "Last login" %}</th>
-    <th style="width: 160px;">&nbsp;</th>
+    <th style="width: 80px;">&nbsp;</th>
 {% endblock %}
 
 {% block table_body %}
     {% for obj in object_list %}
     <tr>
         <td><code>{{ obj.email }}</code></td>
-        <td>{{ obj.full_name|default:"—" }}</td>
+        <td>{{ obj.get_full_name|default:"—" }}</td>
         <td>{{ obj.phone|default:"—" }}</td>
         <td class="text-center">
-            {% if obj.is_staff %}<i class="fas fa-check text-success"></i>{% else %}—{% endif %}
+            {% with m=memberships|get_item:obj.pk %}
+                {% if m %}<span class="badge badge-info">{{ m.role|capfirst }}</span>{% else %}—{% endif %}
+            {% endwith %}
         </td>
         <td class="text-center">
-            {% if obj.is_active %}
-                <span class="badge badge-success">{% trans "Active" %}</span>
-            {% else %}
-                <span class="badge badge-secondary">{% trans "Inactive" %}</span>
-            {% endif %}
+            {% with m=memberships|get_item:obj.pk %}
+                {{ m.branch.name|default:"—" }}
+            {% endwith %}
+        </td>
+        <td class="text-center">
+            {% if obj.is_active %}<span class="badge badge-success">{% trans "Active" %}</span>{% else %}<span class="badge badge-secondary">{% trans "Inactive" %}</span>{% endif %}
         </td>
         <td class="text-center small">
             {% if obj.last_login %}{{ obj.last_login|date:"Y-m-d H:i" }}{% else %}<span class="text-muted">—</span>{% endif %}

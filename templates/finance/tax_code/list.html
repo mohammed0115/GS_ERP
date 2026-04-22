@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Tax Codes" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with title=_("Tax Codes") subtitle=_("Manage VAT and other tax codes") %}
+
+<div class="d-flex justify-content-end mb-3">
+    <a href="{% url 'finance:tax_code_create' %}" class="btn btn-primary btn-sm">
+        <i class="fa fa-plus"></i> {% trans "New Tax Code" %}
+    </a>
+</div>
+
+<div class="card shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead class="thead-light">
+                <tr>
+                    <th>{% trans "Code" %}</th>
+                    <th>{% trans "Name" %}</th>
+                    <th>{% trans "Rate %" %}</th>
+                    <th>{% trans "Type" %}</th>
+                    <th>{% trans "Applies To" %}</th>
+                    <th>{% trans "Output Account" %}</th>
+                    <th>{% trans "Input Account" %}</th>
+                    <th>{% trans "Status" %}</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for tc in tax_codes %}
+                <tr>
+                    <td><strong>{{ tc.code }}</strong></td>
+                    <td>{{ tc.name }}</td>
+                    <td>{{ tc.rate }}%</td>
+                    <td>
+                        {% if tc.tax_type == "output" %}
+                            <span class="badge badge-info">{% trans "Output" %}</span>
+                        {% else %}
+                            <span class="badge badge-secondary">{% trans "Input" %}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ tc.get_applies_to_display }}</td>
+                    <td class="text-muted small">{{ tc.output_tax_account.code|default:"—" }}</td>
+                    <td class="text-muted small">{{ tc.input_tax_account.code|default:"—" }}</td>
+                    <td>
+                        {% if tc.is_active %}
+                            <span class="badge badge-success">{% trans "Active" %}</span>
+                        {% else %}
+                            <span class="badge badge-danger">{% trans "Inactive" %}</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <a href="{% url 'finance:tax_code_edit' tc.pk %}" class="btn btn-xs btn-outline-secondary">
+                            <i class="fa fa-edit"></i>
+                        </a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="9" class="text-center text-muted py-4">{% trans "No tax codes defined yet." %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

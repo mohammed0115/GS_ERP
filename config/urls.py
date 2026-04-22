@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.contrib import admin
+from django.http import JsonResponse
 from django.urls import include, path
 from drf_spectacular.views import (
     SpectacularAPIView,
@@ -15,8 +16,15 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
 )
 
+
+def health(request):
+    return JsonResponse({"status": "ok"})
+
+
 urlpatterns = [
+    path("health/", health, name="health"),
     path("admin/", admin.site.urls),
+    path("i18n/", include("django.conf.urls.i18n")),
 
     # OpenAPI
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
@@ -25,6 +33,13 @@ urlpatterns = [
 
     # --- API (JSON) ---
     path("api/auth/", include("apps.users.interfaces.http.urls")),
+    path("api/sales/", include("apps.sales.interfaces.api.urls", namespace="sales_api")),
+    path("api/purchases/", include("apps.purchases.interfaces.api.urls", namespace="purchases_api")),
+    path("api/treasury/", include("apps.treasury.interfaces.api.urls", namespace="treasury_api")),
+    path("api/inventory/", include("apps.inventory.interfaces.api.urls", namespace="inventory_api")),
+    path("api/catalog/", include("apps.catalog.interfaces.api.urls", namespace="catalog_api")),
+    path("api/finance/", include("apps.finance.interfaces.api.urls", namespace="finance_api")),
+    path("api/intelligence/", include("apps.intelligence.interfaces.api.urls", namespace="intelligence_api")),
 
     # --- HTML (server-rendered templates) ---
     path("", include("apps.dashboard.urls")),
@@ -37,6 +52,7 @@ urlpatterns = [
     path("pos/",       include("apps.pos.interfaces.web.urls",       namespace="pos")),
     path("finance/",   include("apps.finance.interfaces.web.urls",   namespace="finance")),
     path("hr/",        include("apps.hr.interfaces.web.urls",        namespace="hr")),
+    path("treasury/",  include("apps.treasury.interfaces.web.urls",  namespace="treasury_web")),
     path("reports/",   include("apps.reports.interfaces.web.urls",   namespace="reports")),
     path("settings/",  include("apps.settings_app.interfaces.web.urls", namespace="settings")),
 ]

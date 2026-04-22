@@ -1,17 +1,9 @@
 {% extends "_generic/form.html" %}
 {% load i18n %}
 
-{% block page_title %}
-    {% if object %}{% trans "Edit User" %}{% else %}{% trans "New User" %}{% endif %}
-{% endblock %}
+{% block page_title %}{% if object %}{% trans "Edit User" %}{% else %}{% trans "New User" %}{% endif %}{% endblock %}
 
-{% block form_title %}
-    {% if object %}
-        {% blocktrans with email=object.email %}Edit user — {{ email }}{% endblocktrans %}
-    {% else %}
-        {% trans "New user" %}
-    {% endif %}
-{% endblock %}
+{% block form_title %}{% if object %}{% blocktrans with email=object.email %}Edit user — {{ email }}{% endblocktrans %}{% else %}{% trans "New user" %}{% endif %}{% endblock %}
 
 {% block form_fields %}
     <div class="col-12">
@@ -23,25 +15,23 @@
     {% include "_partials/form_field.html" with field=form.last_name cols=6 %}
 
     <div class="col-12">
-        <h6 class="text-uppercase text-muted small mt-3 mb-3">{% trans "Access" %}</h6>
+        <h6 class="text-uppercase text-muted small mt-3 mb-3">{% trans "Organisation Role" %}</h6>
+    </div>
+    {% include "_partials/form_field.html" with field=form.org_role cols=6 %}
+    {% include "_partials/form_field.html" with field=form.branch cols=6 %}
+
+    <div class="col-12">
+        <h6 class="text-uppercase text-muted small mt-3 mb-3">{% trans "Account Status" %}</h6>
     </div>
     {% include "_partials/form_field.html" with field=form.is_active cols=4 %}
-    {% include "_partials/form_field.html" with field=form.is_staff cols=4 %}
-    {% if form.groups %}
-        {% include "_partials/form_field.html" with field=form.groups cols=12 %}
-    {% endif %}
 
-    {% if form.new_password %}
-        <div class="col-12">
-            <h6 class="text-uppercase text-muted small mt-3 mb-3">{% trans "Password" %}</h6>
-        </div>
-        {% include "_partials/form_field.html" with field=form.new_password cols=6 %}
-        <div class="col-12">
-            <p class="small text-muted">
-                {% trans "Leave blank to keep the current password." %}
-            </p>
-        </div>
-    {% endif %}
+    <div class="col-12">
+        <h6 class="text-uppercase text-muted small mt-3 mb-3">{% trans "Password" %}</h6>
+    </div>
+    {% include "_partials/form_field.html" with field=form.new_password cols=6 %}
+    <div class="col-12">
+        <p class="small text-muted">{% trans "Leave blank to keep the current password. Minimum 8 characters." %}</p>
+    </div>
 {% endblock %}
 
 {% block cancel_url %}{% url 'users:user_list' %}{% endblock %}

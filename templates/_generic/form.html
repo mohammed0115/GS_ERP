@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load i18n %}
-{# ---------------------------------------------------------------------------
+{% comment %} ---------------------------------------------------------------------------
    Generic form skeleton for master-data create/edit pages.
 
    Child templates override:
@@ -8,7 +8,7 @@
      {% block form_title %}
      {% block form_fields %}  → {% include 'form_field.html' ... %} entries
      {% block cancel_url %}   → URL for Cancel button (defaults to ../)
---------------------------------------------------------------------------- #}
+--------------------------------------------------------------------------- {% endcomment %}
 {% block title %}{% block page_title %}{{ block.super }}{% endblock %}{% endblock %}
 
 {% block content %}

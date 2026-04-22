@@ -19,12 +19,12 @@
                 <form method="post" action="{% url 'users:login' %}">
                     {% csrf_token %}
                     <div class="form-group">
-                        <label for="id_email">{% trans "Email" %}</label>
-                        <input type="email" name="email" class="form-control"
-                               id="id_email" required autofocus
-                               value="{{ form.email.value|default:'' }}">
-                        {% if form.email.errors %}
-                            <small class="text-danger">{{ form.email.errors|join:", " }}</small>
+                        <label for="id_username">{% trans "Email" %}</label>
+                        <input type="email" name="username" class="form-control"
+                               id="id_username" required autofocus
+                               value="{{ form.username.value|default:'' }}">
+                        {% if form.username.errors %}
+                            <small class="text-danger">{{ form.username.errors|join:", " }}</small>
                         {% endif %}
                     </div>
                     <div class="form-group">
@@ -48,6 +48,15 @@
                         {% trans "Forgot your password?" %}
                     </a>
                 </div>
+
+                <hr class="my-3">
+
+                <p class="text-center text-muted small mb-0">
+                    {% trans "Don't have an account?" %}
+                    <a href="{% url 'users:register' %}" class="font-weight-bold">
+                        {% trans "Create your company" %}
+                    </a>
+                </p>
             </div>
         </div>
     </div>

@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Reverse Journal Entry" %}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-7">
+        <div class="card shadow-sm border-warning">
+            <div class="card-header bg-warning text-dark">
+                <strong>{% trans "Reverse Journal Entry" %}</strong>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm mb-3">
+                    <tr>
+                        <th>{% trans "Entry Number" %}</th>
+                        <td>{{ entry.entry_number|default:entry.reference }}</td>
+                    </tr>
+                    <tr>
+                        <th>{% trans "Reference" %}</th>
+                        <td>{{ entry.reference }}</td>
+                    </tr>
+                    <tr>
+                        <th>{% trans "Date" %}</th>
+                        <td>{{ entry.entry_date }}</td>
+                    </tr>
+                    <tr>
+                        <th>{% trans "Status" %}</th>
+                        <td><span class="badge badge-success">{{ entry.get_status_display }}</span></td>
+                    </tr>
+                    <tr>
+                        <th>{% trans "Memo" %}</th>
+                        <td>{{ entry.memo|default:"—" }}</td>
+                    </tr>
+                </table>
+
+                <h6 class="font-weight-bold">{% trans "Lines" %}</h6>
+                <table class="table table-sm table-bordered mb-4">
+                    <thead class="thead-light">
+                        <tr>
+                            <th>#</th>
+                            <th>{% trans "Account" %}</th>
+                            <th class="text-right">{% trans "Debit" %}</th>
+                            <th class="text-right">{% trans "Credit" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for line in entry.lines.all %}
+                        <tr>
+                            <td>{{ line.line_number }}</td>
+                            <td>{{ line.account.code }} {{ line.account.name }}</td>
+                            <td class="text-right">{% if line.debit %}{{ line.debit }}{% endif %}</td>
+                            <td class="text-right">{% if line.credit %}{{ line.credit }}{% endif %}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+
+                <p class="text-warning font-weight-bold">
+                    {% trans "A new entry will be created with all debits and credits swapped. The original entry will be marked as Reversed." %}
+                </p>
+
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="form-group row">
+                        <label class="col-sm-3 col-form-label">{% trans "Reversal Date" %}</label>
+                        <div class="col-sm-4">
+                            <input type="date" name="reversal_date" class="form-control"
+                                   value="{{ today|date:'Y-m-d' }}" required>
+                        </div>
+                    </div>
+                    <div class="form-group row">
+                        <label class="col-sm-3 col-form-label">{% trans "Memo" %}</label>
+                        <div class="col-sm-9">
+                            <input type="text" name="memo" class="form-control"
+                                   placeholder="{% trans 'Reversal reason (optional)' %}">
+                        </div>
+                    </div>
+                    <div class="d-flex justify-content-end">
+                        <a href="{% url 'finance:journal_entry_list' %}" class="btn btn-secondary mr-2">
+                            {% trans "Cancel" %}
+                        </a>
+                        <button type="submit" class="btn btn-warning">
+                            <i class="fas fa-undo"></i> {% trans "Confirm Reversal" %}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,50 @@
+{% extends "_generic/list.html" %}
+{% load i18n %}
+
+{% block page_title %}{% trans "Fiscal Years" %}{% endblock %}
+{% block header_title %}{% trans "Fiscal Years" %}{% endblock %}
+{% block header_subtitle %}{% trans "Financial year and period management" %}{% endblock %}
+{% block create_url %}{% url 'finance:fiscal_year_create' %}{% endblock %}
+{% block create_label %}{% trans "New Fiscal Year" %}{% endblock %}
+
+{% block table_head %}
+    <th>{% trans "Name" %}</th>
+    <th>{% trans "Start Date" %}</th>
+    <th>{% trans "End Date" %}</th>
+    <th>{% trans "Periods" %}</th>
+    <th class="text-center">{% trans "Status" %}</th>
+    <th></th>
+{% endblock %}
+
+{% block table_body %}
+    {% for obj in object_list %}
+        <tr>
+            <td><strong>{{ obj.name }}</strong></td>
+            <td>{{ obj.start_date }}</td>
+            <td>{{ obj.end_date }}</td>
+            <td>{{ obj.periods.count }}</td>
+            <td class="text-center">
+                {% if obj.status == "open" %}
+                    <span class="badge badge-success">{% trans "Open" %}</span>
+                {% else %}
+                    <span class="badge badge-danger">{% trans "Closed" %}</span>
+                {% endif %}
+            </td>
+            <td class="text-right">
+                <form method="post" action="{% url 'finance:fiscal_year_toggle' obj.pk %}" class="d-inline">
+                    {% csrf_token %}
+                    {% if obj.status == "open" %}
+                        <button type="submit" class="btn btn-xs btn-outline-danger"
+                                onclick="return confirm('{% trans "Close this fiscal year? No further entries will be allowed." %}')">
+                            <i class="fas fa-lock"></i> {% trans "Close" %}
+                        </button>
+                    {% else %}
+                        <button type="submit" class="btn btn-xs btn-outline-success">
+                            <i class="fas fa-lock-open"></i> {% trans "Reopen" %}
+                        </button>
+                    {% endif %}
+                </form>
+            </td>
+        </tr>
+    {% endfor %}
+{% endblock %}

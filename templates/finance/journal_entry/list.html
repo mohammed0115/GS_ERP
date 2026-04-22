@@ -1,0 +1,33 @@
+{% extends "_generic/list.html" %}
+{% load i18n %}
+
+{% block page_title %}{% trans "Journal Entries" %}{% endblock %}
+{% block header_title %}{% trans "Journal Entries" %}{% endblock %}
+{% block header_subtitle %}{% trans "Posted general ledger entries" %}{% endblock %}
+{% block create_url %}{% url 'finance:journal_entry_create' %}{% endblock %}
+{% block create_label %}{% trans "New Entry" %}{% endblock %}
+
+{% block table_head %}
+    <th>{% trans "Date" %}</th>
+    <th>{% trans "Reference" %}</th>
+    <th>{% trans "Memo" %}</th>
+    <th>{% trans "Currency" %}</th>
+    <th>{% trans "Lines" %}</th>
+    <th>{% trans "Source" %}</th>
+{% endblock %}
+
+{% block table_body %}
+    {% for obj in object_list %}
+        <tr>
+            <td>{{ obj.entry_date }}</td>
+            <td><code>{{ obj.reference }}</code></td>
+            <td class="text-muted small">{{ obj.memo|truncatechars:60 }}</td>
+            <td><span class="badge badge-secondary">{{ obj.currency_code }}</span></td>
+            <td>{{ obj.lines.count }}</td>
+            <td class="text-muted small">
+                {% if obj.source_type %}{{ obj.source_type }}{% if obj.source_id %} #{{ obj.source_id }}{% endif %}
+                {% else %}<em>{% trans "manual" %}</em>{% endif %}
+            </td>
+        </tr>
+    {% endfor %}
+{% endblock %}

@@ -1,0 +1,12 @@
+{% extends "_generic/form.html" %}
+{% load i18n %}
+{% block page_title %}{% if object %}{% trans "Edit Account" %}{% else %}{% trans "New Account" %}{% endif %}{% endblock %}
+{% block form_title %}{% if object %}{% blocktrans with code=object.code %}Edit account — {{ code }}{% endblocktrans %}{% else %}{% trans "New chart-of-accounts entry" %}{% endif %}{% endblock %}
+{% block form_fields %}
+    {% include "_partials/form_field.html" with field=form.code cols=4 %}
+    {% include "_partials/form_field.html" with field=form.name cols=8 %}
+    {% include "_partials/form_field.html" with field=form.account_type cols=4 %}
+    {% include "_partials/form_field.html" with field=form.parent cols=8 %}
+    {% include "_partials/form_field.html" with field=form.is_active cols=4 %}
+{% endblock %}
+{% block cancel_url %}{% url 'finance:account_list' %}{% endblock %}

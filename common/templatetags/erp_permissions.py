@@ -34,6 +34,9 @@ def _user_has_perm(user, perm_code: str) -> bool:
         return False
     if user.is_superuser:
         return True
+    # Organization admins get full access within their tenant context.
+    if user.memberships.filter(role="admin", is_active=True).exists():
+        return True
     # Permission Registry stores codes like "catalog.products.view" —
     # Django stores them as (app_label, codename). We keep the full dotted
     # code as the codename to preserve intent; registration in Sprint 1.3

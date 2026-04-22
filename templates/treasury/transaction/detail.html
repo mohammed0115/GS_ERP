@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% load i18n erp_money %}
+
+{% block title %}{{ txn.transaction_number|default:txn.pk }} — {% trans "Transaction" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with title=txn.transaction_number|default:txn.pk subtitle=txn.get_transaction_type_display back_url="treasury_web:transaction_list"|url %}
+
+<div class="row">
+    <div class="col-md-5 mb-4">
+        <div class="card shadow-sm h-100">
+            <div class="card-header font-weight-bold">{% trans "Details" %}</div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-5">{% trans "Date" %}</dt><dd class="col-sm-7">{{ txn.transaction_date }}</dd>
+                    <dt class="col-sm-5">{% trans "Type" %}</dt>
+                    <dd class="col-sm-7">
+                        {% if txn.transaction_type == "inflow" %}
+                            <span class="badge badge-success">{% trans "Inflow" %}</span>
+                        {% elif txn.transaction_type == "outflow" %}
+                            <span class="badge badge-danger">{% trans "Outflow" %}</span>
+                        {% else %}
+                            <span class="badge badge-secondary">{% trans "Adjustment" %}</span>
+                        {% endif %}
+                    </dd>
+                    <dt class="col-sm-5">{% trans "Party" %}</dt>
+                    <dd class="col-sm-7">{{ txn.cashbox.code|default:txn.bank_account.code }}</dd>
+                    <dt class="col-sm-5">{% trans "Contra Account" %}</dt>
+                    <dd class="col-sm-7">{{ txn.contra_account.code }} — {{ txn.contra_account.name }}</dd>
+                    {% if txn.payment_method %}
+                    <dt class="col-sm-5">{% trans "Payment Method" %}</dt>
+                    <dd class="col-sm-7">{{ txn.payment_method.name }}</dd>
+                    {% endif %}
+                    <dt class="col-sm-5">{% trans "Amount" %}</dt>
+                    <dd class="col-sm-7 font-weight-bold">{{ txn.amount|erp_money }} {{ txn.currency_code }}</dd>
+                    {% if txn.reference %}
+                    <dt class="col-sm-5">{% trans "Reference" %}</dt><dd class="col-sm-7">{{ txn.reference }}</dd>
+                    {% endif %}
+                    <dt class="col-sm-5">{% trans "Status" %}</dt>
+                    <dd class="col-sm-7">
+                        <span class="badge badge-{% if txn.status == 'posted' %}success{% elif txn.status == 'reversed' %}danger{% else %}warning{% endif %}">
+                            {{ txn.status }}
+                        </span>
+                    </dd>
+                    {% if txn.journal_entry %}
+                    <dt class="col-sm-5">{% trans "Journal Entry" %}</dt>
+                    <dd class="col-sm-7">{{ txn.journal_entry_id }}</dd>
+                    {% endif %}
+                    {% if txn.posted_by %}
+                    <dt class="col-sm-5">{% trans "Posted By" %}</dt><dd class="col-sm-7">{{ txn.posted_by }}</dd>
+                    {% endif %}
+                    {% if txn.notes %}
+                    <dt class="col-sm-5">{% trans "Notes" %}</dt><dd class="col-sm-7">{{ txn.notes }}</dd>
+                    {% endif %}
+                </dl>
+            </div>
+            <div class="card-footer d-flex flex-wrap gap-2">
+                {% if txn.status == "draft" %}
+                <form method="post" action="{% url 'treasury_web:transaction_post' txn.pk %}"
+                      onsubmit="return confirm('{% trans "Post this transaction?" %}')">
+                    {% csrf_token %}
+                    <button class="btn btn-success btn-sm">{% trans "Post" %}</button>
+                </form>
+                {% endif %}
+                {% if txn.status == "posted" %}
+                <form method="post" action="{% url 'treasury_web:transaction_reverse' txn.pk %}"
+                      onsubmit="return confirm('{% trans "Reverse this transaction?" %}')">
+                    {% csrf_token %}
+                    <button class="btn btn-danger btn-sm">{% trans "Reverse" %}</button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

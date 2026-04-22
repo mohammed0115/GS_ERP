@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% load i18n erp_permissions %}
+{% block title %}{% trans "Training Programs" %}{% endblock %}
+{% block content %}
+{% include "_partials/page_header.html" with title=_("Training Programs") %}
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        {% if object_list %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead><tr><th>{% trans "Name" %}</th><th>&nbsp;</th></tr></thead>
+                <tbody>
+                    {% for obj in object_list %}
+                    <tr><td>{{ obj }}</td><td>&nbsp;</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center text-muted p-5">
+            <i class="fas fa-inbox fa-3x mb-2 opacity-50"></i>
+            <p class="mb-0">{% trans "No records found." %}</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

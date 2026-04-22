@@ -23,9 +23,7 @@
 {% endblock %}
 
 {% block content %}
-{% include "_partials/page_header.html" with
-    title=_("New sales return")
-    subtitle=_("Process a customer return — stock comes back in and the ledger is reversed") %}
+{% include "_partials/page_header.html" with title=_("New sales return") subtitle=_("Process a customer return — stock comes back in and the ledger is reversed") %}
 
 <form method="post" id="ret-form" class="ret-builder" novalidate>
     {% csrf_token %}

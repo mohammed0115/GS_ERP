@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load i18n %}
-{# ---------------------------------------------------------------------------
+{% comment %} ---------------------------------------------------------------------------
    "Feature coming soon" template — honest placeholder for UI that exists
    in the sidebar but whose backend model/use-case layer has not landed
    yet. Every reference route that points here gives the user a clear
@@ -11,7 +11,7 @@
      description       — one-sentence what it does
      pending_backend   — list of bullets describing what must land first
      planned_ui        — list of bullets describing the UI once it ships
---------------------------------------------------------------------------- #}
+--------------------------------------------------------------------------- {% endcomment %}
 {% block title %}{{ feature_name }} — {% trans "Coming soon" %}{% endblock %}
 
 {% block content %}

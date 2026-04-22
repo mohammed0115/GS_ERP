@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "Print Barcode" %}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h4 class="mb-0">{% trans "Print Barcode Labels" %}</h4>
+        <p class="text-muted small mb-0">{% trans "Select products and print barcode labels." %}</p>
+    </div>
+</div>
+
+<form method="post" novalidate>
+    {% csrf_token %}
+    <div class="card shadow-sm mb-3">
+        <div class="card-header"><strong>{% trans "Options" %}</strong></div>
+        <div class="card-body row">
+            <div class="col-md-3 form-group">
+                <label>{% trans "Page Size" %}</label>
+                <select name="page_size" class="form-control">
+                    <option value="A4">A4</option>
+                    <option value="LETTER">Letter</option>
+                </select>
+            </div>
+            <div class="col-md-3 form-group">
+                <label>{% trans "Copies per product" %}</label>
+                <input type="number" name="copies" class="form-control" value="1" min="1" max="100">
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-header d-flex justify-content-between">
+            <strong>{% trans "Select Products" %}</strong>
+            <div>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="selectAll">{% trans "Select All" %}</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="clearAll">{% trans "Clear" %}</button>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="thead-light">
+                        <tr>
+                            <th style="width:40px;"></th>
+                            <th>{% trans "Code" %}</th>
+                            <th>{% trans "Name" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for product in products %}
+                        <tr>
+                            <td><input type="checkbox" name="product_ids" value="{{ product.pk }}" class="form-check-input product-check"></td>
+                            <td><code>{{ product.code }}</code></td>
+                            <td>{{ product.name }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="3" class="text-center text-muted py-4">{% trans "No active products found." %}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="text-right">
+        <a href="{% url 'catalog:product_list' %}" class="btn btn-outline-secondary mr-2">{% trans "Cancel" %}</a>
+        <button type="submit" class="btn btn-primary"><i class="fas fa-print"></i> {% trans "Generate PDF" %}</button>
+    </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(function () {
+    $('#selectAll').on('click', function () { $('.product-check').prop('checked', true); });
+    $('#clearAll').on('click',  function () { $('.product-check').prop('checked', false); });
+});
+</script>
+{% endblock %}

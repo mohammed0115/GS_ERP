@@ -186,6 +186,53 @@ class Product(TenantOwnedModel, TimestampedModel, AuditMetaMixin):
         help_text="Low-stock threshold. Purely informational; consumed by inventory alerts.",
     )
 
+    # Phase 5 — inventory GL links & valuation
+    name_ar = models.CharField(max_length=255, blank=True, default="")
+    reorder_level = models.DecimalField(
+        max_digits=18, decimal_places=4, null=True, blank=True,
+        help_text="Reorder point quantity. Triggers reorder alert when StockOnHand drops below this.",
+    )
+
+    VALUATION_WEIGHTED_AVG = "weighted_avg"
+    VALUATION_FIFO = "fifo"
+    VALUATION_CHOICES = [
+        (VALUATION_WEIGHTED_AVG, "Weighted Average"),
+        (VALUATION_FIFO, "FIFO"),
+    ]
+    valuation_method = models.CharField(
+        max_length=16, choices=VALUATION_CHOICES,
+        default=VALUATION_WEIGHTED_AVG, blank=True,
+    )
+
+    inventory_account = models.ForeignKey(
+        "finance.Account",
+        on_delete=models.PROTECT,
+        related_name="inventory_products",
+        null=True, blank=True,
+        help_text="GL asset account for this item's inventory value.",
+    )
+    cogs_account = models.ForeignKey(
+        "finance.Account",
+        on_delete=models.PROTECT,
+        related_name="cogs_products",
+        null=True, blank=True,
+        help_text="GL expense account for cost of goods sold.",
+    )
+    purchase_account = models.ForeignKey(
+        "finance.Account",
+        on_delete=models.PROTECT,
+        related_name="purchase_products",
+        null=True, blank=True,
+        help_text="GL expense account used when purchasing non-inventory items.",
+    )
+    sales_account = models.ForeignKey(
+        "finance.Account",
+        on_delete=models.PROTECT,
+        related_name="sales_products",
+        null=True, blank=True,
+        help_text="GL revenue account for sales of this item.",
+    )
+
     description = models.TextField(blank=True, default="")
     is_active = models.BooleanField(default=True, db_index=True)
 

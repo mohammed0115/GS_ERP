@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "Company Settings" %}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h4 class="mb-0">{% trans "Company Settings" %}</h4>
+        <p class="text-muted small mb-0">{% trans "Edit your organisation profile and preferences." %}</p>
+    </div>
+</div>
+
+{% if messages %}
+    {% for message in messages %}
+        <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show">
+            {{ message }}
+            <button type="button" class="close" data-dismiss="alert"><span>&times;</span></button>
+        </div>
+    {% endfor %}
+{% endif %}
+
+<form method="post" novalidate>
+    {% csrf_token %}
+
+    {% if form.non_field_errors %}
+        <div class="alert alert-danger">
+            {% for err in form.non_field_errors %}{{ err }}<br>{% endfor %}
+        </div>
+    {% endif %}
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-header"><strong>{% trans "Company Profile" %}</strong></div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label>{% trans "Company Name" %} <span class="text-danger">*</span></label>
+                        {{ form.name }}
+                        {% if form.name.errors %}<small class="text-danger">{{ form.name.errors|join:", " }}</small>{% endif %}
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label>{% trans "Legal Name" %}</label>
+                        {{ form.legal_name }}
+                        {% if form.legal_name.errors %}<small class="text-danger">{{ form.legal_name.errors|join:", " }}</small>{% endif %}
+                        <small class="form-text text-muted">{% trans "Used on invoices and official documents." %}</small>
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label>{% trans "Short Code" %}</label>
+                        {{ form.code }}
+                        {% if form.code.errors %}<small class="text-danger">{{ form.code.errors|join:", " }}</small>{% endif %}
+                        <small class="form-text text-muted">{% trans "Internal identifier (e.g. ACME)." %}</small>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label>{% trans "Country" %}</label>
+                        {{ form.country }}
+                        {% if form.country.errors %}<small class="text-danger">{{ form.country.errors|join:", " }}</small>{% endif %}
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label>{% trans "Default Currency" %}</label>
+                        {{ form.default_currency_code }}
+                        {% if form.default_currency_code.errors %}<small class="text-danger">{{ form.default_currency_code.errors|join:", " }}</small>{% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label>{% trans "Timezone" %}</label>
+                        {{ form.timezone }}
+                        {% if form.timezone.errors %}<small class="text-danger">{{ form.timezone.errors|join:", " }}</small>{% endif %}
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label>{% trans "Language" %}</label>
+                        {{ form.language }}
+                        {% if form.language.errors %}<small class="text-danger">{{ form.language.errors|join:", " }}</small>{% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-header"><strong>{% trans "Account Info" %}</strong></div>
+        <div class="card-body">
+            <dl class="row mb-0">
+                <dt class="col-sm-3">{% trans "Slug / URL key" %}</dt>
+                <dd class="col-sm-9"><code>{{ org.slug }}</code></dd>
+                <dt class="col-sm-3">{% trans "Registered" %}</dt>
+                <dd class="col-sm-9">{{ org.created_at|date:"Y-m-d" }}</dd>
+            </dl>
+        </div>
+    </div>
+
+    <div class="text-right">
+        <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> {% trans "Save Changes" %}</button>
+    </div>
+</form>
+{% endblock %}

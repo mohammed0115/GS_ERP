@@ -14,3 +14,6 @@ class HRConfig(AppConfig):
         register_permissions("attendance", ("view", "record", "update"))
         register_permissions("holidays", ("view", "request", "approve", "reject"))
         register_permissions("payroll", ("view", "create", "post", "view_all"))
+        register_permissions("leave", ("view", "request", "approve", "reject", "manage"))
+        register_permissions("evaluations", ("view", "create", "submit", "acknowledge"))
+        register_permissions("training", ("view", "enroll", "complete", "manage"))

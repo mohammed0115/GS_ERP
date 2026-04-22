@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% load i18n erp_permissions erp_money %}
+
+{% block title %}{% trans "Customer Receipts" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with title=_("Customer Receipts") subtitle=_("Payments received from customers") primary_action_url=create_url primary_action_label=_("New Receipt") primary_action_icon="fa-plus" %}
+
+<form method="get" class="card shadow-sm mb-3">
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-3 mb-2">
+                <label class="small text-muted">{% trans "Status" %}</label>
+                <select name="status" class="form-control selectpicker">
+                    <option value="">{% trans "All" %}</option>
+                    {% for value, label in status_choices %}
+                        <option value="{{ value }}" {% if request.GET.status == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3 mb-2">
+                <label class="small text-muted">{% trans "Customer" %}</label>
+                <input type="text" name="customer" class="form-control"
+                       value="{{ request.GET.customer|default:'' }}"
+                       placeholder="{% trans 'Code or name' %}">
+            </div>
+            <div class="col-md-2 mb-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary mr-2"><i class="fas fa-search"></i></button>
+                <a href="{% url 'sales:receipt_list' %}" class="btn btn-outline-secondary"><i class="fas fa-times"></i></a>
+            </div>
+        </div>
+    </div>
+</form>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        {% if object_list %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>{% trans "Receipt #" %}</th>
+                        <th>{% trans "Date" %}</th>
+                        <th>{% trans "Customer" %}</th>
+                        <th>{% trans "Method" %}</th>
+                        <th>{% trans "Status" %}</th>
+                        <th class="text-right">{% trans "Amount" %}</th>
+                        <th class="text-right">{% trans "Unallocated" %}</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for obj in object_list %}
+                    <tr>
+                        <td><code>{{ obj.receipt_number|default:"—" }}</code></td>
+                        <td>{{ obj.receipt_date }}</td>
+                        <td>{{ obj.customer.name }}</td>
+                        <td>{{ obj.payment_method }}</td>
+                        <td>
+                            {% if obj.status == "draft" %}<span class="badge badge-secondary">{% trans "Draft" %}</span>
+                            {% elif obj.status == "posted" %}<span class="badge badge-success">{% trans "Posted" %}</span>
+                            {% elif obj.status == "cancelled" %}<span class="badge badge-danger">{% trans "Cancelled" %}</span>
+                            {% elif obj.status == "reversed" %}<span class="badge badge-warning">{% trans "Reversed" %}</span>
+                            {% else %}<span class="badge badge-light">{{ obj.status }}</span>{% endif %}
+                        </td>
+                        <td class="text-right">{{ obj.amount|money:obj.currency_code }}</td>
+                        <td class="text-right">{{ obj.unallocated_amount|money:obj.currency_code }}</td>
+                        <td class="text-right">
+                            <a href="{% url 'sales:receipt_detail' obj.pk %}" class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center text-muted p-5">
+            <i class="fas fa-money-bill fa-3x mb-2 opacity-50"></i>
+            <p class="mb-0">{% trans "No receipts found." %}</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% if is_paginated %}
+<nav class="mt-3"><ul class="pagination justify-content-center">
+    {% if page_obj.has_previous %}<li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}">&laquo;</a></li>{% endif %}
+    <li class="page-item disabled"><span class="page-link">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span></li>
+    {% if page_obj.has_next %}<li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}">&raquo;</a></li>{% endif %}
+</ul></nav>
+{% endif %}
+{% endblock %}

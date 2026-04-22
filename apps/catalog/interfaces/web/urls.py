@@ -9,7 +9,6 @@ from __future__ import annotations
 from django.urls import path
 
 from apps.catalog.interfaces.web import views
-from common.views import coming_soon
 
 app_name = "catalog"
 
@@ -42,14 +41,5 @@ urlpatterns = [
     path("products/<int:pk>/edit/",    views.ProductUpdateView.as_view(), name="product_edit"),
     path("products/<int:pk>/delete/",  views.ProductDeleteView.as_view(), name="product_delete"),
 
-    # -------- Not yet implemented --------
-    path("products/print-barcode/", coming_soon(
-        feature_name="Print barcodes",
-        description="Generate printable barcode label sheets for selected products.",
-        pending_backend=[
-            "BarcodeLabel rendering service (Code128/EAN13 by product.barcode_symbology)",
-            "PDF label-sheet generator (configurable page size + labels-per-page)",
-        ],
-        planned_ui=["Product picker with quantity per SKU", "Label preview + PDF download"],
-    ), name="print_barcode"),
+    path("products/print-barcode/", views.PrintBarcodeView.as_view(), name="print_barcode"),
 ]

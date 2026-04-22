@@ -32,18 +32,54 @@ class AccountTypeChoices(models.TextChoices):
     EXPENSE = AccountType.EXPENSE.value, "Expense"
 
 
+class NormalBalanceChoices(models.TextChoices):
+    DEBIT = "debit", "Debit"
+    CREDIT = "credit", "Credit"
+
+
 class Account(TenantOwnedModel, TimestampedModel):
-    """Chart-of-accounts entry. Scoped per tenant organization."""
+    """
+    Chart-of-accounts entry. Scoped per tenant organization.
+
+    Phase-1.2 additions:
+    - `name_ar` / `name_en`: bilingual names (Arabic-first, mandatory).
+    - `is_postable`: False for summary/group accounts that may not receive
+      journal lines directly. True (default) for leaf accounts.
+    - `is_group`: True for summary accounts that aggregate children.
+    - `level`: depth in the COA tree (1 = root, auto-maintained on save).
+    - `normal_balance`: "debit" for assets & expenses; "credit" for
+      liabilities, equity, and income. Drives sign conventions in reports.
+    """
 
     code = models.CharField(max_length=32, db_index=True)
-    name = models.CharField(max_length=128)
+    name = models.CharField(max_length=128)          # primary display name (kept for compat)
+    name_ar = models.CharField(max_length=128, blank=True, default="", help_text="Arabic name")
+    name_en = models.CharField(max_length=128, blank=True, default="", help_text="English name")
     account_type = models.CharField(max_length=16, choices=AccountTypeChoices.choices)
+    normal_balance = models.CharField(
+        max_length=6,
+        choices=NormalBalanceChoices.choices,
+        default=NormalBalanceChoices.DEBIT,
+        help_text="Which side increases this account.",
+    )
     parent = models.ForeignKey(
         "self",
         on_delete=models.PROTECT,
         related_name="children",
         null=True,
         blank=True,
+    )
+    level = models.PositiveSmallIntegerField(
+        default=1,
+        help_text="Depth in the chart-of-accounts tree (1 = root).",
+    )
+    is_group = models.BooleanField(
+        default=False,
+        help_text="True for summary/parent accounts that cannot receive direct postings.",
+    )
+    is_postable = models.BooleanField(
+        default=True,
+        help_text="False prevents this account from being used in journal lines.",
     )
     is_active = models.BooleanField(default=True, db_index=True)
 
@@ -58,36 +94,100 @@ class Account(TenantOwnedModel, TimestampedModel):
         ]
         indexes = [
             models.Index(fields=("organization", "account_type")),
+            models.Index(fields=("organization", "is_postable", "is_active")),
         ]
+
+    def save(self, *args, **kwargs):
+        # Auto-derive level from parent depth.
+        if self.parent_id is None:
+            self.level = 1
+        else:
+            parent_level = Account.objects.filter(pk=self.parent_id).values_list("level", flat=True).first()
+            self.level = (parent_level or 1) + 1
+        # Auto-derive normal_balance from account_type if not explicitly set.
+        from apps.finance.domain.entities import AccountType
+        if self.account_type in (AccountType.ASSET.value, AccountType.EXPENSE.value):
+            self.normal_balance = NormalBalanceChoices.DEBIT
+        else:
+            self.normal_balance = NormalBalanceChoices.CREDIT
+        super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return f"{self.code} {self.name}"
+
+
+class JournalEntryStatus(models.TextChoices):
+    DRAFT = "draft", "Draft"
+    SUBMITTED = "submitted", "Submitted"
+    APPROVED = "approved", "Approved"
+    POSTED = "posted", "Posted"
+    REVERSED = "reversed", "Reversed"
+    CANCELLED = "cancelled", "Cancelled"
 
 
 class JournalEntry(TenantOwnedModel, TimestampedModel):
     """
     Header of a double-entry journal entry.
 
-    Posting is one-way:
-      - is_posted=False → draft, lines may change, entry may be deleted.
-      - is_posted=True → immutable. Subsequent corrections require reversing entries.
+    Status machine (Phase-1.2):
+      draft → submitted → approved → posted
+      posted → reversed  (via ReverseJournalEntry use case)
+      draft/submitted/approved → cancelled
 
-    `source_type` and `source_id` are a soft polymorphic pointer back to the
-    business document that generated the entry (Sale, Purchase, Expense, etc.).
-    This is intentionally not a real polymorphic FK: we don't want the ledger
-    to acquire compile-time knowledge of every module that posts to it.
+    Once posted the entry is immutable. Corrections require a reversing entry.
+
+    `source_type` / `source_id` are soft polymorphic pointers to the business
+    document that generated the entry (Sale, Purchase, Payroll, …).
     """
 
+    # --- identity ---
+    entry_number = models.CharField(
+        max_length=32, blank=True, default="", db_index=True,
+        help_text="Sequential human-readable number (e.g. JE-2026-0001), set on first save.",
+    )
     entry_date = models.DateField(db_index=True)
     reference = models.CharField(max_length=64, db_index=True)
     memo = models.TextField(blank=True, default="")
     currency_code = models.CharField(max_length=3)
 
+    # --- workflow ---
+    status = models.CharField(
+        max_length=12,
+        choices=JournalEntryStatus.choices,
+        default=JournalEntryStatus.DRAFT,
+        db_index=True,
+    )
+
+    # --- posting stamp (kept for backward compat — mirrors status==POSTED) ---
     is_posted = models.BooleanField(default=False, db_index=True)
     posted_at = models.DateTimeField(null=True, blank=True)
+    posted_by = models.ForeignKey(
+        "users.User",
+        on_delete=models.SET_NULL,
+        related_name="posted_journal_entries",
+        null=True, blank=True,
+    )
 
+    # --- reversal link ---
+    reversed_from = models.OneToOneField(
+        "self",
+        on_delete=models.PROTECT,
+        related_name="reversal_entry",
+        null=True, blank=True,
+        help_text="Points to the original entry this one reverses.",
+    )
+
+    # --- source document ---
     source_type = models.CharField(max_length=64, blank=True, default="", db_index=True)
     source_id = models.BigIntegerField(null=True, blank=True)
+
+    # --- fiscal period (optional; enforced by PostJournalEntry if periods exist) ---
+    fiscal_period = models.ForeignKey(
+        "finance.AccountingPeriod",
+        on_delete=models.PROTECT,
+        related_name="journal_entries",
+        null=True, blank=True,
+    )
 
     class Meta:
         db_table = "finance_journal_entry"
@@ -101,10 +201,11 @@ class JournalEntry(TenantOwnedModel, TimestampedModel):
         indexes = [
             models.Index(fields=("organization", "entry_date")),
             models.Index(fields=("organization", "source_type", "source_id")),
+            models.Index(fields=("organization", "status")),
         ]
 
     def __str__(self) -> str:
-        return f"{self.reference} ({self.entry_date})"
+        return f"{self.reference} ({self.entry_date}) [{self.status}]"
 
 
 class JournalLine(TenantOwnedModel, TimestampedModel):
@@ -385,3 +486,27 @@ class MoneyTransfer(TenantOwnedModel, TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.reference} {self.from_account_id}→{self.to_account_id} {self.amount}"
+
+
+# Make FiscalYear, AccountingPeriod, TaxCode, TaxProfile discoverable by
+# Django's migration framework without repeating their definitions here.
+from apps.finance.infrastructure.fiscal_year_models import (  # noqa: E402, F401
+    FiscalYear,
+    AccountingPeriod,
+)
+from apps.finance.infrastructure.tax_models import (  # noqa: E402, F401
+    TaxCode,
+    TaxProfile,
+    TaxTransaction,
+)
+from apps.finance.infrastructure.closing_models import (  # noqa: E402, F401
+    AdjustmentEntry,
+    ClosingChecklist,
+    ClosingChecklistItem,
+    ClosingRun,
+    PeriodSignOff,
+)
+from apps.finance.infrastructure.report_models import (  # noqa: E402, F401
+    ReportLine,
+    AccountReportMapping,
+)

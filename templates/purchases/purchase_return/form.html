@@ -23,9 +23,7 @@
 {% endblock %}
 
 {% block content %}
-{% include "_partials/page_header.html" with
-    title=_("New purchase return")
-    subtitle=_("Return stock to supplier — reverses AP/inventory in the ledger") %}
+{% include "_partials/page_header.html" with title=_("New purchase return") subtitle=_("Return stock to supplier — reverses AP/inventory in the ledger") %}
 
 <form method="post" id="pret-form" class="pret-builder" novalidate>
     {% csrf_token %}

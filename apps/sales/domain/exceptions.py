@@ -79,3 +79,31 @@ class SaleReturnExceedsOriginalError(ValidationError):
 
 class SaleReturnAlreadyPostedError(ConflictError):
     """Return is no longer a draft."""
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 — Invoice / Receipt / Note exceptions
+# ---------------------------------------------------------------------------
+class CustomerInactiveError(PreconditionFailedError):
+    default_code = "customer_inactive"
+    default_message = "The customer is inactive and cannot be invoiced or collected from."
+
+
+class InvoiceHasNoLinesError(ValidationError):
+    default_code = "invoice_no_lines"
+    default_message = "Invoice must have at least one line."
+
+
+class ARAccountMissingError(PreconditionFailedError):
+    default_code = "ar_account_missing"
+    default_message = "Customer has no Accounts Receivable GL account configured."
+
+
+class RevenueAccountMissingError(PreconditionFailedError):
+    default_code = "revenue_account_missing"
+    default_message = "Invoice line has no revenue GL account configured."
+
+
+class AllocationExceedsReceiptError(ValidationError):
+    default_code = "allocation_exceeds_receipt"
+    default_message = "Allocation amount exceeds available receipt balance or invoice open balance."

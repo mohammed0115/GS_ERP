@@ -1,5 +1,5 @@
 {% load i18n %}
-{# ---------------------------------------------------------------------------
+{% comment %} ---------------------------------------------------------------------------
    Delete confirmation page.
 
    Renders a small confirmation card that POSTs to the same URL to execute
@@ -9,7 +9,7 @@
      object        — the entity about to be deleted
      object_label  — human-readable label (defaults to str(object))
      cancel_url    — where "Cancel" returns to
---------------------------------------------------------------------------- #}
+--------------------------------------------------------------------------- {% endcomment %}
 {% block content %}
 <div class="row justify-content-center mt-4">
     <div class="col-md-6">

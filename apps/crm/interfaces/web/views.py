@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from django import forms
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
+from common.mixins import OrgPermissionRequiredMixin
 from django.contrib.messages.views import SuccessMessageMixin
 from django.urls import reverse_lazy
 from django.views.generic import CreateView, DeleteView, ListView, UpdateView
@@ -33,7 +34,7 @@ class CustomerGroupForm(BootstrapFormMixin, forms.ModelForm):
         fields = ["code", "name", "discount_percent", "is_active"]
 
 
-class CustomerGroupListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
+class CustomerGroupListView(LoginRequiredMixin, OrgPermissionRequiredMixin, ListView):
     permission_required = "crm.customer_groups.view"
     model = CustomerGroup
     template_name = "crm/customer_group/list.html"
@@ -41,7 +42,7 @@ class CustomerGroupListView(LoginRequiredMixin, PermissionRequiredMixin, ListVie
     ordering = "code"
 
 
-class CustomerGroupCreateView(LoginRequiredMixin, PermissionRequiredMixin,
+class CustomerGroupCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin,
                               SuccessMessageMixin, CreateView):
     permission_required = "crm.customer_groups.create"
     model = CustomerGroup
@@ -51,7 +52,7 @@ class CustomerGroupCreateView(LoginRequiredMixin, PermissionRequiredMixin,
     success_message = "Customer group created."
 
 
-class CustomerGroupUpdateView(LoginRequiredMixin, PermissionRequiredMixin,
+class CustomerGroupUpdateView(LoginRequiredMixin, OrgPermissionRequiredMixin,
                               SuccessMessageMixin, UpdateView):
     permission_required = "crm.customer_groups.update"
     model = CustomerGroup
@@ -82,7 +83,7 @@ class CustomerForm(BootstrapFormMixin, forms.ModelForm):
         widgets = {"note": forms.Textarea(attrs={"rows": 3})}
 
 
-class CustomerListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
+class CustomerListView(LoginRequiredMixin, OrgPermissionRequiredMixin, ListView):
     permission_required = "crm.customers.view"
     model = Customer
     template_name = "crm/customer/list.html"
@@ -93,7 +94,7 @@ class CustomerListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         return super().get_queryset().select_related("group")
 
 
-class CustomerCreateView(LoginRequiredMixin, PermissionRequiredMixin,
+class CustomerCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin,
                          SuccessMessageMixin, CreateView):
     permission_required = "crm.customers.create"
     model = Customer
@@ -103,7 +104,7 @@ class CustomerCreateView(LoginRequiredMixin, PermissionRequiredMixin,
     success_message = "Customer created."
 
 
-class CustomerUpdateView(LoginRequiredMixin, PermissionRequiredMixin,
+class CustomerUpdateView(LoginRequiredMixin, OrgPermissionRequiredMixin,
                          SuccessMessageMixin, UpdateView):
     permission_required = "crm.customers.update"
     model = Customer
@@ -113,7 +114,7 @@ class CustomerUpdateView(LoginRequiredMixin, PermissionRequiredMixin,
     success_message = "Customer updated."
 
 
-class CustomerDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
+class CustomerDeleteView(LoginRequiredMixin, OrgPermissionRequiredMixin, DeleteView):
     permission_required = "crm.customers.deactivate"
     model = Customer
     template_name = "_partials/confirm_delete.html"
@@ -140,7 +141,7 @@ class SupplierForm(BootstrapFormMixin, forms.ModelForm):
         widgets = {"note": forms.Textarea(attrs={"rows": 3})}
 
 
-class SupplierListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
+class SupplierListView(LoginRequiredMixin, OrgPermissionRequiredMixin, ListView):
     permission_required = "crm.suppliers.view"
     model = Supplier
     template_name = "crm/supplier/list.html"
@@ -148,7 +149,7 @@ class SupplierListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     ordering = "code"
 
 
-class SupplierCreateView(LoginRequiredMixin, PermissionRequiredMixin,
+class SupplierCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin,
                          SuccessMessageMixin, CreateView):
     permission_required = "crm.suppliers.create"
     model = Supplier
@@ -158,7 +159,7 @@ class SupplierCreateView(LoginRequiredMixin, PermissionRequiredMixin,
     success_message = "Supplier created."
 
 
-class SupplierUpdateView(LoginRequiredMixin, PermissionRequiredMixin,
+class SupplierUpdateView(LoginRequiredMixin, OrgPermissionRequiredMixin,
                          SuccessMessageMixin, UpdateView):
     permission_required = "crm.suppliers.update"
     model = Supplier
@@ -168,7 +169,7 @@ class SupplierUpdateView(LoginRequiredMixin, PermissionRequiredMixin,
     success_message = "Supplier updated."
 
 
-class SupplierDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
+class SupplierDeleteView(LoginRequiredMixin, OrgPermissionRequiredMixin, DeleteView):
     permission_required = "crm.suppliers.deactivate"
     model = Supplier
     template_name = "_partials/confirm_delete.html"
@@ -193,7 +194,7 @@ class BillerForm(BootstrapFormMixin, forms.ModelForm):
         ]
 
 
-class BillerListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
+class BillerListView(LoginRequiredMixin, OrgPermissionRequiredMixin, ListView):
     permission_required = "crm.billers.view"
     model = Biller
     template_name = "crm/biller/list.html"
@@ -201,7 +202,7 @@ class BillerListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     ordering = "code"
 
 
-class BillerCreateView(LoginRequiredMixin, PermissionRequiredMixin,
+class BillerCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin,
                        SuccessMessageMixin, CreateView):
     permission_required = "crm.billers.create"
     model = Biller
@@ -211,7 +212,7 @@ class BillerCreateView(LoginRequiredMixin, PermissionRequiredMixin,
     success_message = "Biller created."
 
 
-class BillerUpdateView(LoginRequiredMixin, PermissionRequiredMixin,
+class BillerUpdateView(LoginRequiredMixin, OrgPermissionRequiredMixin,
                        SuccessMessageMixin, UpdateView):
     permission_required = "crm.billers.update"
     model = Biller

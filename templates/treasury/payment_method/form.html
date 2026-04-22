@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% load i18n erp_money %}
+
+{% block title %}{% trans "New Payment Method" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with title=_("New Payment Method") back_url="treasury_web:payment_method_list"|url %}
+
+<div class="card shadow-sm" style="max-width:500px">
+    <div class="card-body">
+        <form method="post">
+            {% csrf_token %}
+            <div class="form-group">
+                <label>{% trans "Code" %} <span class="text-danger">*</span></label>
+                <input type="text" name="code" class="form-control" required maxlength="32">
+            </div>
+            <div class="form-group">
+                <label>{% trans "Name" %} <span class="text-danger">*</span></label>
+                <input type="text" name="name" class="form-control" required maxlength="128">
+            </div>
+            <div class="form-group">
+                <label>{% trans "Method Type" %} <span class="text-danger">*</span></label>
+                <select name="method_type" class="form-control" required>
+                    <option value="">{% trans "Select…" %}</option>
+                    {% for value, label in method_type_choices %}
+                    <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <div class="custom-control custom-switch">
+                    <input type="checkbox" class="custom-control-input" id="requires_reference" name="requires_reference">
+                    <label class="custom-control-label" for="requires_reference">{% trans "Reference number required" %}</label>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary">{% trans "Create" %}</button>
+            <a href="{% url 'treasury_web:payment_method_list' %}" class="btn btn-outline-secondary ml-2">{% trans "Cancel" %}</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -61,6 +61,9 @@ class Customer(TenantOwnedModel, TimestampedModel, AuditMetaMixin):
 
     # Contact (mirrors ContactInfo VO fields).
     name = models.CharField(max_length=128)
+    name_ar = models.CharField(max_length=128, blank=True, default="", help_text="Arabic name")
+    name_en = models.CharField(max_length=128, blank=True, default="", help_text="English name")
+    legal_name = models.CharField(max_length=256, blank=True, default="", help_text="Official registered name")
     email = models.EmailField(blank=True, default="")
     phone = models.CharField(max_length=32, blank=True, default="")
     address_line1 = models.CharField(max_length=255, blank=True, default="")
@@ -72,6 +75,41 @@ class Customer(TenantOwnedModel, TimestampedModel, AuditMetaMixin):
     tax_number = models.CharField(max_length=64, blank=True, default="")
     note = models.TextField(blank=True, default="")
 
+    # Financial profile (Phase 2)
+    currency_code = models.CharField(
+        max_length=3, blank=True, default="",
+        help_text="Customer's functional currency. Blank = use org default.",
+    )
+    credit_limit = models.DecimalField(
+        max_digits=18, decimal_places=4, default=0,
+        help_text="Maximum outstanding balance allowed. 0 = unlimited.",
+    )
+    payment_terms_days = models.PositiveSmallIntegerField(
+        default=30,
+        help_text="Number of days until invoice is due (used to compute due_date).",
+    )
+    receivable_account = models.ForeignKey(
+        "finance.Account",
+        on_delete=models.PROTECT,
+        related_name="customer_receivables",
+        null=True, blank=True,
+        help_text="Accounts-receivable GL account for this customer.",
+    )
+    revenue_account = models.ForeignKey(
+        "finance.Account",
+        on_delete=models.PROTECT,
+        related_name="customer_revenues",
+        null=True, blank=True,
+        help_text="Default revenue GL account for this customer's invoices.",
+    )
+    tax_profile = models.ForeignKey(
+        "finance.TaxProfile",
+        on_delete=models.PROTECT,
+        related_name="customers",
+        null=True, blank=True,
+        help_text="Default tax profile applied to this customer's invoices.",
+    )
+
     is_active = models.BooleanField(default=True, db_index=True)
 
     class Meta:
@@ -81,6 +119,10 @@ class Customer(TenantOwnedModel, TimestampedModel, AuditMetaMixin):
             models.UniqueConstraint(
                 fields=("organization", "code"),
                 name="crm_customer_unique_code_per_org",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(credit_limit__gte=0),
+                name="crm_customer_credit_limit_non_negative",
             ),
         ]
         indexes = [
@@ -98,6 +140,10 @@ class Customer(TenantOwnedModel, TimestampedModel, AuditMetaMixin):
 class Supplier(TenantOwnedModel, TimestampedModel, AuditMetaMixin):
     code = models.CharField(max_length=64, db_index=True)
     name = models.CharField(max_length=128)
+    # Phase 3 bilingual names
+    name_ar = models.CharField(max_length=128, blank=True, default="", help_text="Arabic name")
+    name_en = models.CharField(max_length=128, blank=True, default="", help_text="English name")
+    legal_name = models.CharField(max_length=256, blank=True, default="", help_text="Official registered name")
     email = models.EmailField(blank=True, default="")
     phone = models.CharField(max_length=32, blank=True, default="")
     address_line1 = models.CharField(max_length=255, blank=True, default="")
@@ -108,6 +154,38 @@ class Supplier(TenantOwnedModel, TimestampedModel, AuditMetaMixin):
     country_code = models.CharField(max_length=2, blank=True, default="")
     tax_number = models.CharField(max_length=64, blank=True, default="")
     note = models.TextField(blank=True, default="")
+
+    # Phase 3 financial profile
+    currency_code = models.CharField(
+        max_length=3, blank=True, default="",
+        help_text="Supplier's functional currency. Blank = use org default.",
+    )
+    payment_terms_days = models.PositiveSmallIntegerField(
+        default=30,
+        help_text="Number of days until invoice is due.",
+    )
+    payable_account = models.ForeignKey(
+        "finance.Account",
+        on_delete=models.PROTECT,
+        related_name="supplier_payables",
+        null=True, blank=True,
+        help_text="Accounts-payable GL account for this supplier.",
+    )
+    default_expense_account = models.ForeignKey(
+        "finance.Account",
+        on_delete=models.PROTECT,
+        related_name="supplier_expenses",
+        null=True, blank=True,
+        help_text="Default expense/purchases GL account for this supplier's invoices.",
+    )
+    tax_profile = models.ForeignKey(
+        "finance.TaxProfile",
+        on_delete=models.PROTECT,
+        related_name="suppliers",
+        null=True, blank=True,
+        help_text="Default tax profile applied to this supplier's invoices.",
+    )
+
     is_active = models.BooleanField(default=True, db_index=True)
 
     class Meta:

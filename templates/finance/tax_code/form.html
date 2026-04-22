@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}
+    {% if object %}{% trans "Edit Tax Code" %}{% else %}{% trans "New Tax Code" %}{% endif %}
+{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with title=_("Tax Code") subtitle=object.code|default:_("New") %}
+
+<div class="card shadow-sm" style="max-width: 700px;">
+    <div class="card-body">
+        <form method="post">
+            {% csrf_token %}
+            {% for field in form %}
+            <div class="form-group row mb-3">
+                <label class="col-sm-4 col-form-label small text-muted">{{ field.label }}</label>
+                <div class="col-sm-8">
+                    {{ field }}
+                    {% if field.errors %}
+                    <div class="invalid-feedback d-block">{{ field.errors|join:", " }}</div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+            <div class="d-flex justify-content-end gap-2">
+                <a href="{% url 'finance:tax_code_list' %}" class="btn btn-outline-secondary">{% trans "Cancel" %}</a>
+                <button type="submit" class="btn btn-primary">{% trans "Save" %}</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

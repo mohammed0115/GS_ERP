@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% load i18n erp_permissions erp_money %}
+
+{% block title %}{% trans "Credit Notes" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with title=_("Credit Notes") subtitle=_("Customer balance reductions") primary_action_url=create_url primary_action_label=_("New Credit Note") primary_action_icon="fa-plus" %}
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        {% if object_list %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>{% trans "Note #" %}</th>
+                        <th>{% trans "Date" %}</th>
+                        <th>{% trans "Customer" %}</th>
+                        <th>{% trans "Status" %}</th>
+                        <th>{% trans "Related Invoice" %}</th>
+                        <th class="text-right">{% trans "Total" %}</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for obj in object_list %}
+                    <tr>
+                        <td><code>{{ obj.note_number|default:"—" }}</code></td>
+                        <td>{{ obj.note_date }}</td>
+                        <td>{{ obj.customer.name }}</td>
+                        <td>
+                            {% if obj.status == "draft" %}<span class="badge badge-secondary">{% trans "Draft" %}</span>
+                            {% elif obj.status == "issued" %}<span class="badge badge-success">{% trans "Issued" %}</span>
+                            {% elif obj.status == "applied" %}<span class="badge badge-info">{% trans "Applied" %}</span>
+                            {% elif obj.status == "cancelled" %}<span class="badge badge-danger">{% trans "Cancelled" %}</span>
+                            {% else %}<span class="badge badge-light">{{ obj.status }}</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if obj.related_invoice %}
+                                <a href="{% url 'sales:invoice_detail' obj.related_invoice.pk %}">
+                                    {{ obj.related_invoice.invoice_number|default:obj.related_invoice.pk }}
+                                </a>
+                            {% else %}—{% endif %}
+                        </td>
+                        <td class="text-right">{{ obj.grand_total|money:obj.currency_code }}</td>
+                        <td class="text-right">
+                            <a href="{% url 'sales:credit_note_detail' obj.pk %}" class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center text-muted p-5">
+            <i class="fas fa-file-invoice fa-3x mb-2 opacity-50"></i>
+            <p class="mb-0">{% trans "No credit notes found." %}</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
-# Docker entrypoint. Waits for Postgres, applies migrations, then exec's the CMD.
+# Docker entrypoint. Waits for MySQL, applies migrations, then exec's the CMD.
 set -euo pipefail
 
-: "${POSTGRES_HOST:=postgres}"
-: "${POSTGRES_PORT:=5432}"
-: "${POSTGRES_USER:=nerp}"
+: "${MYSQL_HOST:=mysql}"
+: "${MYSQL_PORT:=3306}"
+: "${MYSQL_USER:=gs_erp}"
 
-echo ">> Waiting for Postgres at ${POSTGRES_HOST}:${POSTGRES_PORT} ..."
+echo ">> Waiting for MySQL at ${MYSQL_HOST}:${MYSQL_PORT} ..."
 until python -c "
 import socket, sys
 s = socket.socket()
 s.settimeout(2)
 try:
-    s.connect(('${POSTGRES_HOST}', ${POSTGRES_PORT}))
+    s.connect(('${MYSQL_HOST}', ${MYSQL_PORT}))
     sys.exit(0)
 except OSError:
     sys.exit(1)
 " >/dev/null 2>&1; do
     sleep 1
 done
-echo ">> Postgres is up."
+echo ">> MySQL is up."
 
 if [ "${RUN_MIGRATIONS:-1}" = "1" ]; then
     echo ">> Applying migrations ..."

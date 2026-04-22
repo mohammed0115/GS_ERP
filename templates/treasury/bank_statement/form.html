@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% load i18n erp_money %}
+
+{% block title %}{% trans "Import Bank Statement" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with title=_("Import Bank Statement") back_url="treasury_web:bank_statement_list"|url %}
+
+<div class="card shadow-sm" style="max-width:900px">
+    <div class="card-body">
+        <form method="post" id="stmtForm">
+            {% csrf_token %}
+            <div class="row">
+                <div class="col-md-6 form-group">
+                    <label>{% trans "Bank Account" %} <span class="text-danger">*</span></label>
+                    <select name="bank_account_id" class="form-control selectpicker" data-live-search="true" required>
+                        <option value="">{% trans "Select…" %}</option>
+                        {% for ba in bank_accounts %}
+                        <option value="{{ ba.pk }}">{{ ba.code }} — {{ ba.bank_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-6 form-group">
+                    <label>{% trans "Statement Date" %} <span class="text-danger">*</span></label>
+                    <input type="date" name="statement_date" class="form-control" value="{{ today }}" required>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-6 form-group">
+                    <label>{% trans "Opening Balance" %}</label>
+                    <input type="number" name="opening_balance" id="openingBalance" class="form-control" value="0" step="0.0001">
+                </div>
+                <div class="col-md-6 form-group">
+                    <label>{% trans "Closing Balance" %}</label>
+                    <input type="number" name="closing_balance" id="closingBalance" class="form-control" value="0" step="0.0001">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>{% trans "Notes" %}</label>
+                <textarea name="notes" class="form-control" rows="2"></textarea>
+            </div>
+
+            <hr>
+            <h6 class="font-weight-bold mb-3">{% trans "Statement Lines" %}</h6>
+
+            <div class="table-responsive mb-3">
+                <table class="table table-sm table-bordered" id="linesTable">
+                    <thead class="thead-light">
+                        <tr>
+                            <th>{% trans "Date" %}</th>
+                            <th>{% trans "Description" %}</th>
+                            <th>{% trans "Reference" %}</th>
+                            <th class="text-right">{% trans "Debit" %}</th>
+                            <th class="text-right">{% trans "Credit" %}</th>
+                            <th class="text-right">{% trans "Balance" %}</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="linesBody"></tbody>
+                </table>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-info mb-3" id="addLineBtn">
+                <i class="fa fa-plus"></i> {% trans "Add Line" %}
+            </button>
+
+            <input type="hidden" name="lines_json" id="linesJson">
+            <div class="mt-3">
+                <button type="submit" class="btn btn-primary" id="submitBtn">{% trans "Import Statement" %}</button>
+                <a href="{% url 'treasury_web:bank_statement_list' %}" class="btn btn-outline-secondary ml-2">{% trans "Cancel" %}</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+var lineTemplate = `<tr>
+    <td><input type="date" class="form-control form-control-sm line-date" value="{{ today }}"></td>
+    <td><input type="text" class="form-control form-control-sm line-desc" maxlength="256"></td>
+    <td><input type="text" class="form-control form-control-sm line-ref" maxlength="64"></td>
+    <td><input type="number" class="form-control form-control-sm text-right line-debit" value="0" step="0.0001" min="0"></td>
+    <td><input type="number" class="form-control form-control-sm text-right line-credit" value="0" step="0.0001" min="0"></td>
+    <td><input type="number" class="form-control form-control-sm text-right line-balance" value="0" step="0.0001"></td>
+    <td><button type="button" class="btn btn-sm btn-outline-danger remove-line"><i class="fa fa-trash"></i></button></td>
+</tr>`;
+
+$('#addLineBtn').on('click', function() {
+    $('#linesBody').append(lineTemplate);
+    $('#linesBody').find('.selectpicker').selectpicker();
+});
+
+$(document).on('click', '.remove-line', function() {
+    $(this).closest('tr').remove();
+});
+
+$('#stmtForm').on('submit', function(e) {
+    var lines = [];
+    $('#linesBody tr').each(function() {
+        lines.push({
+            txn_date: $(this).find('.line-date').val(),
+            description: $(this).find('.line-desc').val(),
+            reference: $(this).find('.line-ref').val(),
+            debit_amount: parseFloat($(this).find('.line-debit').val()) || 0,
+            credit_amount: parseFloat($(this).find('.line-credit').val()) || 0,
+            balance: parseFloat($(this).find('.line-balance').val()) || 0,
+        });
+    });
+    $('#linesJson').val(JSON.stringify(lines));
+});
+</script>
+{% endblock %}

@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% load i18n erp_money %}
+
+{% block title %}{% trans "Vendor Debit Notes" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with title=_("Vendor Debit Notes") subtitle=_("Additional charges from vendors — increases AP") primary_action_url="purchases:vendor_debit_note_create"|url primary_action_label=_("New Debit Note") primary_action_icon="fa-plus" %}
+
+<form method="get" class="card shadow-sm mb-3">
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-3 mb-2">
+                <label class="small text-muted">{% trans "Status" %}</label>
+                <select name="status" class="form-control selectpicker">
+                    <option value="">{% trans "All" %}</option>
+                    {% for value, label in status_choices %}
+                        <option value="{{ value }}" {% if request.GET.status == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-4 mb-2">
+                <label class="small text-muted">{% trans "Vendor" %}</label>
+                <input type="text" name="vendor" class="form-control"
+                       value="{{ request.GET.vendor|default:'' }}"
+                       placeholder="{% trans 'Code or name' %}">
+            </div>
+            <div class="col-md-2 mb-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary mr-2"><i class="fas fa-search"></i></button>
+                <a href="{% url 'purchases:vendor_debit_note_list' %}" class="btn btn-outline-secondary"><i class="fas fa-times"></i></a>
+            </div>
+        </div>
+    </div>
+</form>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        {% if object_list %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>{% trans "Note #" %}</th>
+                        <th>{% trans "Date" %}</th>
+                        <th>{% trans "Vendor" %}</th>
+                        <th>{% trans "Related Invoice" %}</th>
+                        <th>{% trans "Status" %}</th>
+                        <th class="text-right">{% trans "Total" %}</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for obj in object_list %}
+                    <tr>
+                        <td><code>{{ obj.note_number|default:"—" }}</code></td>
+                        <td>{{ obj.note_date }}</td>
+                        <td>{{ obj.vendor.name }}</td>
+                        <td>{{ obj.related_invoice.invoice_number|default:"—" }}</td>
+                        <td>
+                            {% if obj.status == "draft" %}<span class="badge badge-secondary">{% trans "Draft" %}</span>
+                            {% elif obj.status == "issued" %}<span class="badge badge-info">{% trans "Issued" %}</span>
+                            {% elif obj.status == "applied" %}<span class="badge badge-success">{% trans "Applied" %}</span>
+                            {% elif obj.status == "cancelled" %}<span class="badge badge-danger">{% trans "Cancelled" %}</span>
+                            {% else %}<span class="badge badge-light">{{ obj.status }}</span>{% endif %}
+                        </td>
+                        <td class="text-right">{{ obj.grand_total|money:obj.currency_code }}</td>
+                        <td class="text-right">
+                            <a href="{% url 'purchases:vendor_debit_note_detail' obj.pk %}" class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center text-muted p-5">
+            <i class="fas fa-file-alt fa-3x mb-2 opacity-50"></i>
+            <p class="mb-0">{% trans "No vendor debit notes found." %}</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
