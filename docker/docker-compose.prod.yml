@@ -20,7 +20,8 @@ services:
              "-u", "${MYSQL_USER}", "-p${MYSQL_PASSWORD}"]
       interval: 10s
       timeout: 5s
-      retries: 10
+      retries: 12
+      start_period: 60s
 
   # ---------------------------------------------------------------------------
   # Redis 7
