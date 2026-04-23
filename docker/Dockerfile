@@ -11,6 +11,7 @@ RUN apt-get update \
         default-libmysqlclient-dev \
         pkg-config \
         curl \
+        gettext \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

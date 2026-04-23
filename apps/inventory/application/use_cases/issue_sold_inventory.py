@@ -141,9 +141,11 @@ class IssueSoldInventory:
             )
             movement.save()
 
-            # 2. Update SOH quantity and inventory_value
-            soh.quantity = soh.quantity - line.quantity
+            # 2. Update inventory_value BEFORE decrementing quantity so that
+            #    on_outbound() receives the original quantity and computes
+            #    remaining_qty = original_qty - outbound_qty correctly.
             cost_update = _cost_engine.on_outbound(soh, line.quantity)
+            soh.quantity = soh.quantity - line.quantity
             soh.save(update_fields=["quantity", "updated_at"])
 
             total_cogs += total_cost

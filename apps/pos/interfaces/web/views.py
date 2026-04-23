@@ -257,6 +257,9 @@ class POSCheckoutView(OrgPermissionRequiredMixin, View):
         tax_payable_account_id = (
             payload.get("tax_payable_account_id") or config.get("tax_payable_account_id")
         )
+        shipping_account_id = (
+            payload.get("shipping_account_id") or config.get("shipping_account_id")
+        )
 
         try:
             currency = Currency(session.currency_code)
@@ -302,6 +305,11 @@ class POSCheckoutView(OrgPermissionRequiredMixin, View):
                 tax_payable_account_id=(
                     int(tax_payable_account_id) if tax_payable_account_id else None
                 ),
+                shipping_account_id=(
+                    int(shipping_account_id) if shipping_account_id else None
+                ),
+                # POS sales are immediate cash — mark fully paid at posting.
+                paid_amount=draft.compute_totals().grand_total.amount,
                 memo=payload.get("memo", ""),
             ))
         except (KeyError, ValueError, InvalidOperation) as exc:
@@ -324,60 +332,73 @@ def _posix_ticks() -> int:
 
 def _resolve_pos_config() -> dict:
     """
-    Pick POS defaults from existing master data.
+    Load POS defaults from the per-tenant POSConfig record.
 
-    Strategy:
-      - default customer: a Customer with code 'WALKIN' if one exists,
-        else the first active Customer.
-      - default biller: the first active Biller.
-      - cash account: Account where account_type='asset' and code starts
-        with '1010' (cash-in-hand by convention), or the first asset
-        account whose name contains 'cash' (case-insensitive).
-      - revenue account: Account where account_type='income' — first match.
-      - tax payable account: Account where account_type='liability' and
-        name contains 'tax payable'; None when no such account exists and
-        the cart has zero-tax lines.
-
-    A clean future iteration replaces this with a proper `POSConfig` model
-    per tenant. For now, the heuristic is explicit and easy to override
-    via `apps.tenancy.bootstrap.ensure_pos_config`.
+    Admins configure this once via Settings → POS Configuration.
+    Raises RuntimeError with a clear instruction when not yet set up.
     """
-    from apps.crm.infrastructure.models import Biller, Customer
-    from apps.finance.infrastructure.models import Account, AccountTypeChoices
+    from apps.pos.infrastructure.models import POSConfig
 
-    customer = (
-        Customer.objects.filter(code="WALKIN", is_active=True).first()
-        or Customer.objects.filter(is_active=True).order_by("pk").first()
-    )
-    if customer is None:
-        raise RuntimeError("No active customer available. Create at least one customer, or a 'WALKIN' record for POS sales.")
-
-    biller = Biller.objects.filter(is_active=True).order_by("pk").first()
-    if biller is None:
-        raise RuntimeError("No active biller available. Create at least one biller for POS sales.")
-
-    cash = (
-        Account.objects.filter(account_type=AccountTypeChoices.ASSET, code__startswith="1010").first()
-        or Account.objects.filter(account_type=AccountTypeChoices.ASSET, name__icontains="cash").first()
-    )
-    if cash is None:
-        raise RuntimeError("No cash account found in the chart of accounts.")
-
-    revenue = Account.objects.filter(account_type=AccountTypeChoices.INCOME).order_by("code").first()
-    if revenue is None:
-        raise RuntimeError("No revenue account found in the chart of accounts.")
-
-    tax_payable = (
-        Account.objects.filter(
-            account_type=AccountTypeChoices.LIABILITY,
-            name__icontains="tax payable",
-        ).first()
-    )
+    try:
+        cfg = POSConfig.objects.select_related(
+            "default_customer",
+            "default_biller",
+            "cash_account",
+            "revenue_account",
+            "tax_payable_account",
+            "shipping_account",
+        ).get()
+    except POSConfig.DoesNotExist:
+        raise RuntimeError(
+            "POS is not configured yet. "
+            "Go to Settings → POS Configuration to set up default accounts and customer."
+        )
 
     return {
-        "default_customer_id": customer.pk,
-        "default_biller_id": biller.pk,
-        "cash_account_id": cash.pk,
-        "revenue_account_id": revenue.pk,
-        "tax_payable_account_id": tax_payable.pk if tax_payable else None,
+        "default_customer_id": cfg.default_customer_id,
+        "default_biller_id": cfg.default_biller_id,
+        "cash_account_id": cfg.cash_account_id,
+        "revenue_account_id": cfg.revenue_account_id,
+        "tax_payable_account_id": cfg.tax_payable_account_id,
+        "shipping_account_id": cfg.shipping_account_id,
     }
+
+
+# ---------------------------------------------------------------------------
+# POS Configuration (admin-only setup page)
+# ---------------------------------------------------------------------------
+class POSConfigView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
+    """
+    GET  /pos/config/  — show current config (or empty form).
+    POST /pos/config/  — create or update the POSConfig for this tenant.
+    """
+    permission_required = "pos.pos.configure"
+    template_name = "pos/config.html"
+
+    def get(self, request, *args, **kwargs):
+        from apps.pos.infrastructure.models import POSConfig
+        from apps.pos.interfaces.web.forms import POSConfigForm
+
+        try:
+            cfg = POSConfig.objects.get()
+        except POSConfig.DoesNotExist:
+            cfg = None
+
+        form = POSConfigForm(instance=cfg)
+        return render(request, self.template_name, {"form": form, "config": cfg})
+
+    def post(self, request, *args, **kwargs):
+        from apps.pos.infrastructure.models import POSConfig
+        from apps.pos.interfaces.web.forms import POSConfigForm
+
+        try:
+            cfg = POSConfig.objects.get()
+        except POSConfig.DoesNotExist:
+            cfg = None
+
+        form = POSConfigForm(request.POST, instance=cfg)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "POS configuration saved.")
+            return redirect("pos:config")
+        return render(request, self.template_name, {"form": form, "config": cfg})

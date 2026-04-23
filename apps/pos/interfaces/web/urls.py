@@ -12,4 +12,5 @@ urlpatterns = [
     path("register/open/",    views.OpenRegisterView.as_view(),  name="register_open"),
     path("register/close/",   views.CloseRegisterView.as_view(), name="register_close"),
     path("checkout/",         views.POSCheckoutView.as_view(),   name="checkout"),
+    path("config/",           views.POSConfigView.as_view(),     name="config"),
 ]

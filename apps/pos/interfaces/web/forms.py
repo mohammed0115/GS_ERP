@@ -5,6 +5,8 @@ OpenRegisterForm and CloseRegisterForm are NOT ModelForms — the
 `CashRegisterSession` table is managed exclusively through the use cases
 (`OpenRegister`, `CloseRegister`). These forms only collect the inputs
 the use-case commands need; the view turns them into commands.
+
+POSConfigForm IS a ModelForm — it manages the singleton POSConfig record.
 """
 from __future__ import annotations
 
@@ -41,3 +43,33 @@ class CloseRegisterForm(BootstrapFormMixin, forms.Form):
         help_text="Counted cash in the drawer at close.",
     )
     note = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 2}))
+
+
+class POSConfigForm(BootstrapFormMixin, forms.ModelForm):
+    """Singleton form for the per-tenant POS configuration."""
+
+    class Meta:
+        from apps.pos.infrastructure.models import POSConfig
+        model = POSConfig
+        fields = [
+            "default_customer",
+            "default_biller",
+            "cash_account",
+            "revenue_account",
+            "tax_payable_account",
+            "shipping_account",
+        ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from apps.crm.infrastructure.models import Biller, Customer
+        from apps.finance.infrastructure.models import Account
+
+        self.fields["default_customer"].queryset = Customer.objects.filter(is_active=True).order_by("code")
+        self.fields["default_biller"].queryset = Biller.objects.filter(is_active=True).order_by("code")
+        self.fields["cash_account"].queryset = Account.objects.filter(is_active=True).order_by("code")
+        self.fields["revenue_account"].queryset = Account.objects.filter(is_active=True).order_by("code")
+        self.fields["tax_payable_account"].queryset = Account.objects.filter(is_active=True).order_by("code")
+        self.fields["tax_payable_account"].required = False
+        self.fields["shipping_account"].queryset = Account.objects.filter(is_active=True).order_by("code")
+        self.fields["shipping_account"].required = False

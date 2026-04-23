@@ -470,6 +470,42 @@ class CustomerStatementView(LoginRequiredMixin, OrgPermissionRequiredMixin, Temp
 # ---------------------------------------------------------------------------
 # Vendor Statement
 # ---------------------------------------------------------------------------
+class IncomeStatementView(LoginRequiredMixin, OrgPermissionRequiredMixin, TemplateView):
+    permission_required = "reports.reports.income_statement"
+    template_name = "reports/income_statement.html"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        today = date.today()
+        default_from = today.replace(month=1, day=1)
+
+        date_from = _parse_date(self.request.GET.get("date_from")) or default_from
+        date_to = _parse_date(self.request.GET.get("date_to")) or today
+        currency = _org_currency()
+
+        statement = None
+        if self.request.GET.get("date_from") or self.request.GET.get("date_to"):
+            try:
+                statement = selectors.income_statement(
+                    date_from=date_from,
+                    date_to=date_to,
+                    currency_code=currency,
+                )
+            except Exception as exc:
+                ctx["error"] = str(exc)
+
+        ctx.update({
+            "date_from": date_from.isoformat(),
+            "date_to": date_to.isoformat(),
+            "statement": statement,
+            "currency": currency,
+        })
+        return ctx
+
+
+# ---------------------------------------------------------------------------
+# Vendor Statement
+# ---------------------------------------------------------------------------
 class VendorStatementView(LoginRequiredMixin, OrgPermissionRequiredMixin, TemplateView):
     permission_required = "reports.reports.vendor_statement"
     template_name = "reports/vendor_statement.html"

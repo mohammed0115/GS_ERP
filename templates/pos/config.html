@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "POS Configuration" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with title=_("POS Configuration") subtitle=_("Set default accounts and parties used by the point-of-sale terminal") %}
+
+<div class="card shadow-sm">
+    <div class="card-header"><strong>{% trans "POS Defaults" %}</strong></div>
+    <div class="card-body">
+        {% if messages %}
+            {% for msg in messages %}
+                <div class="alert alert-{{ msg.tags }}">{{ msg }}</div>
+            {% endfor %}
+        {% endif %}
+
+        <form method="post">
+            {% csrf_token %}
+            <div class="row">
+                <div class="col-md-6">
+                    {% include "_partials/form_field.html" with field=form.default_customer %}
+                </div>
+                <div class="col-md-6">
+                    {% include "_partials/form_field.html" with field=form.default_biller %}
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-6">
+                    {% include "_partials/form_field.html" with field=form.cash_account %}
+                </div>
+                <div class="col-md-6">
+                    {% include "_partials/form_field.html" with field=form.revenue_account %}
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-6">
+                    {% include "_partials/form_field.html" with field=form.tax_payable_account %}
+                </div>
+                <div class="col-md-6">
+                    {% include "_partials/form_field.html" with field=form.shipping_account %}
+                </div>
+            </div>
+
+            <div class="d-flex justify-content-end mt-3">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save"></i> {% trans "Save Configuration" %}
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

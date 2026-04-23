@@ -15,4 +15,7 @@ class ReportsConfig(AppConfig):
             "profit_loss", "product_sales", "sales_report", "purchase_report",
             "payment_report", "customer_report", "supplier_report",
             "user_report", "due_report",
+            "income_statement", "general_ledger", "trial_balance",
+            "balance_sheet", "ar_aging", "ap_aging",
+            "customer_statement", "vendor_statement",
         ))

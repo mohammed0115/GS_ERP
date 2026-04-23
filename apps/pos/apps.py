@@ -9,5 +9,5 @@ class POSConfig(AppConfig):
 
     def ready(self) -> None:
         from apps.users.application.permissions import register_permissions
-        register_permissions("pos", ("use",))
+        register_permissions("pos", ("use", "configure"))
         register_permissions("cash_register", ("open", "close", "view", "reconcile"))

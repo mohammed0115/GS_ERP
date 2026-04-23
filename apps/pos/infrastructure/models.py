@@ -1,9 +1,10 @@
 """
 POS infrastructure (ORM).
 
-One model: `CashRegisterSession`. The partial unique index on `is_open=True`
-guarantees at most one active session per (user, warehouse) — a core POS
-invariant. Amounts are stored as Decimal(18,4) + currency_code.
+Models:
+  - CashRegisterSession: one cash-drawer session per (user, warehouse).
+  - POSConfig: one-per-tenant configuration for POS defaults (accounts,
+    customer, biller). Replaces the fragile _resolve_pos_config() heuristic.
 """
 from __future__ import annotations
 
@@ -70,3 +71,67 @@ class CashRegisterSession(TenantOwnedModel, TimestampedModel):
     def __str__(self) -> str:
         state = "OPEN" if self.is_open else "CLOSED"
         return f"Register {self.user_id}@{self.warehouse_id} [{state}]"
+
+
+class POSConfig(TenantOwnedModel, TimestampedModel):
+    """
+    POS configuration — one record per organization.
+
+    Replaces the fragile _resolve_pos_config() heuristic that used
+    account-code conventions to guess defaults. Admins must set this up
+    once via Settings → POS Configuration before the terminal can process
+    sales.
+    """
+
+    default_customer = models.ForeignKey(
+        "crm.Customer",
+        on_delete=models.PROTECT,
+        related_name="+",
+        help_text="Walk-in / default customer used when the cart has no customer.",
+    )
+    default_biller = models.ForeignKey(
+        "crm.Biller",
+        on_delete=models.PROTECT,
+        related_name="+",
+        help_text="Default biller (cashier user) for POS sales.",
+    )
+    cash_account = models.ForeignKey(
+        "finance.Account",
+        on_delete=models.PROTECT,
+        related_name="+",
+        help_text="Cash-in-hand GL account debited on each POS sale.",
+    )
+    revenue_account = models.ForeignKey(
+        "finance.Account",
+        on_delete=models.PROTECT,
+        related_name="pos_revenue_configs",
+        help_text="Sales revenue GL account credited on each POS sale.",
+    )
+    tax_payable_account = models.ForeignKey(
+        "finance.Account",
+        on_delete=models.PROTECT,
+        related_name="+",
+        null=True,
+        blank=True,
+        help_text="Tax-payable GL account. Required when any POS item carries tax.",
+    )
+    shipping_account = models.ForeignKey(
+        "finance.Account",
+        on_delete=models.PROTECT,
+        related_name="+",
+        null=True,
+        blank=True,
+        help_text="Shipping-income GL account. When set, shipping charges post here instead of revenue.",
+    )
+
+    class Meta:
+        db_table = "pos_config"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("organization",),
+                name="pos_config_unique_per_org",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"POS Config [{self.organization_id}]"

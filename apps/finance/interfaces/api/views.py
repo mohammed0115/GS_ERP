@@ -16,6 +16,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from common.drf_permissions import IsFinanceManager
+
 from apps.finance.infrastructure.closing_models import (
     AdjustmentEntry,
     ClosingChecklist,
@@ -48,7 +50,7 @@ from apps.finance.interfaces.api.serializers import (
 # TaxCode
 # ---------------------------------------------------------------------------
 class TaxCodeListView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsFinanceManager]
 
     @extend_schema(responses=TaxCodeSerializer(many=True), tags=["Finance / Tax"])
     def get(self, request):
@@ -82,7 +84,7 @@ class TaxCodeListView(APIView):
 
 
 class TaxCodeDetailView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsFinanceManager]
 
     @extend_schema(responses=TaxCodeSerializer, tags=["Finance / Tax"])
     def get(self, request, pk):
@@ -143,7 +145,7 @@ class TaxTransactionListView(APIView):
 # AdjustmentEntry
 # ---------------------------------------------------------------------------
 class AdjustmentEntryListView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsFinanceManager]
 
     @extend_schema(responses=AdjustmentEntrySerializer(many=True), tags=["Finance / Closing"])
     def get(self, request):
@@ -171,7 +173,7 @@ class AdjustmentEntryListView(APIView):
 
 
 class AdjustmentEntryDetailView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsFinanceManager]
 
     @extend_schema(responses=AdjustmentEntrySerializer, tags=["Finance / Closing"])
     def get(self, request, pk):
@@ -195,7 +197,7 @@ class ClosingChecklistDetailView(APIView):
 
 
 class ClosingChecklistGenerateView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsFinanceManager]
 
     @extend_schema(
         request=None,
@@ -224,7 +226,7 @@ class ClosingChecklistGenerateView(APIView):
 
 
 class ClosingChecklistItemMarkView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsFinanceManager]
 
     @extend_schema(
         request=MarkChecklistItemSerializer,
@@ -263,7 +265,7 @@ class ClosingChecklistItemMarkView(APIView):
 # Period close / reopen
 # ---------------------------------------------------------------------------
 class ClosePeriodView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsFinanceManager]
 
     @extend_schema(
         request=CloseFiscalPeriodSerializer,
@@ -298,7 +300,7 @@ class ClosePeriodView(APIView):
 
 
 class ReopenPeriodView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsFinanceManager]
 
     @extend_schema(
         request=ReopenFiscalPeriodSerializer,
@@ -345,7 +347,7 @@ class ClosingRunDetailView(APIView):
 # PeriodSignOff
 # ---------------------------------------------------------------------------
 class PeriodSignOffView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsFinanceManager]
 
     @extend_schema(responses=PeriodSignOffSerializer, tags=["Finance / Closing"])
     def get(self, request, period_pk):
@@ -381,7 +383,7 @@ class PeriodSignOffView(APIView):
 # ReportLine
 # ---------------------------------------------------------------------------
 class ReportLineListView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsFinanceManager]
 
     @extend_schema(responses=ReportLineSerializer(many=True), tags=["Finance / Reports"])
     def get(self, request):

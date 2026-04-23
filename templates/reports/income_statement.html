@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% load i18n erp_money %}
+
+{% block title %}{% trans "Income Statement" %}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with title=_("Income Statement") subtitle=_("Revenue, expenses, and net income for a period") %}
+
+<form method="get" class="card shadow-sm mb-4">
+    <div class="card-body">
+        <div class="form-row align-items-end">
+            <div class="col-md-3">
+                <label>{% trans "From" %}</label>
+                <input type="date" name="date_from" class="form-control" value="{{ date_from }}">
+            </div>
+            <div class="col-md-3">
+                <label>{% trans "To" %}</label>
+                <input type="date" name="date_to" class="form-control" value="{{ date_to }}">
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100">{% trans "Generate" %}</button>
+            </div>
+        </div>
+    </div>
+</form>
+
+{% if error %}
+<div class="alert alert-danger">{{ error }}</div>
+{% endif %}
+
+{% if statement %}
+<div class="card shadow-sm">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>{% trans "Income Statement" %}</strong>
+        <small class="text-muted">{{ statement.date_from }} → {{ statement.date_to }} &nbsp;|&nbsp; {{ currency }}</small>
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+            <tbody>
+                {% for line in statement.lines %}
+                <tr class="{% if line.is_subtotal %}font-weight-bold{% endif %}" style="{% if line.is_subtotal %}background:#f8f9fa;{% endif %}">
+                    <td style="{% if not line.is_subtotal %}padding-left:2rem;{% endif %}">
+                        {% if line.is_subtotal %}<span class="text-uppercase small">{% endif %}
+                        {{ line.label }}
+                        {% if line.is_subtotal %}</span>{% endif %}
+                    </td>
+                    <td class="text-right
+                        {% if line.section == 'Net Income' %}
+                            {% if line.amount >= 0 %}text-success{% else %}text-danger{% endif %}
+                        {% endif %}
+                    ">
+                        {{ line.amount|money:currency }}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="2" class="text-center text-muted p-4">{% trans "No journal lines found for this period." %}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="card-footer d-flex justify-content-between">
+        <strong>{% trans "Net Income / (Loss)" %}</strong>
+        <strong class="{% if statement.net_income >= 0 %}text-success{% else %}text-danger{% endif %}">
+            {{ statement.net_income|money:currency }}
+        </strong>
+    </div>
+</div>
+
+<div class="row mt-3">
+    <div class="col-md-4">
+        <div class="card text-center shadow-sm">
+            <div class="card-body">
+                <small class="text-muted d-block">{% trans "Total Revenue" %}</small>
+                <h4 class="text-success">{{ statement.total_revenue|money:currency }}</h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center shadow-sm">
+            <div class="card-body">
+                <small class="text-muted d-block">{% trans "Total Expenses" %}</small>
+                <h4 class="text-danger">{{ statement.total_expenses|money:currency }}</h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center shadow-sm">
+            <div class="card-body">
+                <small class="text-muted d-block">{% trans "Net Income" %}</small>
+                <h4 class="{% if statement.net_income >= 0 %}text-success{% else %}text-danger{% endif %}">
+                    {{ statement.net_income|money:currency }}
+                </h4>
+            </div>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="card shadow-sm">
+    <div class="card-body text-center text-muted p-5">
+        <i class="fas fa-chart-line fa-3x mb-3 opacity-50"></i>
+        <p>{% trans "Pick a date range and click Generate." %}</p>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
