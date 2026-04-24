@@ -1002,12 +1002,39 @@ class VendorPaymentCreateForm(BootstrapFormMixin, forms.Form):
     )
     reference = forms.CharField(max_length=64, required=False)
     notes = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 2}))
+    invoice_id = forms.IntegerField(required=False, widget=forms.HiddenInput())
 
 
 class VendorPaymentCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, FormView):
     permission_required = "purchases.vendor_payments.create"
     template_name = "purchases/vendor_payment/form.html"
     form_class = VendorPaymentCreateForm
+
+    def get_initial(self):
+        initial = super().get_initial()
+        invoice_id = self.request.GET.get("invoice_id")
+        if invoice_id:
+            try:
+                from apps.purchases.infrastructure.payable_models import PurchaseInvoice
+                inv = PurchaseInvoice.objects.get(pk=invoice_id)
+                initial["vendor"] = inv.vendor_id
+                initial["amount"] = inv.open_amount
+                initial["currency_code"] = inv.currency_code
+                initial["invoice_id"] = inv.pk
+            except Exception:
+                pass
+        return initial
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        invoice_id = self.request.GET.get("invoice_id") or self.request.POST.get("invoice_id")
+        if invoice_id:
+            try:
+                from apps.purchases.infrastructure.payable_models import PurchaseInvoice
+                ctx["source_invoice"] = PurchaseInvoice.objects.get(pk=invoice_id)
+            except Exception:
+                pass
+        return ctx
 
     def form_valid(self, form):
         header = form.cleaned_data
@@ -1022,6 +1049,33 @@ class VendorPaymentCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, Fo
             notes=header.get("notes") or "",
         )
         pmt.save()
+
+        # Auto-post and auto-allocate when created directly from a purchase invoice.
+        invoice_id = header.get("invoice_id")
+        if invoice_id:
+            from apps.purchases.application.use_cases.post_vendor_payment import (
+                PostVendorPayment, PostVendorPaymentCommand,
+            )
+            from apps.purchases.application.use_cases.allocate_vendor_payment import (
+                AllocateVendorPaymentService, AllocateVendorPaymentCommand, VendorAllocationSpec,
+            )
+            try:
+                PostVendorPayment().execute(
+                    PostVendorPaymentCommand(payment_id=pmt.pk, actor_id=self.request.user.pk)
+                )
+                AllocateVendorPaymentService().execute(
+                    AllocateVendorPaymentCommand(
+                        payment_id=pmt.pk,
+                        allocations=(VendorAllocationSpec(invoice_id=invoice_id, amount=header["amount"]),),
+                    )
+                )
+                messages.success(self.request, f"Payment posted and applied to invoice.")
+                return HttpResponseRedirect(
+                    reverse("purchases:invoice_detail", args=[invoice_id])
+                )
+            except Exception as exc:
+                messages.warning(self.request, f"Payment saved but auto-post failed: {exc}")
+
         messages.success(self.request, f"Vendor payment #{pmt.pk} created as Draft.")
         return HttpResponseRedirect(reverse("purchases:vendor_payment_detail", args=[pmt.pk]))
 

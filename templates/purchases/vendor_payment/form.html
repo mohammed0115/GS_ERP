@@ -1,13 +1,23 @@
 {% extends "base.html" %}
-{% load i18n %}
+{% load i18n erp_money %}
 
 {% block title %}{% trans "New Vendor Payment" %}{% endblock %}
 
 {% block content %}
 {% include "_partials/page_header.html" with title=_("New Vendor Payment") subtitle=_("Create a draft payment — post it to record the GL entry") %}
 
+{% if source_invoice %}
+<div class="alert alert-info mb-3">
+    <i class="fas fa-file-invoice mr-1"></i>
+    {% trans "Paying invoice" %} <strong>{{ source_invoice.invoice_number|default:source_invoice.pk }}</strong>
+    — {{ source_invoice.vendor.name }}
+    — {% trans "Open balance:" %} <strong>{{ source_invoice.open_amount|money:source_invoice.currency_code }}</strong>
+</div>
+{% endif %}
+
 <form method="post">
 {% csrf_token %}
+{{ form.invoice_id }}
 <div class="row">
     <div class="col-md-6">
         <div class="card shadow-sm mb-3">
@@ -31,10 +41,17 @@
             </div>
         </div>
         <div class="mb-3">
+            {% if source_invoice %}
+            <button type="submit" class="btn btn-success">
+                <i class="fas fa-check"></i> {% trans "Post & Apply Payment" %}
+            </button>
+            <a href="{% url 'purchases:invoice_detail' source_invoice.pk %}" class="btn btn-outline-secondary ml-2">{% trans "Cancel" %}</a>
+            {% else %}
             <button type="submit" class="btn btn-primary">
                 <i class="fas fa-save"></i> {% trans "Save Draft" %}
             </button>
             <a href="{% url 'purchases:vendor_payment_list' %}" class="btn btn-outline-secondary ml-2">{% trans "Cancel" %}</a>
+            {% endif %}
         </div>
     </div>
 </div>

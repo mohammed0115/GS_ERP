@@ -18,6 +18,14 @@
         </button>
     </form>
     {% endif %}
+    {% if object.status == "issued" or object.status == "partially_paid" %}
+        {% if request.user|can:"purchases.vendor_payments.create" %}
+        <a href="{% url 'purchases:vendor_payment_create' %}?invoice_id={{ object.pk }}"
+           class="btn btn-success btn-sm">
+            <i class="fas fa-money-bill-wave"></i> {% trans "Make Payment" %}
+        </a>
+        {% endif %}
+    {% endif %}
     {% if can_cancel %}
     <form method="post" action="{% url 'purchases:invoice_cancel' object.pk %}" class="d-inline"
           onsubmit="return confirm('{% trans "Cancel this invoice?" %}')">
@@ -103,7 +111,7 @@
     </div>
 </div>
 
-<div class="card shadow-sm">
+<div class="card shadow-sm mb-3">
     <div class="card-header">{% trans "Line Items" %}</div>
     <div class="card-body p-0">
         <table class="table table-sm mb-0">
@@ -140,4 +148,61 @@
         </table>
     </div>
 </div>
+
+{% with allocs=object.payment_allocations.all %}
+{% if allocs %}
+<div class="card shadow-sm mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span>{% trans "Payments Made" %}</span>
+        {% if object.status == "issued" or object.status == "partially_paid" %}
+        {% if request.user|can:"purchases.vendor_payments.create" %}
+        <a href="{% url 'purchases:vendor_payment_create' %}?invoice_id={{ object.pk }}" class="btn btn-success btn-sm">
+            <i class="fas fa-plus"></i> {% trans "Add Payment" %}
+        </a>
+        {% endif %}
+        {% endif %}
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+            <thead class="thead-light">
+                <tr>
+                    <th>{% trans "Payment #" %}</th>
+                    <th>{% trans "Date" %}</th>
+                    <th>{% trans "Method" %}</th>
+                    <th>{% trans "Reference" %}</th>
+                    <th class="text-right">{% trans "Amount Applied" %}</th>
+                    <th>{% trans "Status" %}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for alloc in allocs %}
+                <tr>
+                    <td>
+                        <a href="{% url 'purchases:vendor_payment_detail' alloc.payment.pk %}">
+                            {{ alloc.payment.payment_number|default:alloc.payment.pk }}
+                        </a>
+                    </td>
+                    <td>{{ alloc.payment.payment_date }}</td>
+                    <td>{{ alloc.payment.payment_method }}</td>
+                    <td>{{ alloc.payment.reference|default:"—" }}</td>
+                    <td class="text-right font-weight-bold text-primary">
+                        {{ alloc.allocated_amount|money:object.currency_code }}
+                    </td>
+                    <td>
+                        {% if alloc.payment.status == "posted" %}
+                        <span class="badge badge-success">{% trans "Posted" %}</span>
+                        {% elif alloc.payment.status == "reversed" %}
+                        <span class="badge badge-warning">{% trans "Reversed" %}</span>
+                        {% else %}
+                        <span class="badge badge-secondary">{{ alloc.payment.status }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+{% endwith %}
 {% endblock %}

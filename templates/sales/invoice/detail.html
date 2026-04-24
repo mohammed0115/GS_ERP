@@ -29,8 +29,20 @@
             </button>
         </form>
         {% endif %}
-    {% elif object.status == "issued" %}
-        {% if request.user|can:"sales.salesinvoice.cancel" %}
+    {% elif object.status == "issued" or object.status == "partially_paid" %}
+        {% if request.user|can:"sales.customerreceipt.create" %}
+        <a href="{% url 'sales:receipt_create' %}?invoice_id={{ object.pk }}"
+           class="btn btn-success btn-sm">
+            <i class="fas fa-dollar-sign"></i> {% trans "Receive Payment" %}
+        </a>
+        {% endif %}
+        {% if request.user|can:"sales.creditnotes.create" %}
+        <a href="{% url 'sales:credit_note_create' %}?invoice_id={{ object.pk }}"
+           class="btn btn-warning btn-sm">
+            <i class="fas fa-minus-circle"></i> {% trans "Credit Note" %}
+        </a>
+        {% endif %}
+        {% if object.status == "issued" and request.user|can:"sales.salesinvoice.cancel" %}
         <form method="post" action="{% url 'sales:invoice_cancel' object.pk %}" class="d-inline"
               onsubmit="return confirm('{% trans "Cancelling will reverse the journal entry. Continue?" %}')">
             {% csrf_token %}
@@ -109,7 +121,7 @@
     </div>
 </div>
 
-<div class="card shadow-sm">
+<div class="card shadow-sm mb-3">
     <div class="card-header">{% trans "Line Items" %}</div>
     <div class="card-body p-0">
         <table class="table table-sm mb-0">
@@ -146,4 +158,63 @@
         </table>
     </div>
 </div>
+
+{% with receipts=object.customer.receipts.all %}
+{% with allocs=object.allocations.all %}
+{% if allocs %}
+<div class="card shadow-sm mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span>{% trans "Payments Received" %}</span>
+        {% if object.status == "issued" or object.status == "partially_paid" %}
+        {% if request.user|can:"sales.customerreceipt.create" %}
+        <a href="{% url 'sales:receipt_create' %}?invoice_id={{ object.pk }}" class="btn btn-success btn-sm">
+            <i class="fas fa-plus"></i> {% trans "Add Payment" %}
+        </a>
+        {% endif %}
+        {% endif %}
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+            <thead class="thead-light">
+                <tr>
+                    <th>{% trans "Receipt #" %}</th>
+                    <th>{% trans "Date" %}</th>
+                    <th>{% trans "Method" %}</th>
+                    <th>{% trans "Reference" %}</th>
+                    <th class="text-right">{% trans "Amount Applied" %}</th>
+                    <th>{% trans "Status" %}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for alloc in allocs %}
+                <tr>
+                    <td>
+                        <a href="{% url 'sales:receipt_detail' alloc.receipt.pk %}">
+                            {{ alloc.receipt.receipt_number|default:alloc.receipt.pk }}
+                        </a>
+                    </td>
+                    <td>{{ alloc.receipt.receipt_date }}</td>
+                    <td>{{ alloc.receipt.payment_method }}</td>
+                    <td>{{ alloc.receipt.reference|default:"—" }}</td>
+                    <td class="text-right font-weight-bold text-success">
+                        {{ alloc.allocated_amount|money:object.currency_code }}
+                    </td>
+                    <td>
+                        {% if alloc.receipt.status == "posted" %}
+                        <span class="badge badge-success">{% trans "Posted" %}</span>
+                        {% elif alloc.receipt.status == "reversed" %}
+                        <span class="badge badge-warning">{% trans "Reversed" %}</span>
+                        {% else %}
+                        <span class="badge badge-secondary">{{ alloc.receipt.status }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+{% endwith %}
+{% endwith %}
 {% endblock %}

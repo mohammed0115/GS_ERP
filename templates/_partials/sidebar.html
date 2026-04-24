@@ -64,6 +64,30 @@
                 </li>
             {% endif %}
 
+            {# -------- Payables (AP) -------- #}
+            {% if request.user|can:"purchases.purchase_invoices.view" or request.user|can:"purchases.vendor_payments.view" %}
+                <li class="nav-item">
+                    <a href="#nav-payables" data-toggle="collapse" class="nav-link text-white">
+                        <i class="fas fa-file-invoice"></i> {% trans "Payables" %}
+                        <i class="fas fa-angle-down float-right"></i>
+                    </a>
+                    <ul id="nav-payables" class="collapse list-unstyled">
+                        {% if request.user|can:"purchases.purchase_invoices.view" %}
+                        <li><a class="nav-link pl-5" href="{% url 'purchases:invoice_list' %}">{% trans "Purchase Invoices" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"purchases.vendor_payments.view" %}
+                        <li><a class="nav-link pl-5" href="{% url 'purchases:vendor_payment_list' %}">{% trans "Vendor Payments" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"purchases.vendor_credit_notes.view" %}
+                        <li><a class="nav-link pl-5" href="{% url 'purchases:vendor_credit_note_list' %}">{% trans "Vendor Credit Notes" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"purchases.vendor_debit_notes.view" %}
+                        <li><a class="nav-link pl-5" href="{% url 'purchases:vendor_debit_note_list' %}">{% trans "Vendor Debit Notes" %}</a></li>
+                        {% endif %}
+                    </ul>
+                </li>
+            {% endif %}
+
             {# -------- Sales -------- #}
             {% if request.user|can:"sales.sales.view" %}
                 <li class="nav-item">
@@ -77,6 +101,30 @@
                         {% if request.user|can:"sales.quotations.view" %}<li><a class="nav-link pl-5" href="{% url 'sales:quotation_list' %}">{% trans "Quotations" %}</a></li>{% endif %}
                         {% if request.user|can:"sales.sale_returns.view" %}<li><a class="nav-link pl-5" href="{% url 'sales:return_list' %}">{% trans "Returns" %}</a></li>{% endif %}
                         {% if request.user|can:"sales.deliveries.view" %}<li><a class="nav-link pl-5" href="{% url 'sales:delivery_list' %}">{% trans "Deliveries" %}</a></li>{% endif %}
+                    </ul>
+                </li>
+            {% endif %}
+
+            {# -------- Receivables (AR) -------- #}
+            {% if request.user|can:"sales.salesinvoice.view" or request.user|can:"sales.customerreceipt.view" %}
+                <li class="nav-item">
+                    <a href="#nav-receivables" data-toggle="collapse" class="nav-link text-white">
+                        <i class="fas fa-hand-holding-usd"></i> {% trans "Receivables" %}
+                        <i class="fas fa-angle-down float-right"></i>
+                    </a>
+                    <ul id="nav-receivables" class="collapse list-unstyled">
+                        {% if request.user|can:"sales.salesinvoice.view" %}
+                        <li><a class="nav-link pl-5" href="{% url 'sales:invoice_list' %}">{% trans "Sales Invoices" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"sales.customerreceipt.view" %}
+                        <li><a class="nav-link pl-5" href="{% url 'sales:receipt_list' %}">{% trans "Customer Receipts" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"sales.creditnotes.view" %}
+                        <li><a class="nav-link pl-5" href="{% url 'sales:credit_note_list' %}">{% trans "Credit Notes" %}</a></li>
+                        {% endif %}
+                        {% if request.user|can:"sales.debitnotes.view" %}
+                        <li><a class="nav-link pl-5" href="{% url 'sales:debit_note_list' %}">{% trans "Debit Notes" %}</a></li>
+                        {% endif %}
                     </ul>
                 </li>
             {% endif %}

@@ -1322,12 +1322,37 @@ class CustomerReceiptCreateForm(BootstrapFormMixin, forms.Form):
         ),
         label="Bank / Cash account",
     )
+    invoice_id = forms.IntegerField(required=False, widget=forms.HiddenInput())
 
 
 class CustomerReceiptCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, FormView):
     permission_required = "sales.customerreceipt.create"
     template_name = "sales/receipt/form.html"
     form_class = CustomerReceiptCreateForm
+
+    def get_initial(self):
+        initial = super().get_initial()
+        invoice_id = self.request.GET.get("invoice_id")
+        if invoice_id:
+            try:
+                inv = SalesInvoice.objects.get(pk=invoice_id)
+                initial["customer"] = inv.customer_id
+                initial["amount"] = inv.open_amount
+                initial["currency_code"] = inv.currency_code
+                initial["invoice_id"] = inv.pk
+            except SalesInvoice.DoesNotExist:
+                pass
+        return initial
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        invoice_id = self.request.GET.get("invoice_id") or self.request.POST.get("invoice_id")
+        if invoice_id:
+            try:
+                ctx["source_invoice"] = SalesInvoice.objects.get(pk=invoice_id)
+            except SalesInvoice.DoesNotExist:
+                pass
+        return ctx
 
     def form_valid(self, form):
         cd = form.cleaned_data
@@ -1343,6 +1368,34 @@ class CustomerReceiptCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, 
             allocated_amount=Decimal("0"),
         )
         receipt.save()
+
+        # Auto-post and auto-allocate when created directly from an invoice.
+        invoice_id = cd.get("invoice_id")
+        if invoice_id:
+            from apps.sales.application.use_cases.post_customer_receipt import (
+                PostCustomerReceipt, PostCustomerReceiptCommand,
+            )
+            from apps.sales.application.use_cases.allocate_receipt import (
+                AllocateReceiptService, AllocateReceiptCommand, AllocationSpec,
+            )
+            try:
+                PostCustomerReceipt().execute(
+                    PostCustomerReceiptCommand(receipt_id=receipt.pk, actor_id=self.request.user.pk)
+                )
+                AllocateReceiptService().execute(
+                    AllocateReceiptCommand(
+                        receipt_id=receipt.pk,
+                        allocations=(AllocationSpec(invoice_id=invoice_id, amount=cd["amount"]),),
+                    )
+                )
+                messages.success(
+                    self.request,
+                    f"Payment {receipt.pk} posted and applied to invoice.",
+                )
+                return HttpResponseRedirect(reverse("sales:invoice_detail", args=[invoice_id]))
+            except Exception as exc:
+                messages.warning(self.request, f"Receipt saved but auto-post failed: {exc}")
+
         messages.success(self.request, f"Receipt #{receipt.pk} created as draft.")
         return HttpResponseRedirect(reverse("sales:receipt_detail", args=[receipt.pk]))
 
