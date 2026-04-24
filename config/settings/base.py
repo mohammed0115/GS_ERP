@@ -80,6 +80,7 @@ LOCAL_APPS: list[str] = [
     "apps.settings_app",
     "apps.treasury",
     "apps.intelligence",
+    "apps.zatca",
 ]
 
 INSTALLED_APPS: list[str] = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -109,6 +110,7 @@ MIGRATION_MODULES: dict[str, str] = {
     "etl": "apps.etl.migrations",
     "treasury": "apps.treasury.infrastructure.migrations",
     "intelligence": "apps.intelligence.infrastructure.migrations",
+    "zatca": "apps.zatca.infrastructure.migrations",
 }
 
 
@@ -263,7 +265,7 @@ EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
 EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
 DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="noreply@localhost")
 
-OTP_EXPIRY_MINUTES: int = 10
+OTP_EXPIRY_MINUTES: int = 5
 
 
 # ---------------------------------------------------------------------------
@@ -276,6 +278,14 @@ REST_FRAMEWORK: dict = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": "60/minute",
+        "user": "300/minute",
+    },
     "DEFAULT_PAGINATION_CLASS": "common.pagination.DefaultPagination",
     "PAGE_SIZE": 25,
     "DEFAULT_FILTER_BACKENDS": [
@@ -328,6 +338,36 @@ CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_TASK_DEFAULT_QUEUE = "default"
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+
+from celery.schedules import crontab  # noqa: E402
+
+CELERY_BEAT_SCHEDULE: dict = {
+    # Finance: flag stale open periods — weekly on Sunday 02:00
+    "finance.reconcile_period": {
+        "task": "finance.reconcile_period",
+        "schedule": crontab(hour=2, minute=0, day_of_week=0),
+    },
+    # Intelligence: run anomaly detection daily at 03:00
+    "intelligence.run_anomaly_detection": {
+        "task": "intelligence.run_anomaly_detection",
+        "schedule": crontab(hour=3, minute=0),
+    },
+    # Intelligence: evaluate alert rules hourly
+    "intelligence.evaluate_alert_rules": {
+        "task": "intelligence.evaluate_alert_rules",
+        "schedule": crontab(minute=0),
+    },
+    # Intelligence: recompute risk scores nightly at 04:00
+    "intelligence.compute_risk_scores": {
+        "task": "intelligence.compute_risk_scores",
+        "schedule": crontab(hour=4, minute=0),
+    },
+    # ZATCA: retry failed/pending invoice submissions hourly
+    "zatca.retry_failed_invoices": {
+        "task": "zatca.retry_failed_invoices",
+        "schedule": crontab(minute=5),
+    },
+}
 
 
 # ---------------------------------------------------------------------------

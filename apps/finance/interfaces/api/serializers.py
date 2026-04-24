@@ -209,3 +209,155 @@ class CloseFiscalPeriodSerializer(serializers.Serializer):
 
 class ReopenFiscalPeriodSerializer(serializers.Serializer):
     reason = serializers.CharField()
+    force = serializers.BooleanField(
+        default=False,
+        help_text="Set true to override a signed-off period (requires CFO / super-admin).",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Account (Chart of Accounts)
+# ---------------------------------------------------------------------------
+from apps.finance.infrastructure.models import Account  # noqa: E402
+
+
+class AccountSerializer(serializers.ModelSerializer):
+    parent_code = serializers.CharField(source="parent.code", read_only=True, allow_null=True)
+
+    class Meta:
+        model = Account
+        fields = (
+            "id", "code", "name", "name_ar", "name_en",
+            "account_type", "normal_balance",
+            "parent", "parent_code", "level",
+            "is_group", "is_postable", "is_active",
+        )
+        read_only_fields = ("id", "level", "normal_balance")
+
+
+class AccountWriteSerializer(serializers.Serializer):
+    code = serializers.CharField(max_length=32)
+    name = serializers.CharField(max_length=128)
+    name_ar = serializers.CharField(max_length=128, required=False, default="")
+    name_en = serializers.CharField(max_length=128, required=False, default="")
+    account_type = serializers.ChoiceField(choices=["asset", "liability", "equity", "income", "expense"])
+    parent_id = serializers.IntegerField(required=False, allow_null=True)
+    is_group = serializers.BooleanField(default=False)
+    is_postable = serializers.BooleanField(default=True)
+    is_active = serializers.BooleanField(default=True)
+
+
+# ---------------------------------------------------------------------------
+# JournalEntry / JournalLine
+# ---------------------------------------------------------------------------
+from apps.finance.infrastructure.models import JournalEntry, JournalLine  # noqa: E402
+
+
+class JournalLineSerializer(serializers.ModelSerializer):
+    account_code = serializers.CharField(source="account.code", read_only=True)
+    account_name = serializers.CharField(source="account.name", read_only=True)
+
+    class Meta:
+        model = JournalLine
+        fields = (
+            "id", "line_number", "account", "account_code", "account_name",
+            "debit", "credit", "currency_code", "memo",
+        )
+        read_only_fields = ("id",)
+
+
+class JournalLineWriteSerializer(serializers.Serializer):
+    account_id = serializers.IntegerField()
+    debit = serializers.DecimalField(max_digits=18, decimal_places=4, default=0)
+    credit = serializers.DecimalField(max_digits=18, decimal_places=4, default=0)
+    currency_code = serializers.CharField(max_length=3)
+    memo = serializers.CharField(max_length=255, required=False, default="")
+
+
+class JournalEntrySerializer(serializers.ModelSerializer):
+    lines = JournalLineSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = JournalEntry
+        fields = (
+            "id", "entry_number", "entry_date", "reference", "memo",
+            "currency_code", "status", "is_posted", "posted_at",
+            "reversed_from", "source_type", "source_id",
+            "fiscal_period", "lines",
+        )
+        read_only_fields = (
+            "id", "entry_number", "status", "is_posted", "posted_at", "reversed_from"
+        )
+
+
+class JournalEntryWriteSerializer(serializers.Serializer):
+    entry_date = serializers.DateField()
+    reference = serializers.CharField(max_length=64)
+    memo = serializers.CharField(required=False, default="")
+    currency_code = serializers.CharField(max_length=3)
+    fiscal_period_id = serializers.IntegerField(required=False, allow_null=True)
+    lines = JournalLineWriteSerializer(many=True)
+
+    def validate_lines(self, lines):
+        if len(lines) < 2:
+            raise serializers.ValidationError("A journal entry requires at least 2 lines.")
+        total_debit = sum(l.get("debit", 0) for l in lines)
+        total_credit = sum(l.get("credit", 0) for l in lines)
+        if total_debit != total_credit:
+            raise serializers.ValidationError(
+                f"Entry is not balanced: debits={total_debit} credits={total_credit}."
+            )
+        return lines
+
+
+# ---------------------------------------------------------------------------
+# FiscalYear / AccountingPeriod
+# ---------------------------------------------------------------------------
+from apps.finance.infrastructure.fiscal_year_models import (  # noqa: E402
+    AccountingPeriod,
+    FiscalYear,
+)
+
+
+class FiscalYearSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FiscalYear
+        fields = ("id", "name", "start_date", "end_date", "status")
+        read_only_fields = ("id", "status")
+
+
+class FiscalYearWriteSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=64)
+    start_date = serializers.DateField()
+    end_date = serializers.DateField()
+
+    def validate(self, attrs):
+        if attrs["end_date"] <= attrs["start_date"]:
+            raise serializers.ValidationError("end_date must be after start_date.")
+        return attrs
+
+
+class AccountingPeriodSerializer(serializers.ModelSerializer):
+    fiscal_year_name = serializers.CharField(source="fiscal_year.name", read_only=True)
+
+    class Meta:
+        model = AccountingPeriod
+        fields = (
+            "id", "fiscal_year", "fiscal_year_name",
+            "period_year", "period_month",
+            "start_date", "end_date", "status",
+        )
+        read_only_fields = ("id", "status")
+
+
+class AccountingPeriodWriteSerializer(serializers.Serializer):
+    fiscal_year_id = serializers.IntegerField()
+    period_year = serializers.IntegerField(min_value=2000, max_value=2100)
+    period_month = serializers.IntegerField(min_value=1, max_value=12)
+    start_date = serializers.DateField()
+    end_date = serializers.DateField()
+
+    def validate(self, attrs):
+        if attrs["end_date"] < attrs["start_date"]:
+            raise serializers.ValidationError("end_date must be >= start_date.")
+        return attrs

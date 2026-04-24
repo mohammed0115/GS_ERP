@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from django.db import transaction
 
@@ -96,6 +97,45 @@ class RecordAdjustment:
                 movement_ids.append(recorded.movement_id)
 
             # Flip header to POSTED.
+            header.status = AdjustmentStatusChoices.POSTED
+            header.posted_at = datetime.now(timezone.utc)
+            header.save(update_fields=["status", "posted_at", "updated_at"])
+
+            return PostedAdjustment(
+                adjustment_id=header.pk,
+                reference=header.reference,
+                movement_ids=tuple(movement_ids),
+            )
+
+    def execute_by_id(self, adjustment_id: int) -> PostedAdjustment:
+        """Post an existing Draft stock adjustment by its primary key."""
+        from apps.core.domain.value_objects import Quantity as DomainQty
+
+        with transaction.atomic():
+            header = StockAdjustment.objects.select_for_update().get(pk=adjustment_id)
+            if header.status != AdjustmentStatusChoices.DRAFT:
+                raise AdjustmentAlreadyPostedError(
+                    f"Adjustment {header.reference!r} is not in Draft status."
+                )
+
+            movement_ids: list[int] = []
+            for line in header.lines.all():
+                sign = +1 if line.signed_quantity > Decimal("0") else -1
+                movement_spec = MovementSpec(
+                    product_id=line.product_id,
+                    warehouse_id=header.warehouse_id,
+                    movement_type=MovementType.ADJUSTMENT,
+                    quantity=DomainQty(abs(line.signed_quantity), line.uom_code),
+                    reference=f"ADJ-{header.pk}",
+                    source_type="stock_adjustment",
+                    source_id=header.pk,
+                    signed_for_adjustment=sign,
+                )
+                recorded = self._stock.execute(movement_spec)
+                line.movement_id = recorded.movement_id
+                line.save(update_fields=["movement_id", "updated_at"])
+                movement_ids.append(recorded.movement_id)
+
             header.status = AdjustmentStatusChoices.POSTED
             header.posted_at = datetime.now(timezone.utc)
             header.save(update_fields=["status", "posted_at", "updated_at"])

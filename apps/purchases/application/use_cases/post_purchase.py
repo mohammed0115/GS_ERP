@@ -18,7 +18,7 @@ recipes), so combo products are refused at this boundary.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
@@ -32,10 +32,10 @@ from apps.finance.application.use_cases.post_journal_entry import (
     PostJournalEntryCommand,
 )
 from apps.finance.domain.entities import JournalEntryDraft, JournalLine
-from apps.inventory.application.use_cases.record_stock_movement import (
-    RecordStockMovement,
+from apps.inventory.application.use_cases.receive_purchased_inventory import (
+    PurchaseLineSpec as InventoryLineSpec,
+    ReceivePurchasedInventory,
 )
-from apps.inventory.domain.entities import MovementSpec, MovementType
 from apps.purchases.domain.entities import (
     PurchaseDraft,
     PurchaseLineSpec,
@@ -56,6 +56,7 @@ class PostPurchaseCommand:
     inventory_account_id: int             # DR target for stockable lines
     expense_account_id: int | None = None # DR target for service/digital lines
     tax_recoverable_account_id: int | None = None
+    exchange_rate: Decimal = field(default_factory=lambda: Decimal("1"))
     memo: str = ""
 
 
@@ -71,10 +72,10 @@ class PostPurchase:
     def __init__(
         self,
         post_journal_entry: PostJournalEntry | None = None,
-        record_stock_movement: RecordStockMovement | None = None,
+        receive_purchased_inventory: ReceivePurchasedInventory | None = None,
     ) -> None:
         self._post_je = post_journal_entry or PostJournalEntry()
-        self._stock = record_stock_movement or RecordStockMovement()
+        self._receive = receive_purchased_inventory or ReceivePurchasedInventory()
 
     def execute(self, command: PostPurchaseCommand) -> PostedPurchase:
         draft = command.draft
@@ -115,9 +116,13 @@ class PostPurchase:
             )
             purchase.save()
 
-            # 2. Persist lines.
+            # 2. Persist lines; collect stockable specs for inventory receipt.
+            stockable_net = Money.zero(totals.currency)
+            non_stockable_net = Money.zero(totals.currency)
+            inventory_specs: list[InventoryLineSpec] = []
+
             for index, line in enumerate(draft.lines, start=1):
-                PurchaseLine(
+                pl = PurchaseLine(
                     purchase=purchase,
                     product_id=line.product_id,
                     variant_id=line.variant_id,
@@ -132,27 +137,31 @@ class PostPurchase:
                     line_discount=line.line_discount.amount,
                     line_tax=line.line_tax.amount,
                     line_total=line.line_total.amount,
-                ).save()
+                )
+                pl.save()
 
-            # 3. Increment stock for stockable lines.
-            stockable_net = Money.zero(totals.currency)
-            non_stockable_net = Money.zero(totals.currency)
-            for line in draft.lines:
                 product = products[line.product_id]
                 if product.type == ProductType.STANDARD.value:
-                    self._stock.execute(MovementSpec(
+                    inventory_specs.append(InventoryLineSpec(
                         product_id=line.product_id,
                         warehouse_id=line.warehouse_id,
-                        movement_type=MovementType.INBOUND,
-                        quantity=line.quantity,
-                        reference=command.reference,
-                        source_type="purchases.Purchase",
-                        source_id=purchase.pk,
+                        quantity=line.quantity.value,
+                        uom_code=line.quantity.uom_code,
+                        unit_cost=line.unit_cost.amount,
+                        line_id=pl.pk,
                     ))
                     stockable_net = stockable_net + line.line_after_discount
                 else:
-                    # SERVICE / DIGITAL — no stock, posts to expense.
                     non_stockable_net = non_stockable_net + line.line_after_discount
+
+            # 3. Receive stockable lines — updates SOH quantity AND average cost.
+            if inventory_specs:
+                self._receive.execute(
+                    source_type="purchases.Purchase",
+                    source_id=purchase.pk,
+                    reference=command.reference,
+                    lines=inventory_specs,
+                )
 
             # 4. Post the ledger entry.
             je_id = self._post_ledger(
@@ -165,11 +174,21 @@ class PostPurchase:
                 expense_account_id=command.expense_account_id,
                 tax_recoverable_account_id=command.tax_recoverable_account_id,
                 credit_account_id=command.credit_account_id,
+                exchange_rate=command.exchange_rate,
                 purchase_id=purchase.pk,
                 memo=command.memo or f"Purchase {command.reference}",
             )
 
-            # 5. Backlink journal entry.
+            # 5. Record TaxTransaction audit rows for each taxed line (best-effort).
+            self._record_tax_transactions(
+                lines=draft.lines,
+                purchase_date=command.purchase_date,
+                currency_code=draft.currency.code,
+                purchase_id=purchase.pk,
+                je_id=je_id,
+            )
+
+            # 6. Backlink journal entry.
             purchase.journal_entry_id = je_id
             purchase.save(update_fields=["journal_entry", "updated_at"])
 
@@ -179,6 +198,49 @@ class PostPurchase:
                 journal_entry_id=je_id,
                 totals=totals,
             )
+
+    def _record_tax_transactions(
+        self,
+        *,
+        lines,
+        purchase_date,
+        currency_code: str,
+        purchase_id: int,
+        je_id: int,
+    ) -> None:
+        from decimal import Decimal as _Dec
+        from apps.finance.application.use_cases.calculate_tax import (
+            CalculateTax, CalculateTaxCommand, TaxDirection,
+        )
+        from apps.finance.infrastructure.tax_models import TaxCode
+
+        _engine = CalculateTax()
+        for line in lines:
+            if line.tax_rate_percent == _Dec("0"):
+                continue
+            taxable = line.line_after_discount
+            if taxable.is_zero():
+                continue
+            tc = (
+                TaxCode.objects
+                .filter(rate=line.tax_rate_percent, is_active=True)
+                .first()
+            )
+            if tc is None:
+                continue
+            try:
+                _engine.execute(CalculateTaxCommand(
+                    net_amount=taxable.amount,
+                    tax_code_id=tc.pk,
+                    direction=TaxDirection.INPUT,
+                    txn_date=purchase_date,
+                    currency_code=currency_code,
+                    source_type="purchases.purchase",
+                    source_id=purchase_id,
+                    journal_entry_id=je_id,
+                ))
+            except Exception:
+                pass  # non-fatal: GL is already correct; audit row is best-effort
 
     def _post_ledger(
         self,
@@ -192,6 +254,7 @@ class PostPurchase:
         expense_account_id: int | None,
         tax_recoverable_account_id: int | None,
         credit_account_id: int,
+        exchange_rate: Decimal = Decimal("1"),
         purchase_id: int,
         memo: str,
     ) -> int:
@@ -244,5 +307,6 @@ class PostPurchase:
             draft=draft,
             source_type="purchases.Purchase",
             source_id=purchase_id,
+            exchange_rate=exchange_rate,
         ))
         return posted.entry_id

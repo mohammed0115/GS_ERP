@@ -17,10 +17,12 @@ Supported alert types and their condition_json schemas:
 """
 from __future__ import annotations
 
+import logging
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Callable
 
+logger = logging.getLogger(__name__)
 
 _ZERO = Decimal("0")
 
@@ -228,16 +230,142 @@ def _eval_period_end_activity(rule, org_id: int) -> list[AlertFired]:
     return []
 
 
+def _eval_large_inventory_variance(rule, org_id: int) -> list[AlertFired]:
+    from apps.inventory.infrastructure.models import StockCount, StockCountLine, CountStatusChoices
+
+    min_variance_pct = Decimal(str(rule.condition_json.get("min_variance_pct", 50)))
+    results = []
+
+    recent_counts = StockCount.objects.filter(
+        organization_id=org_id,
+        status=CountStatusChoices.FINALISED,
+    ).order_by("-count_date")[:20]
+
+    for count in recent_counts:
+        for line in StockCountLine.objects.filter(count=count):
+            if not line.expected_quantity or line.expected_quantity == _ZERO:
+                continue
+            variance = abs(line.counted_quantity - line.expected_quantity)
+            variance_pct = variance / abs(line.expected_quantity) * Decimal("100")
+            if variance_pct < min_variance_pct:
+                continue
+            results.append(AlertFired(
+                rule=rule,
+                source_type="inventory.stockcount",
+                source_id=count.pk,
+                message=(
+                    f"Stock count '{count.reference}': product #{line.product_id} "
+                    f"variance {float(variance_pct):.0f}% "
+                    f"(expected {line.expected_quantity}, counted {line.counted_quantity})."
+                ),
+                context={
+                    "count_reference": count.reference,
+                    "product_id": line.product_id,
+                    "expected_qty": str(line.expected_quantity),
+                    "counted_qty": str(line.counted_quantity),
+                    "variance_pct": str(round(float(variance_pct), 1)),
+                },
+            ))
+    return results
+
+
+def _eval_unreconciled_bank(rule, org_id: int) -> list[AlertFired]:
+    from apps.finance.infrastructure.models import JournalEntry
+
+    days_old = int(rule.condition_json.get("days_old", 7))
+    cutoff = date.today() - timedelta(days=days_old)
+
+    unposted_count = JournalEntry.objects.filter(
+        organization_id=org_id,
+        is_posted=False,
+        entry_date__lte=cutoff,
+    ).count()
+
+    if unposted_count > 0:
+        return [AlertFired(
+            rule=rule,
+            source_type="finance.journalentry",
+            source_id=None,
+            message=(
+                f"{unposted_count} draft journal entr"
+                f"{'y' if unposted_count == 1 else 'ies'} unposted "
+                f"for more than {days_old} days — bank reconciliation may be incomplete."
+            ),
+            context={"unposted_count": unposted_count, "days_old": days_old},
+        )]
+    return []
+
+
+def _eval_tax_inconsistency(rule, org_id: int) -> list[AlertFired]:
+    from django.db.models import Sum
+    from apps.finance.infrastructure.tax_models import TaxTransaction
+    from apps.finance.infrastructure.models import JournalLine
+
+    max_variance_pct = Decimal(str(rule.condition_json.get("max_variance_pct", 5)))
+    today = date.today()
+    first_of_month = today.replace(day=1)
+
+    tx_total = (
+        TaxTransaction.objects.filter(
+            organization_id=org_id,
+            direction="output",
+            txn_date__gte=first_of_month,
+            txn_date__lte=today,
+        ).aggregate(v=Sum("tax_amount"))["v"]
+    ) or _ZERO
+
+    if tx_total == _ZERO:
+        return []
+
+    # GL net credit on liability-type accounts starting with "2" (covers 23xx VAT payable)
+    gl_agg = JournalLine.objects.filter(
+        entry__organization_id=org_id,
+        entry__is_posted=True,
+        entry__entry_date__gte=first_of_month,
+        entry__entry_date__lte=today,
+        account__account_type="liability",
+        account__code__startswith="2",
+    ).aggregate(credits=Sum("credit"), debits=Sum("debit"))
+    gl_tax = (gl_agg["credits"] or _ZERO) - (gl_agg["debits"] or _ZERO)
+
+    if gl_tax == _ZERO:
+        return []
+
+    variance = abs(tx_total - gl_tax)
+    variance_pct = variance / tx_total * Decimal("100")
+
+    if variance_pct > max_variance_pct:
+        return [AlertFired(
+            rule=rule,
+            source_type="finance.taxtransaction",
+            source_id=None,
+            message=(
+                f"Tax inconsistency: TaxTransaction total {tx_total}, "
+                f"GL liability balance {gl_tax} "
+                f"({float(variance_pct):.1f}% variance, threshold {float(max_variance_pct):.0f}%)."
+            ),
+            context={
+                "tx_total": str(tx_total),
+                "gl_total": str(gl_tax),
+                "variance_pct": str(round(float(variance_pct), 2)),
+            },
+        )]
+    return []
+
+
 # ---------------------------------------------------------------------------
 # Dispatcher
 # ---------------------------------------------------------------------------
 
 _EVALUATORS: dict[str, Callable] = {
-    "credit_limit_breach":     _eval_credit_limit_breach,
-    "overdue_ar_spike":        _eval_overdue_ar_spike,
-    "low_liquidity":           _eval_low_liquidity,
-    "high_risk_invoice":       _eval_high_risk_invoice,
-    "period_end_activity":     _eval_period_end_activity,
+    "credit_limit_breach":       _eval_credit_limit_breach,
+    "overdue_ar_spike":          _eval_overdue_ar_spike,
+    "low_liquidity":             _eval_low_liquidity,
+    "high_risk_invoice":         _eval_high_risk_invoice,
+    "period_end_activity":       _eval_period_end_activity,
+    "large_inventory_variance":  _eval_large_inventory_variance,
+    "unreconciled_bank":         _eval_unreconciled_bank,
+    "tax_inconsistency":         _eval_tax_inconsistency,
 }
 
 
@@ -272,7 +400,12 @@ class EvaluateAlertRules:
         for rule in rules:
             evaluator = _EVALUATORS.get(rule.alert_type)
             if not evaluator:
-                continue  # custom or unimplemented type
+                if rule.alert_type != "custom":
+                    logger.warning(
+                        "EvaluateAlertRules: no evaluator for alert_type=%r (rule pk=%s) — skipping.",
+                        rule.alert_type, rule.pk,
+                    )
+                continue
 
             try:
                 fired_list = evaluator(rule, organization_id)

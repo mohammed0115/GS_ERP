@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from decimal import Decimal
 from enum import Enum
 
 from apps.core.domain.value_objects import Quantity
@@ -63,6 +64,7 @@ class MovementSpec:
     source_id: int | None = None
     transfer_id: int | None = None    # pair key for TRANSFER_OUT/TRANSFER_IN
     signed_for_adjustment: int = 0    # +1 or -1, REQUIRED for ADJUSTMENT, else 0
+    unit_cost: Decimal | None = None  # optional; caller supplies for INBOUND/TRANSFER_IN
 
     def __post_init__(self) -> None:
         if self.product_id <= 0:

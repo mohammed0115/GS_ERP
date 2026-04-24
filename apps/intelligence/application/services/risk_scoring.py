@@ -219,6 +219,154 @@ class CustomerScorer:
 
 
 # ---------------------------------------------------------------------------
+# PurchaseInvoiceScorer
+# ---------------------------------------------------------------------------
+
+class PurchaseInvoiceScorer:
+
+    def score(self, organization_id: int, invoice_id: int) -> ScoringResult | None:
+        from apps.purchases.infrastructure.payable_models import PurchaseInvoice, PurchaseInvoiceStatus
+        from apps.intelligence.infrastructure.models import AnomalyCase, AnomalyStatus
+        from django.db.models import Avg
+
+        try:
+            inv = PurchaseInvoice.objects.get(pk=invoice_id, organization_id=organization_id)
+        except PurchaseInvoice.DoesNotExist:
+            return None
+
+        factors: list[RiskFactor] = []
+        total = Decimal("0")
+        today = date.today()
+
+        # 1. Payment overdue
+        if inv.due_date and inv.status in [
+            PurchaseInvoiceStatus.ISSUED, PurchaseInvoiceStatus.PARTIALLY_PAID,
+        ]:
+            overdue_days = (today - inv.due_date).days
+            if overdue_days > 0:
+                w = min(Decimal(str(overdue_days)), Decimal("30")) * Decimal("1.5")
+                factors.append(RiskFactor(
+                    "overdue_payment", int(w),
+                    f"Payment to supplier {overdue_days} days overdue."
+                ))
+                total += w
+
+        # 2. Amount vs. supplier historical average
+        hist_avg = (
+            PurchaseInvoice.objects.filter(
+                organization_id=organization_id,
+                supplier_id=inv.supplier_id,
+            )
+            .exclude(pk=invoice_id)
+            .aggregate(v=Avg("grand_total"))["v"]
+        )
+        if hist_avg and hist_avg > 0:
+            ratio = float(inv.grand_total) / float(hist_avg)
+            if ratio > 2:
+                w = min(Decimal(str((ratio - 1) * 15)), Decimal("25"))
+                factors.append(RiskFactor(
+                    "high_amount", int(w),
+                    f"Amount {ratio:.1f}× this supplier's historical average."
+                ))
+                total += w
+
+        # 3. Active anomaly cases for this invoice
+        anomaly_count = AnomalyCase.objects.filter(
+            organization_id=organization_id,
+            source_type="purchases.purchaseinvoice",
+            source_id=invoice_id,
+            status__in=[AnomalyStatus.OPEN, AnomalyStatus.INVESTIGATING],
+        ).count()
+        if anomaly_count:
+            w = Decimal(str(anomaly_count * 20))
+            factors.append(RiskFactor(
+                "active_anomalies", int(w),
+                f"{anomaly_count} open anomaly case(s) for this purchase invoice."
+            ))
+            total += w
+
+        score = _cap(total)
+        return ScoringResult(
+            entity_type="purchases.purchaseinvoice",
+            entity_id=invoice_id,
+            score=score,
+            risk_level=_risk_level(score),
+            contributing_factors=factors,
+        )
+
+
+# ---------------------------------------------------------------------------
+# VendorScorer
+# ---------------------------------------------------------------------------
+
+class VendorScorer:
+
+    def score(self, organization_id: int, supplier_id: int) -> ScoringResult | None:
+        from django.db.models import Sum, F
+        from apps.purchases.infrastructure.payable_models import PurchaseInvoice, PurchaseInvoiceStatus
+        from apps.crm.infrastructure.models import Supplier
+        from apps.intelligence.infrastructure.models import AnomalyCase, AnomalyStatus
+
+        try:
+            Supplier.objects.get(pk=supplier_id, organization_id=organization_id)
+        except Supplier.DoesNotExist:
+            return None
+
+        factors: list[RiskFactor] = []
+        total = Decimal("0")
+        today = date.today()
+
+        open_invs = PurchaseInvoice.objects.filter(
+            organization_id=organization_id,
+            supplier_id=supplier_id,
+            status__in=[PurchaseInvoiceStatus.ISSUED, PurchaseInvoiceStatus.PARTIALLY_PAID],
+        )
+        total_open = open_invs.aggregate(v=Sum(F("grand_total") - F("allocated_amount")))["v"] or _ZERO
+        overdue = open_invs.filter(due_date__lt=today).aggregate(
+            v=Sum(F("grand_total") - F("allocated_amount"))
+        )["v"] or _ZERO
+
+        # 1. Overdue AP ratio
+        if total_open > _ZERO:
+            ratio = overdue / total_open
+            if ratio > Decimal("0.1"):
+                w = ratio * Decimal("40")
+                factors.append(RiskFactor(
+                    "overdue_ap_ratio", int(w),
+                    f"{float(ratio)*100:.0f}% of outstanding AP is overdue."
+                ))
+                total += w
+
+        # 2. Open anomaly count for this supplier
+        anomaly_count = AnomalyCase.objects.filter(
+            organization_id=organization_id,
+            source_type="purchases.purchaseinvoice",
+            status__in=[AnomalyStatus.OPEN, AnomalyStatus.INVESTIGATING],
+        ).filter(
+            source_id__in=PurchaseInvoice.objects.filter(
+                organization_id=organization_id,
+                supplier_id=supplier_id,
+            ).values_list("pk", flat=True)
+        ).count()
+        if anomaly_count:
+            w = Decimal(str(min(anomaly_count * 15, 30)))
+            factors.append(RiskFactor(
+                "anomaly_count", int(w),
+                f"{anomaly_count} open anomaly case(s) on this supplier's invoices."
+            ))
+            total += w
+
+        score = _cap(total)
+        return ScoringResult(
+            entity_type="purchases.supplier",
+            entity_id=supplier_id,
+            score=score,
+            risk_level=_risk_level(score),
+            contributing_factors=factors,
+        )
+
+
+# ---------------------------------------------------------------------------
 # InventoryAdjustmentScorer
 # ---------------------------------------------------------------------------
 
@@ -282,9 +430,11 @@ class ComputeRiskScore:
     """
 
     SCORERS: dict[str, type] = {
-        "sales.salesinvoice":        SalesInvoiceScorer,
-        "crm.customer":              CustomerScorer,
-        "inventory.stockadjustment": InventoryAdjustmentScorer,
+        "sales.salesinvoice":           SalesInvoiceScorer,
+        "crm.customer":                 CustomerScorer,
+        "inventory.stockadjustment":    InventoryAdjustmentScorer,
+        "purchases.purchaseinvoice":    PurchaseInvoiceScorer,
+        "purchases.supplier":           VendorScorer,
     }
 
     def execute(

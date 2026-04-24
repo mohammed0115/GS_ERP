@@ -162,7 +162,17 @@ class PostSale:
                 memo=command.memo or f"Sale {command.reference}",
             )
 
-            # 5. Link journal entry back on the sale.
+            # 5. Record TaxTransaction audit rows for each taxed line (best-effort:
+            #    looks up TaxCode by rate; skips lines with no matching TaxCode).
+            self._record_tax_transactions(
+                lines=draft.lines,
+                sale_date=command.sale_date,
+                currency_code=draft.currency.code,
+                sale_id=sale.pk,
+                je_id=je_id,
+            )
+
+            # 6. Link journal entry back on the sale.
             sale.journal_entry_id = je_id
             sale.save(update_fields=["journal_entry", "updated_at"])
 
@@ -176,6 +186,56 @@ class PostSale:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+    def _record_tax_transactions(
+        self,
+        *,
+        lines: Sequence[SaleLineSpec],
+        sale_date,
+        currency_code: str,
+        sale_id: int,
+        je_id: int,
+    ) -> None:
+        """
+        Create TaxTransaction rows for each line that has a non-zero tax rate.
+
+        Looks up the active TaxCode by rate for the current tenant. Silently
+        skips lines where no matching TaxCode is found (POS sales may predate
+        tax-code setup, or use a custom rate not in the COA).
+        """
+        from apps.finance.application.use_cases.calculate_tax import (
+            CalculateTax, CalculateTaxCommand, TaxDirection,
+        )
+        from apps.finance.infrastructure.tax_models import TaxCode
+
+        _engine = CalculateTax()
+        for line in lines:
+            if line.tax_rate_percent == Decimal("0"):
+                continue
+            taxable = line.line_after_discount  # net amount before tax
+            if taxable.is_zero():
+                continue
+            # Find the first active TaxCode whose rate matches this line's rate.
+            tc = (
+                TaxCode.objects
+                .filter(rate=line.tax_rate_percent, is_active=True)
+                .first()
+            )
+            if tc is None:
+                continue
+            try:
+                _engine.execute(CalculateTaxCommand(
+                    net_amount=taxable.amount,
+                    tax_code_id=tc.pk,
+                    direction=TaxDirection.OUTPUT,
+                    txn_date=sale_date,
+                    currency_code=currency_code,
+                    source_type="sales.sale",
+                    source_id=sale_id,
+                    journal_entry_id=je_id,
+                ))
+            except Exception:
+                pass  # non-fatal: GL is already correct; audit row is best-effort
+
     def _resolve_inventory_specs(
         self,
         lines: Sequence[SaleLineSpec],

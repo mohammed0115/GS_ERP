@@ -338,6 +338,64 @@ class TrialBalanceView(LoginRequiredMixin, OrgPermissionRequiredMixin, TemplateV
 
 
 # ---------------------------------------------------------------------------
+# Trial Balance CSV Export
+# ---------------------------------------------------------------------------
+class TrialBalanceExportView(LoginRequiredMixin, OrgPermissionRequiredMixin, TemplateView):
+    """Download trial balance as CSV in functional currency."""
+    permission_required = "reports.reports.trial_balance"
+
+    def get(self, request, *args, **kwargs):
+        import csv
+        from django.http import HttpResponse
+
+        today = date.today()
+        date_from = _parse_date(request.GET.get("date_from")) or today.replace(day=1)
+        date_to = _parse_date(request.GET.get("date_to")) or today
+        as_of = _parse_date(request.GET.get("as_of"))
+
+        if as_of:
+            rows = selectors.trial_balance(as_of=as_of)
+            filename = f"trial_balance_{as_of}.csv"
+        else:
+            rows = selectors.trial_balance(date_from=date_from, date_to=date_to)
+            filename = f"trial_balance_{date_from}_{date_to}.csv"
+
+        currency = _org_currency()
+        response = HttpResponse(content_type="text/csv; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        response.write("﻿")  # UTF-8 BOM for Excel
+
+        writer = csv.writer(response)
+        writer.writerow([
+            "Account Code", "Account Name", "Type",
+            f"Opening Balance ({currency})",
+            f"Period Debit ({currency})",
+            f"Period Credit ({currency})",
+            f"Closing Balance ({currency})",
+        ])
+        for r in rows:
+            writer.writerow([
+                r.account_code, r.account_name, r.account_type,
+                f"{r.opening_balance:.2f}",
+                f"{r.period_debit:.2f}",
+                f"{r.period_credit:.2f}",
+                f"{r.closing_balance:.2f}",
+            ])
+
+        if rows:
+            writer.writerow([])
+            writer.writerow([
+                "TOTAL", "", "",
+                f"{sum(r.opening_balance for r in rows):.2f}",
+                f"{sum(r.period_debit for r in rows):.2f}",
+                f"{sum(r.period_credit for r in rows):.2f}",
+                f"{sum(r.closing_balance for r in rows):.2f}",
+            ])
+
+        return response
+
+
+# ---------------------------------------------------------------------------
 # Balance Sheet
 # ---------------------------------------------------------------------------
 class BalanceSheetView(LoginRequiredMixin, OrgPermissionRequiredMixin, TemplateView):

@@ -11,11 +11,13 @@ Endpoints:
     POST /api/purchases/invoices/{id}/cancel/   → CancelPurchaseInvoice
 
   VendorPayment
-    GET  /api/purchases/vendor-payments/               list
-    POST /api/purchases/vendor-payments/               create draft
-    GET  /api/purchases/vendor-payments/{id}/          retrieve
-    POST /api/purchases/vendor-payments/{id}/post/     → PostVendorPayment
-    POST /api/purchases/vendor-payments/{id}/allocate/ → AllocateVendorPaymentService
+    GET  /api/purchases/vendor-payments/                  list
+    POST /api/purchases/vendor-payments/                  create draft
+    GET  /api/purchases/vendor-payments/{id}/             retrieve
+    POST /api/purchases/vendor-payments/{id}/post/        → PostVendorPayment
+    POST /api/purchases/vendor-payments/{id}/allocate/    → AllocateVendorPaymentService
+    POST /api/purchases/vendor-payments/{id}/reverse/     → ReverseVendorPayment
+    POST /api/purchases/vendor-payments/{id}/unallocate/  → UnallocateVendorPayment
 
   VendorCreditNote
     GET  /api/purchases/vendor-credit-notes/               list
@@ -337,6 +339,57 @@ class VendorPaymentAllocateView(APIView):
         try:
             AllocateVendorPaymentService().execute(
                 AllocateVendorPaymentCommand(payment_id=pk, allocations=specs)
+            )
+        except Exception as exc:
+            raise ValidationError(str(exc))
+        pmt = VendorPayment.objects.select_related("vendor", "bank_account").prefetch_related("allocations").get(pk=pk)
+        return Response(VendorPaymentSerializer(pmt).data)
+
+
+class VendorPaymentReverseView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["purchases"],
+        summary="Reverse a posted vendor payment (deallocates + posts reversing GL entry)",
+        responses={200: VendorPaymentSerializer},
+    )
+    def post(self, request, pk):
+        from apps.purchases.application.use_cases.reverse_vendor_payment import (
+            ReverseVendorPayment, ReverseVendorPaymentCommand,
+        )
+        try:
+            ReverseVendorPayment().execute(
+                ReverseVendorPaymentCommand(payment_id=pk, actor_id=request.user.pk)
+            )
+        except Exception as exc:
+            raise ValidationError(str(exc))
+        pmt = VendorPayment.objects.select_related("vendor", "bank_account").prefetch_related("allocations").get(pk=pk)
+        return Response(VendorPaymentSerializer(pmt).data)
+
+
+class VendorPaymentUnallocateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["purchases"],
+        summary="De-allocate specific invoices from a posted vendor payment (no GL impact)",
+        responses={200: VendorPaymentSerializer},
+    )
+    def post(self, request, pk):
+        from apps.purchases.application.use_cases.unallocate_vendor_payment import (
+            UnallocateVendorPayment, UnallocateVendorPaymentCommand,
+        )
+        invoice_ids = request.data.get("invoice_ids")
+        if not invoice_ids or not isinstance(invoice_ids, list):
+            raise ValidationError({"invoice_ids": "A non-empty list of invoice IDs is required."})
+        try:
+            UnallocateVendorPayment().execute(
+                UnallocateVendorPaymentCommand(
+                    payment_id=pk,
+                    invoice_ids=tuple(int(i) for i in invoice_ids),
+                    actor_id=request.user.pk,
+                )
             )
         except Exception as exc:
             raise ValidationError(str(exc))

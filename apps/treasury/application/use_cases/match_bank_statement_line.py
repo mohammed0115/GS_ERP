@@ -42,6 +42,13 @@ class MatchBankStatementLine:
                 f"Bank statement {line.statement_id} is already finalized."
             )
 
+        if line.match_status == MatchStatus.MATCHED:
+            from apps.treasury.domain.exceptions import StatementLineMismatchError
+            raise StatementLineMismatchError(
+                f"Statement line {line.pk} is already matched to transaction "
+                f"{line.matched_transaction_id}."
+            )
+
         try:
             txn = TreasuryTransaction.objects.get(pk=command.transaction_id)
         except TreasuryTransaction.DoesNotExist:
@@ -58,6 +65,14 @@ class MatchBankStatementLine:
             raise StatementLineMismatchError(
                 f"Currency mismatch: transaction {txn.currency_code} vs "
                 f"statement {line.statement.bank_account.currency_code}."
+            )
+
+        # Amount check: statement debit/credit must match transaction amount
+        line_amount = line.debit_amount if line.debit_amount else line.credit_amount
+        if line_amount and abs(line_amount - txn.amount) > 0.0001:
+            from apps.treasury.domain.exceptions import StatementLineMismatchError
+            raise StatementLineMismatchError(
+                f"Amount mismatch: statement line {line_amount} vs transaction {txn.amount}."
             )
 
         now = datetime.now(timezone.utc)

@@ -9,9 +9,18 @@
         <div class="card shadow-sm">
             <div class="card-body p-4">
                 <h3 class="card-title text-center mb-2">{% trans "Check your email" %}</h3>
-                <p class="text-center text-muted small mb-4">
+                <p class="text-center text-muted small mb-1">
                     {% trans "We sent a 6-digit code to your email address. Enter it below to sign in." %}
                 </p>
+
+                {% if otp_expiry_seconds > 0 %}
+                <p class="text-center small mb-3">
+                    {% trans "Code expires in" %}
+                    <span id="expiry-countdown" class="font-weight-bold text-danger"></span>
+                </p>
+                {% else %}
+                <p class="text-center small text-danger mb-3">{% trans "Your code has expired. Please request a new one." %}</p>
+                {% endif %}
 
                 {% if messages %}
                     {% for msg in messages %}
@@ -35,6 +44,16 @@
                 </form>
 
                 <div class="text-center mt-3">
+                    <form method="post" action="{% url 'users:otp_resend' %}" class="d-inline" id="resend-form">
+                        {% csrf_token %}
+                        <button type="submit" id="resend-btn" class="btn btn-link btn-sm text-muted p-0">
+                            {% trans "Resend code" %}
+                        </button>
+                        <span id="resend-timer" class="small text-muted" style="display:none;">
+                            {% trans "Resend in" %} <span id="resend-countdown"></span>s
+                        </span>
+                    </form>
+                    <span class="text-muted small mx-2">·</span>
                     <a href="{% url 'users:login' %}" class="small text-muted">
                         {% trans "Back to sign in" %}
                     </a>
@@ -43,4 +62,56 @@
         </div>
     </div>
 </div>
+
+<script>
+(function () {
+    var expirySeconds = parseInt("{{ otp_expiry_seconds|default:0 }}", 10);
+    var resendCooldown = parseInt("{{ resend_cooldown_seconds|default:0 }}", 10);
+
+    // --- Expiry countdown ---
+    var expiryEl = document.getElementById("expiry-countdown");
+    if (expiryEl && expirySeconds > 0) {
+        var expRemaining = expirySeconds;
+        function fmtExpiry(s) {
+            var m = Math.floor(s / 60);
+            var sec = s % 60;
+            return (m < 10 ? "0" + m : m) + ":" + (sec < 10 ? "0" + sec : sec);
+        }
+        expiryEl.textContent = fmtExpiry(expRemaining);
+        var expiryTimer = setInterval(function () {
+            expRemaining--;
+            if (expRemaining <= 0) {
+                clearInterval(expiryTimer);
+                expiryEl.textContent = "00:00";
+                expiryEl.closest("p").textContent = "{% trans 'Your code has expired. Please request a new one.' %}";
+            } else {
+                expiryEl.textContent = fmtExpiry(expRemaining);
+            }
+        }, 1000);
+    }
+
+    // --- Resend cooldown ---
+    var resendBtn = document.getElementById("resend-btn");
+    var resendTimer = document.getElementById("resend-timer");
+    var resendCountdown = document.getElementById("resend-countdown");
+
+    function startResendCooldown(seconds) {
+        if (seconds <= 0) return;
+        resendBtn.style.display = "none";
+        resendTimer.style.display = "inline";
+        resendCountdown.textContent = seconds;
+        var t = setInterval(function () {
+            seconds--;
+            resendCountdown.textContent = seconds;
+            if (seconds <= 0) {
+                clearInterval(t);
+                resendTimer.style.display = "none";
+                resendBtn.style.display = "inline";
+            }
+        }, 1000);
+    }
+
+    startResendCooldown(resendCooldown);
+}());
+</script>
 {% endblock %}

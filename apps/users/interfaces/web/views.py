@@ -500,6 +500,21 @@ class CompanyRegistrationForm(forms.Form):
                 is_suspended=False,
             )
 
+            # Seed default Chart of Accounts + VAT tax codes inside tenant context.
+            from apps.tenancy.domain.context import TenantContext
+            from apps.tenancy.domain import context as tenant_context
+            from apps.finance.application.use_cases.seed_default_coa import (
+                seed_default_coa,
+                seed_default_tax_codes,
+                seed_default_fiscal_year,
+            )
+            vat_rate = 5.0 if country in ("AE", "BH", "KW", "OM", "QA") else 15.0
+            ctx = TenantContext(organization_id=org.pk, branch_id=None, user_id=user.pk)
+            with tenant_context.use(ctx):
+                seed_default_coa(org)
+                seed_default_tax_codes(org, vat_rate=vat_rate)
+                seed_default_fiscal_year(org)
+
         return user
 
 
@@ -563,8 +578,13 @@ class OTPLoginView(View):
             otp = OTPCode.generate_for(user, expiry_minutes=settings.OTP_EXPIRY_MINUTES)
             _send_otp_email(user, otp.code)
             request.session["otp_pending_user_id"] = user.pk
+            from django.utils import timezone as tz
+            request.session["otp_last_sent"] = tz.now().timestamp()
             return redirect("users:otp_verify")
         return render(request, self.template_name, {"form": form})
+
+
+_OTP_MAX_ATTEMPTS = 5
 
 
 class OTPVerifyView(View):
@@ -573,11 +593,43 @@ class OTPVerifyView(View):
     def get(self, request):
         if "otp_pending_user_id" not in request.session:
             return redirect("users:login")
-        return render(request, self.template_name, {})
+        user_id = request.session["otp_pending_user_id"]
+        otp = (
+            OTPCode.objects
+            .filter(user_id=user_id, is_used=False)
+            .order_by("-created_at")
+            .first()
+        )
+        from django.utils import timezone as tz
+        import math
+        expiry_secs = 0
+        if otp and otp.is_valid():
+            remaining = (otp.expires_at - tz.now()).total_seconds()
+            expiry_secs = max(0, math.ceil(remaining))
+
+        last_sent = request.session.get("otp_last_sent", 0)
+        resend_wait = max(0, math.ceil(60 - (tz.now().timestamp() - last_sent)))
+
+        return render(request, self.template_name, {
+            "otp_expiry_seconds": expiry_secs,
+            "resend_cooldown_seconds": resend_wait,
+        })
 
     def post(self, request):
         user_id = request.session.get("otp_pending_user_id")
         if not user_id:
+            return redirect("users:login")
+
+        # Brute-force lockout: allow at most _OTP_MAX_ATTEMPTS wrong codes
+        # per session before invalidating the OTP and forcing re-login.
+        attempts = request.session.get("otp_attempts", 0)
+        if attempts >= _OTP_MAX_ATTEMPTS:
+            OTPCode.objects.filter(user_id=user_id, is_used=False).update(is_used=True)
+            request.session.flush()
+            django_messages.error(
+                request,
+                "Too many incorrect attempts. Please sign in again.",
+            )
             return redirect("users:login")
 
         code = request.POST.get("code", "").strip()
@@ -589,17 +641,61 @@ class OTPVerifyView(View):
         )
 
         if not otp or not otp.is_valid() or otp.code != code:
-            django_messages.error(request, "Invalid or expired code. Please try again.")
-            return render(request, self.template_name, {})
+            request.session["otp_attempts"] = attempts + 1
+            remaining = _OTP_MAX_ATTEMPTS - (attempts + 1)
+            django_messages.error(
+                request,
+                f"Invalid or expired code. {remaining} attempt(s) remaining."
+                if remaining > 0
+                else "Invalid or expired code. This was your last attempt.",
+            )
+            from django.utils import timezone as tz
+            import math
+            expiry_secs = 0
+            if otp and otp.is_valid():
+                expiry_secs = max(0, math.ceil((otp.expires_at - tz.now()).total_seconds()))
+            last_sent = request.session.get("otp_last_sent", 0)
+            resend_wait = max(0, math.ceil(60 - (tz.now().timestamp() - last_sent)))
+            return render(request, self.template_name, {
+                "otp_expiry_seconds": expiry_secs,
+                "resend_cooldown_seconds": resend_wait,
+            })
 
         otp.consume()
-        del request.session["otp_pending_user_id"]
+        request.session.pop("otp_pending_user_id", None)
+        request.session.pop("otp_attempts", None)
 
         User = get_user_model()
         user = User.objects.get(pk=user_id)
         user.backend = "django.contrib.auth.backends.ModelBackend"
         login(request, user)
         return redirect(request.GET.get("next") or settings.LOGIN_REDIRECT_URL)
+
+
+class OTPResendView(View):
+    """Force-generate a fresh OTP and resend it (user explicitly requests resend)."""
+
+    def post(self, request):
+        user_id = request.session.get("otp_pending_user_id")
+        if not user_id:
+            return redirect("users:login")
+
+        User = get_user_model()
+        try:
+            user = User.objects.get(pk=user_id, is_active=True)
+        except User.DoesNotExist:
+            return redirect("users:login")
+
+        # Invalidate all current OTPs and generate a fresh one.
+        OTPCode.objects.filter(user=user, is_used=False).update(is_used=True)
+        otp = OTPCode.generate_for(user, expiry_minutes=settings.OTP_EXPIRY_MINUTES)
+        _send_otp_email(user, otp.code)
+        # Reset the brute-force attempt counter when a new code is sent.
+        request.session["otp_attempts"] = 0
+        from django.utils import timezone as tz
+        request.session["otp_last_sent"] = tz.now().timestamp()
+        django_messages.success(request, "A new verification code has been sent to your email.")
+        return redirect("users:otp_verify")
 
 
 class RegisterView(View):

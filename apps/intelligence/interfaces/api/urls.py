@@ -50,4 +50,8 @@ urlpatterns = [
     # Dashboards
     path("dashboards/executive/",         views.ExecutiveDashboardView.as_view(),   name="executive_dashboard"),
     path("dashboards/finance-operations/", views.FinanceOpsDashboardView.as_view(), name="finance_ops_dashboard"),
+
+    # On-demand triggers
+    path("anomalies/run/",     views.AnomalyRunView.as_view(),    name="anomaly_run"),
+    path("alerts/evaluate/",   views.AlertEvaluateView.as_view(), name="alert_evaluate"),
 ]

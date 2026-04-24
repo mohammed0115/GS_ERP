@@ -9,8 +9,9 @@ from apps.users.interfaces.web import views as web_views
 
 app_name = "users"
 urlpatterns = [
-    path("login/",      web_views.OTPLoginView.as_view(),  name="login"),
-    path("otp/verify/", web_views.OTPVerifyView.as_view(), name="otp_verify"),
+    path("login/",          web_views.OTPLoginView.as_view(),   name="login"),
+    path("otp/verify/",    web_views.OTPVerifyView.as_view(),  name="otp_verify"),
+    path("otp/resend/",    web_views.OTPResendView.as_view(),  name="otp_resend"),
     path("logout/",     auth_views.LogoutView.as_view(),   name="logout"),
     path("register/",   web_views.RegisterView.as_view(),  name="register"),
 

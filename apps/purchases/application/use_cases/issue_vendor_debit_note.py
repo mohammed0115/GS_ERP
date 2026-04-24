@@ -66,6 +66,13 @@ class IssueVendorDebitNote:
             raise APAccountMissingError(
                 f"Vendor {note.vendor.code} has no payable_account."
             )
+        from apps.finance.infrastructure.models import AccountTypeChoices
+        if ap_account.account_type != AccountTypeChoices.LIABILITY:
+            from apps.purchases.domain.exceptions import APAccountMissingError
+            raise APAccountMissingError(
+                f"Payable account {ap_account.code} must be type 'liability', "
+                f"got '{ap_account.account_type}'."
+            )
 
         from apps.finance.application.use_cases.post_journal_entry import (
             PostJournalEntry, PostJournalEntryCommand, _assert_period_open,
@@ -94,11 +101,23 @@ class IssueVendorDebitNote:
         tax_by_acc: dict[int, Decimal] = {}
         for line in lines:
             exp_acc = line.expense_account or note.vendor.default_expense_account
-            if exp_acc:
-                subtotal = line.quantity * line.unit_price
-                expense_by_acc[exp_acc.pk] = (
-                    expense_by_acc.get(exp_acc.pk, Decimal("0")) + subtotal
+            if exp_acc is None:
+                from apps.purchases.domain.exceptions import ExpenseAccountMissingError
+                raise ExpenseAccountMissingError(
+                    f"Debit note line seq={line.sequence} has no expense account. "
+                    "Set an expense_account on the line or a default_expense_account on "
+                    f"vendor {note.vendor.code}."
                 )
+            if exp_acc.account_type != AccountTypeChoices.EXPENSE:
+                from apps.purchases.domain.exceptions import ExpenseAccountMissingError
+                raise ExpenseAccountMissingError(
+                    f"Expense account {exp_acc.code} must be type 'expense', "
+                    f"got '{exp_acc.account_type}'."
+                )
+            subtotal = line.quantity * line.unit_price
+            expense_by_acc[exp_acc.pk] = (
+                expense_by_acc.get(exp_acc.pk, Decimal("0")) + subtotal
+            )
             if line.tax_amount and line.tax_code and line.tax_code.tax_account_id:
                 tax_acc_id = line.tax_code.tax_account_id
                 tax_by_acc[tax_acc_id] = (

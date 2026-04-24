@@ -21,10 +21,17 @@
         padding: 0.5rem 0.75rem; cursor: pointer; border-bottom: 1px solid #f1f3f5;
     }
     .sale-builder .product-suggestions .item:hover,
-    .sale-builder .product-suggestions .item.hovered { background: #f8f9fa; }
+    .sale-builder .product-suggestions .item.active { background: #e9ecef; }
     .sale-builder .product-suggestions .code { font-family: monospace; color: #6c757d; font-size: 0.8rem; }
     .sale-builder .totals-row td { font-weight: 600; background: #f8f9fa; }
     .sale-builder .grand-total-row td { font-size: 1.1rem; color: #3498db; }
+    .sale-builder .search-spinner {
+        position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+        display: none; width: 16px; height: 16px;
+        border: 2px solid #dee2e6; border-top-color: #3498db;
+        border-radius: 50%; animation: spin 0.6s linear infinite;
+    }
+    @keyframes spin { to { transform: translateY(-50%) rotate(360deg); } }
 </style>
 {% endblock %}
 
@@ -128,6 +135,7 @@
             <div class="product-search-wrapper">
                 <input type="text" class="form-control form-control-sm product-search"
                        placeholder="{% trans 'Type to search…' %}" autocomplete="off">
+                <div class="search-spinner"></div>
                 <div class="product-suggestions"></div>
                 <input type="hidden" class="product-id">
             </div>
@@ -153,17 +161,6 @@
 <script>
 /* --------------------------------------------------------------------------
    Sales create form — dynamic line editor.
-
-   Client responsibilities:
-     - Add/remove rows.
-     - Debounced AJAX product search against /sales/api/product-search/.
-     - Populate line defaults (price, tax) from the picked product.
-     - Recompute line_total + footer totals whenever any input changes.
-     - On submit, serialize all rows into `lines_json` so the server sees a
-       single JSON blob instead of an unknown set of repeated field names.
-
-   Server responsibility: read lines_json + the header fields, build a
-   SaleDraft, and call PostSale.
    -------------------------------------------------------------------------- */
 (function () {
     const SEARCH_URL = "{% url 'sales:api_product_search' %}";
@@ -178,6 +175,7 @@
         wireRow(row);
         row.querySelector('.product-search').focus();
         recomputeAll();
+        return row;
     }
 
     function removeRow(row) {
@@ -185,34 +183,88 @@
         recomputeAll();
     }
 
-    // ---- Product autocomplete ---------------------------------------------
+    // ---- Product autocomplete (with arrow-key navigation + spinner) ------
     function wireRow(row) {
         const search = row.querySelector('.product-search');
         const sug = row.querySelector('.product-suggestions');
-        const pidField = row.querySelector('.product-id');
-
+        const spinner = row.querySelector('.search-spinner');
         let debounce = null;
+        let hoveredIdx = -1;
+
+        function getItems() { return Array.from(sug.querySelectorAll('.item[data-id]')); }
+
+        function setHovered(idx) {
+            const items = getItems();
+            items.forEach((el, i) => el.classList.toggle('active', i === idx));
+            hoveredIdx = idx;
+            if (items[idx]) items[idx].scrollIntoView({ block: 'nearest' });
+        }
+
         search.addEventListener('input', () => {
             clearTimeout(debounce);
+            hoveredIdx = -1;
             const q = search.value.trim();
             if (q.length < 2) { sug.classList.remove('visible'); sug.innerHTML = ''; return; }
+            spinner.style.display = 'block';
             debounce = setTimeout(async () => {
                 try {
-                    const resp = await fetch(SEARCH_URL + "?q=" + encodeURIComponent(q));
+                    const resp = await fetch(SEARCH_URL + '?q=' + encodeURIComponent(q));
                     const data = await resp.json();
                     renderSuggestions(row, data.results || []);
-                } catch (_) { /* swallow */ }
+                } catch (_) { /* swallow */ } finally {
+                    spinner.style.display = 'none';
+                }
             }, 200);
         });
 
+        search.addEventListener('keydown', (e) => {
+            const items = getItems();
+            if (!sug.classList.contains('visible') || !items.length) {
+                if (e.key === 'Tab') return; // let Tab move focus naturally
+                return;
+            }
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setHovered(Math.min(hoveredIdx + 1, items.length - 1));
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setHovered(Math.max(hoveredIdx - 1, 0));
+            } else if (e.key === 'Enter') {
+                if (hoveredIdx >= 0 && items[hoveredIdx]) {
+                    e.preventDefault();
+                    pickProduct(row, items[hoveredIdx].dataset);
+                    // After picking, Tab to qty field
+                    row.querySelector('.qty').focus();
+                }
+            } else if (e.key === 'Escape') {
+                sug.classList.remove('visible');
+                hoveredIdx = -1;
+            }
+        });
+
         search.addEventListener('blur', () => {
-            setTimeout(() => sug.classList.remove('visible'), 150);
+            setTimeout(() => { sug.classList.remove('visible'); hoveredIdx = -1; }, 200);
+        });
+
+        sug.addEventListener('pointerdown', (e) => {
+            const item = e.target.closest('.item[data-id]');
+            if (!item) return;
+            e.preventDefault();
+            pickProduct(row, item.dataset);
+            row.querySelector('.qty').focus();
         });
 
         row.querySelector('.remove-line').addEventListener('click', () => removeRow(row));
 
+        // Clamp negatives and recompute on every numeric input
         ['qty', 'unit-price', 'disc', 'tax'].forEach(cls => {
-            row.querySelector('.' + cls).addEventListener('input', recomputeAll);
+            const input = row.querySelector('.' + cls);
+            input.addEventListener('input', () => {
+                const min = parseFloat(input.min);
+                const val = parseFloat(input.value);
+                if (!isNaN(min) && !isNaN(val) && val < min) input.value = min;
+                recomputeAll();
+            });
         });
     }
 
@@ -231,27 +283,23 @@
             </div>
         `).join('');
         sug.classList.add('visible');
-
-        sug.querySelectorAll('.item').forEach(el => {
-            el.addEventListener('mousedown', () => pickProduct(row, el.dataset));
-        });
     }
 
     function pickProduct(row, data) {
-        row.querySelector('.product-search').value = data.name + " (" + data.code + ")";
+        row.querySelector('.product-search').value = data.name + ' (' + data.code + ')';
         row.querySelector('.product-id').value = data.id;
         row.querySelector('.unit-price').value = parseFloat(data.price).toFixed(2);
-        row.querySelector('.tax').value = parseFloat(data.tax).toFixed(2);
+        row.querySelector('.tax').value = parseFloat(data.tax || data.tax_rate_percent || 0).toFixed(2);
         row.querySelector('.product-suggestions').classList.remove('visible');
         recomputeAll();
     }
 
     // ---- Totals -----------------------------------------------------------
     function recomputeRow(row) {
-        const qty = parseFloat(row.querySelector('.qty').value) || 0;
-        const price = parseFloat(row.querySelector('.unit-price').value) || 0;
-        const disc = parseFloat(row.querySelector('.disc').value) || 0;
-        const tax = parseFloat(row.querySelector('.tax').value) || 0;
+        const qty   = Math.max(parseFloat(row.querySelector('.qty').value) || 0, 0);
+        const price = Math.max(parseFloat(row.querySelector('.unit-price').value) || 0, 0);
+        const disc  = Math.max(Math.min(parseFloat(row.querySelector('.disc').value) || 0, 100), 0);
+        const tax   = Math.max(Math.min(parseFloat(row.querySelector('.tax').value) || 0, 100), 0);
 
         const subtotal = qty * price;
         const discount = subtotal * (disc / 100);
@@ -276,30 +324,47 @@
     }
 
     // ---- Submit -----------------------------------------------------------
-    document.getElementById('sale-form').addEventListener('submit', (e) => {
+    function doSubmit() {
         const rows = Array.from(document.querySelectorAll('#lines-body .line-row'));
         if (rows.length === 0) {
-            e.preventDefault();
             alert("{% trans 'Add at least one line before posting.' %}");
-            return;
+            return false;
         }
         const lines = rows.map(row => ({
-            product_id: row.querySelector('.product-id').value,
-            warehouse_id: row.querySelector('.warehouse-picker').value,
-            quantity: row.querySelector('.qty').value,
-            unit_price: row.querySelector('.unit-price').value,
+            product_id:       row.querySelector('.product-id').value,
+            warehouse_id:     row.querySelector('.warehouse-picker').value,
+            quantity:         row.querySelector('.qty').value,
+            unit_price:       row.querySelector('.unit-price').value,
             discount_percent: row.querySelector('.disc').value || '0',
             tax_rate_percent: row.querySelector('.tax').value || '0',
         }));
-        // Guard against incomplete rows.
         for (const l of lines) {
             if (!l.product_id) {
-                e.preventDefault();
                 alert("{% trans 'Every line must have a product selected.' %}");
-                return;
+                return false;
             }
         }
         document.getElementById('lines_json').value = JSON.stringify(lines);
+        return true;
+    }
+
+    document.getElementById('sale-form').addEventListener('submit', (e) => {
+        if (!doSubmit()) e.preventDefault();
+    });
+
+    // ---- Keyboard shortcuts -----------------------------------------------
+    document.addEventListener('keydown', (e) => {
+        // F2 — focus the product search in the last row
+        if (e.key === 'F2') {
+            e.preventDefault();
+            const searches = document.querySelectorAll('#lines-body .product-search');
+            if (searches.length) searches[searches.length - 1].focus();
+        }
+        // Ctrl+Enter — submit the form
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            e.preventDefault();
+            if (doSubmit()) document.getElementById('sale-form').submit();
+        }
     });
 
     // ---- Boot -------------------------------------------------------------

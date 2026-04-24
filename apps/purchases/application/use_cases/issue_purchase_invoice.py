@@ -73,6 +73,13 @@ class IssuePurchaseInvoice:
             raise APAccountMissingError(
                 f"Vendor {inv.vendor.code} has no payable_account."
             )
+        from apps.finance.infrastructure.models import AccountTypeChoices
+        if ap_account.account_type != AccountTypeChoices.LIABILITY:
+            from apps.purchases.domain.exceptions import APAccountMissingError
+            raise APAccountMissingError(
+                f"Payable account {ap_account.code} must be type 'liability', "
+                f"got '{ap_account.account_type}'."
+            )
 
         from apps.finance.application.use_cases.post_journal_entry import (
             PostJournalEntry, PostJournalEntryCommand, _assert_period_open,
@@ -107,6 +114,12 @@ class IssuePurchaseInvoice:
                     f"Purchase invoice line seq={line.sequence} has no expense account. "
                     "Set an expense_account on the line or a default_expense_account on "
                     f"vendor {inv.vendor.code}."
+                )
+            if exp_acc.account_type != AccountTypeChoices.EXPENSE:
+                from apps.purchases.domain.exceptions import ExpenseAccountMissingError
+                raise ExpenseAccountMissingError(
+                    f"Expense account {exp_acc.code} must be type 'expense', "
+                    f"got '{exp_acc.account_type}'."
                 )
             subtotal = (line.quantity * line.unit_price) - line.discount_amount
             expense_by_acc[exp_acc.pk] = (

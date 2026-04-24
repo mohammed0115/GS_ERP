@@ -202,3 +202,57 @@ class StockCountSerializer(serializers.ModelSerializer):
             "status", "memo", "finalised_at", "adjustment", "lines",
         )
         read_only_fields = ("id", "status", "finalised_at", "adjustment")
+
+
+class StockCountLineWriteSerializer(serializers.Serializer):
+    product_id = serializers.IntegerField()
+    expected_quantity = serializers.DecimalField(max_digits=18, decimal_places=4, min_value=0)
+    counted_quantity = serializers.DecimalField(max_digits=18, decimal_places=4, min_value=0)
+    uom_code = serializers.CharField(max_length=16)
+
+
+class StockCountWriteSerializer(serializers.Serializer):
+    reference = serializers.CharField(max_length=64)
+    count_date = serializers.DateField()
+    warehouse_id = serializers.IntegerField()
+    memo = serializers.CharField(required=False, allow_blank=True, default="")
+    lines = StockCountLineWriteSerializer(many=True, min_length=1)
+
+
+# ---------------------------------------------------------------------------
+# Inventory report response serializers (I-16)
+# ---------------------------------------------------------------------------
+class InventoryValuationRowSerializer(serializers.Serializer):
+    product_id = serializers.IntegerField()
+    product_code = serializers.CharField()
+    product_name = serializers.CharField()
+    warehouse_id = serializers.IntegerField()
+    warehouse_code = serializers.CharField()
+    quantity = serializers.DecimalField(max_digits=18, decimal_places=4)
+    average_cost = serializers.DecimalField(max_digits=18, decimal_places=4)
+    inventory_value = serializers.DecimalField(max_digits=18, decimal_places=4)
+    currency_code = serializers.CharField()
+
+
+class ItemLedgerRowSerializer(serializers.Serializer):
+    movement_id = serializers.IntegerField()
+    occurred_at = serializers.DateTimeField()
+    movement_type = serializers.CharField()
+    quantity = serializers.DecimalField(max_digits=18, decimal_places=4)
+    reference = serializers.CharField()
+    source_type = serializers.CharField(allow_null=True)
+    unit_cost = serializers.DecimalField(max_digits=18, decimal_places=4, allow_null=True)
+    total_cost = serializers.DecimalField(max_digits=18, decimal_places=4, allow_null=True)
+    running_qty = serializers.DecimalField(max_digits=18, decimal_places=4)
+
+
+class ItemLedgerSerializer(serializers.Serializer):
+    product_id = serializers.IntegerField()
+    product_code = serializers.CharField()
+    product_name = serializers.CharField()
+    warehouse_id = serializers.IntegerField(allow_null=True)
+    date_from = serializers.DateField()
+    date_to = serializers.DateField()
+    opening_qty = serializers.DecimalField(max_digits=18, decimal_places=4)
+    closing_qty = serializers.DecimalField(max_digits=18, decimal_places=4)
+    rows = ItemLedgerRowSerializer(many=True)

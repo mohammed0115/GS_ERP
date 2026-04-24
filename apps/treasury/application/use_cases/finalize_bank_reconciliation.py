@@ -54,6 +54,18 @@ class FinalizeBankReconciliation:
                 f"BankReconciliation {recon.pk} is already {recon.status}."
             )
 
+        # Reject if any statement lines are still unmatched
+        from apps.treasury.infrastructure.models import BankStatementLine, MatchStatus
+        unmatched_count = BankStatementLine.objects.filter(
+            statement_id=recon.statement_id,
+            match_status=MatchStatus.UNMATCHED,
+        ).count()
+        if unmatched_count:
+            from apps.treasury.domain.exceptions import StatementLineMismatchError
+            raise StatementLineMismatchError(
+                f"Cannot finalize: {unmatched_count} statement line(s) are still unmatched."
+            )
+
         # difference = what the bank statement says − what our system shows
         difference = recon.statement.closing_balance - recon.bank_account.current_balance
 

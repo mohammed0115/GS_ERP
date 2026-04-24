@@ -23,7 +23,7 @@
                     <dt class="col-sm-5">{% trans "Opening Balance" %}</dt>
                     <dd class="col-sm-7">{{ cashbox.opening_balance|erp_money }}</dd>
                     <dt class="col-sm-5">{% trans "Current Balance" %}</dt>
-                    <dd class="col-sm-7 font-weight-bold text-primary">{{ cashbox.current_balance|erp_money }}</dd>
+                    <dd class="col-sm-7 font-weight-bold text-primary">{{ computed_balance|erp_money }}</dd>
                     <dt class="col-sm-5">{% trans "Status" %}</dt>
                     <dd class="col-sm-7">
                         {% if cashbox.is_active %}
@@ -75,7 +75,12 @@
                             <td><a href="{% url 'treasury_web:transaction_detail' t.pk %}">{{ t.transaction_number|default:t.pk }}</a></td>
                             <td>{{ t.get_transaction_type_display }}</td>
                             <td class="text-right">{{ t.amount|erp_money }}</td>
-                            <td><span class="badge badge-{{ t.status|yesno:'success,secondary,danger' }}">{{ t.status }}</span></td>
+                            <td>
+                                {% if t.status == "posted" %}<span class="badge badge-success">{{ t.status }}</span>
+                                {% elif t.status == "reversed" %}<span class="badge badge-danger">{{ t.status }}</span>
+                                {% else %}<span class="badge badge-secondary">{{ t.status }}</span>
+                                {% endif %}
+                            </td>
                         </tr>
                         {% empty %}
                         <tr><td colspan="5" class="text-center text-muted py-3">{% trans "No transactions." %}</td></tr>

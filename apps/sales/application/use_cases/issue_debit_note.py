@@ -14,6 +14,7 @@ from decimal import Decimal
 
 from django.db import transaction
 
+from apps.finance.infrastructure.models import Account, AccountTypeChoices
 from apps.sales.infrastructure.invoice_models import DebitNote, NoteStatus
 
 
@@ -52,7 +53,9 @@ class IssueDebitNote:
             from apps.sales.domain.exceptions import CustomerInactiveError
             raise CustomerInactiveError(f"Customer {note.customer.code} is not active.")
 
-        lines = list(note.lines.select_related("revenue_account", "tax_code__tax_account").all())
+        lines = list(note.lines.select_related(
+            "revenue_account", "tax_code__output_tax_account", "tax_code__tax_account",
+        ).all())
         if not lines:
             from apps.sales.domain.exceptions import InvoiceHasNoLinesError
             raise InvoiceHasNoLinesError("DebitNote has no lines.")
@@ -63,6 +66,17 @@ class IssueDebitNote:
             raise ARAccountMissingError(
                 f"Customer {note.customer.code} has no receivable_account."
             )
+
+        # EC-005: Reject debit notes against cancelled invoices.
+        if note.related_invoice_id:
+            from apps.sales.infrastructure.invoice_models import SalesInvoice, SalesInvoiceStatus
+            rel_inv = SalesInvoice.objects.only("status").get(pk=note.related_invoice_id)
+            if rel_inv.status == SalesInvoiceStatus.CANCELLED:
+                from apps.sales.domain.exceptions import InvoiceHasNoLinesError
+                raise InvoiceHasNoLinesError(
+                    f"Cannot issue debit note against cancelled invoice "
+                    f"{rel_inv.pk}."
+                )
 
         from apps.finance.application.use_cases.post_journal_entry import (
             PostJournalEntry, PostJournalEntryCommand, _assert_period_open,
@@ -96,11 +110,39 @@ class IssueDebitNote:
                 revenue_by_acc[rev_acc.pk] = (
                     revenue_by_acc.get(rev_acc.pk, Decimal("0")) + subtotal
                 )
-            if line.tax_amount and line.tax_code and line.tax_code.tax_account_id:
-                tax_acc_id = line.tax_code.tax_account_id
-                tax_by_acc[tax_acc_id] = (
-                    tax_by_acc.get(tax_acc_id, Decimal("0")) + line.tax_amount
+            if line.tax_amount and line.tax_code:
+                tax_acc_id = (
+                    getattr(line.tax_code, "output_tax_account_id", None)
+                    or line.tax_code.tax_account_id
                 )
+                if tax_acc_id:
+                    tax_by_acc[tax_acc_id] = (
+                        tax_by_acc.get(tax_acc_id, Decimal("0")) + line.tax_amount
+                    )
+
+        # MM-004a: revenue accounts must be INCOME type.
+        if revenue_by_acc:
+            rev_accounts = {a.pk: a for a in Account.objects.filter(pk__in=revenue_by_acc.keys())}
+            for acc_id in revenue_by_acc:
+                ra = rev_accounts.get(acc_id)
+                if ra and ra.account_type != AccountTypeChoices.INCOME:
+                    from apps.sales.domain.exceptions import RevenueAccountMissingError
+                    raise RevenueAccountMissingError(
+                        f"Revenue account {ra.code} must be type 'income', "
+                        f"got '{ra.account_type}'."
+                    )
+
+        # MM-004b: tax accounts must be LIABILITY type.
+        if tax_by_acc:
+            tax_accounts = {a.pk: a for a in Account.objects.filter(pk__in=tax_by_acc.keys())}
+            for acc_id in tax_by_acc:
+                ta = tax_accounts.get(acc_id)
+                if ta and ta.account_type != AccountTypeChoices.LIABILITY:
+                    from apps.sales.domain.exceptions import RevenueAccountMissingError
+                    raise RevenueAccountMissingError(
+                        f"Tax account {ta.code} must be type 'liability', "
+                        f"got '{ta.account_type}'."
+                    )
 
         for acc_id, amount in revenue_by_acc.items():
             if amount:

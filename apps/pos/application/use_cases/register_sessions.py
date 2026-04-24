@@ -79,9 +79,14 @@ class OpenRegister:
 @dataclass(frozen=True, slots=True)
 class CloseRegisterCommand:
     session_id: int
-    declared_closing_float: Money
-    expected_cash: Money   # caller computes (opening + net cash). May differ from declared.
+    closing_float: Money               # declared closing cash by the operator
+    expected_cash: Money | None = None # system-computed; None → use closing_float
     note: str = ""
+
+    # backward-compat alias used internally
+    @property
+    def declared_closing_float(self) -> Money:
+        return self.closing_float
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,13 +97,16 @@ class ClosedRegister:
 
 class CloseRegister:
     def execute(self, command: CloseRegisterCommand) -> ClosedRegister:
-        if not isinstance(command.declared_closing_float, Money):
-            raise InvalidFloatError("declared_closing_float must be Money.")
-        if command.declared_closing_float.is_negative():
-            raise InvalidFloatError("declared_closing_float cannot be negative.")
-        if command.expected_cash.currency != command.declared_closing_float.currency:
+        closing_float = command.closing_float
+        expected_cash = command.expected_cash if command.expected_cash is not None else closing_float
+
+        if not isinstance(closing_float, Money):
+            raise InvalidFloatError("closing_float must be Money.")
+        if closing_float.is_negative():
+            raise InvalidFloatError("closing_float cannot be negative.")
+        if expected_cash.currency != closing_float.currency:
             raise InvalidFloatError(
-                "expected_cash and declared_closing_float must share a currency."
+                "expected_cash and closing_float must share a currency."
             )
 
         with transaction.atomic():
@@ -114,15 +122,15 @@ class CloseRegister:
             if not session.is_open:
                 raise RegisterAlreadyClosedError()
 
-            if session.currency_code != command.declared_closing_float.currency.code:
+            if session.currency_code != closing_float.currency.code:
                 raise InvalidFloatError(
                     "Closing float currency does not match session currency."
                 )
 
-            variance = command.declared_closing_float - command.expected_cash
+            variance = closing_float - expected_cash
 
-            session.closing_float = command.declared_closing_float.amount
-            session.expected_cash = command.expected_cash.amount
+            session.closing_float = closing_float.amount
+            session.expected_cash = expected_cash.amount
             session.variance = variance.amount
             session.closed_at = datetime.now(timezone.utc)
             session.is_open = False
@@ -134,7 +142,7 @@ class CloseRegister:
             ])
 
             # Post the GL journal entry for the session close.
-            _post_session_close_je(session, command.declared_closing_float, variance)
+            _post_session_close_je(session, closing_float, variance)
 
             return ClosedRegister(session_id=session.pk, variance=variance)
 

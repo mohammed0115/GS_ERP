@@ -79,6 +79,48 @@ class Organization(TimestampedModel):
         help_text="ISO-4217 code used as the functional currency for reports (e.g. SAR, EGP, USD).",
     )
 
+    # Accounting framework and tax regime
+    accounting_standard = models.CharField(
+        max_length=16, blank=True, default="",
+        choices=[
+            ("ifrs", "IFRS"),
+            ("ifrs_sme", "IFRS for SMEs"),
+            ("us_gaap", "US GAAP"),
+            ("local_sa", "Local SA Standards"),
+        ],
+        help_text="Accounting standard used for financial reporting.",
+    )
+    tax_system = models.CharField(
+        max_length=16, blank=True, default="",
+        choices=[
+            ("sa_vat", "Saudi Arabia VAT (ZATCA)"),
+            ("us_sales_tax", "US Sales Tax"),
+            ("eu_vat", "EU VAT"),
+            ("none", "No Tax"),
+        ],
+        help_text="Tax regime that drives tax code defaults and ZATCA submission.",
+    )
+
+    # Tax / compliance identifiers
+    vat_number = models.CharField(
+        max_length=64, blank=True, default="",
+        help_text="VAT/GST registration number. For SA: 15-digit ZATCA number. For US: EIN (XX-XXXXXXX).",
+    )
+    commercial_registration_number = models.CharField(
+        max_length=64, blank=True, default="",
+        help_text="Commercial registration / company number (required for ZATCA XML seller node).",
+    )
+
+    # Physical address (used in invoice headers and ZATCA XML)
+    address_street = models.CharField(max_length=255, blank=True, default="")
+    address_building_number = models.CharField(
+        max_length=16, blank=True, default="",
+        help_text="Building/unit number — required by ZATCA XML seller address.",
+    )
+    address_city = models.CharField(max_length=128, blank=True, default="")
+    address_state = models.CharField(max_length=128, blank=True, default="")
+    address_postal_code = models.CharField(max_length=32, blank=True, default="")
+
     class Meta:
         db_table = "tenancy_organization"
         ordering = ("name",)
@@ -134,10 +176,16 @@ class TenantOwnedQuerySet(QuerySet):
     """
 
     _tenant_scope_disabled: bool = False
+    # True once organization_id has been injected into the WHERE clause.
+    # Tracked explicitly to avoid false positives from `_is_tenant_scoped()` —
+    # `str(self.query)` includes `organization_id` in the SELECT clause too,
+    # which caused `filter()` to skip scope injection on the first call.
+    _tenant_scope_applied: bool = False
 
     def _clone(self, *args: Any, **kwargs: Any) -> Self:  # type: ignore[override]
         clone = super()._clone(*args, **kwargs)
         clone._tenant_scope_disabled = self._tenant_scope_disabled
+        clone._tenant_scope_applied = self._tenant_scope_applied
         return clone
 
     def _tenant_filtered(self) -> Self:
@@ -147,6 +195,7 @@ class TenantOwnedQuerySet(QuerySet):
         # the concrete model actually declares that column.
         if ctx.branch_id is not None and _has_field(self.model, "branch_id"):
             qs = qs.filter(branch_id=ctx.branch_id)
+        qs._tenant_scope_applied = True
         return qs
 
     # --- read path ----------------------------------------------------------
@@ -173,15 +222,22 @@ class TenantOwnedQuerySet(QuerySet):
     def filter(self, *args: Any, **kwargs: Any) -> Self:
         if self._tenant_scope_disabled:
             return super().filter(*args, **kwargs)
-        # If this is the first filter in the chain, inject tenant scope first.
-        if not self._is_tenant_scoped():
-            base = super().filter(organization_id=tenant_context.require_current().organization_id)
+        # Inject tenant scope on the first filter call in a chain.
+        if not self._tenant_scope_applied:
+            base = self._tenant_filtered()
             return base.filter(*args, **kwargs) if (args or kwargs) else base
         return super().filter(*args, **kwargs)
 
+    def count(self) -> int:  # type: ignore[override]
+        if self._tenant_scope_disabled:
+            return super().count()
+        if not self._tenant_scope_applied:
+            return self.all().count()
+        return super().count()
+
     def _is_tenant_scoped(self) -> bool:
-        """Crude but reliable: check whether any applied WHERE references organization_id."""
-        return "organization_id" in str(self.query)
+        """Return True if the queryset already has an organization_id WHERE filter."""
+        return self._tenant_scope_applied
 
     # --- escape hatch -------------------------------------------------------
     def all_tenants(self) -> "TenantOwnedQuerySet":

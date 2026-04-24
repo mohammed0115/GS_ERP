@@ -32,11 +32,18 @@ class PeriodNotClosedError(Exception):
     pass
 
 
+class PeriodSignedOffError(Exception):
+    """Raised when reopening a signed-off period without the force flag."""
+    pass
+
+
 @dataclass(frozen=True, slots=True)
 class ReopenFiscalPeriodCommand:
     period_id: int
     reason: str
     actor_id: int | None = None
+    # C-4: set True to override a PeriodSignOff; requires elevated privilege
+    force: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +66,15 @@ class ReopenFiscalPeriod:
             raise PeriodNotClosedError(
                 f"Period {command.period_id} is not closed (status={period.status})."
             )
+
+        # C-4: block reopen of a formally signed-off period unless force=True
+        from apps.finance.infrastructure.closing_models import PeriodSignOff
+        if not command.force:
+            if PeriodSignOff.objects.filter(period=period).exists():
+                raise PeriodSignedOffError(
+                    f"Period {command.period_id} has been formally signed off. "
+                    "Pass force=True (requires CFO / super-admin permission) to override."
+                )
 
         closing_run_id: int | None = None
         reversed_journal_id: int | None = None

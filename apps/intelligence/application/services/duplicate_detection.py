@@ -64,8 +64,7 @@ class ExactMatchDetector:
                 .filter(cnt__gt=1)
             )
             for group in dupes:
-                if not group.get("external_reference"):
-                    continue
+                has_ref = bool(group.get("external_reference"))
                 ids = list(
                     SalesInvoice.objects.filter(
                         organization_id=organization_id,
@@ -76,15 +75,20 @@ class ExactMatchDetector:
                     ).values_list("id", flat=True).order_by("id")[:2]
                 )
                 if len(ids) >= 2:
+                    score = Decimal("1.0") if has_ref else Decimal("0.90")
+                    reason = (
+                        f"Same customer, reference '{group['external_reference']}', "
+                        f"amount {group['grand_total']}, date {group['invoice_date']}."
+                        if has_ref else
+                        f"Same customer, amount {group['grand_total']}, date {group['invoice_date']} "
+                        f"(no external reference — possible unref'd duplicate)."
+                    )
                     results.append(DuplicatePair(
                         entity_type="sales.salesinvoice",
                         left_entity_id=ids[0],
                         right_entity_id=ids[1],
-                        similarity_score=Decimal("1.0"),
-                        duplicate_reason=(
-                            f"Same customer, reference '{group['external_reference']}', "
-                            f"amount {group['grand_total']}, date {group['invoice_date']}."
-                        ),
+                        similarity_score=score,
+                        duplicate_reason=reason,
                         severity="high",
                     ))
         except Exception as exc:
@@ -104,8 +108,7 @@ class ExactMatchDetector:
                 .filter(cnt__gt=1)
             )
             for group in dupes:
-                if not group.get("supplier_invoice_ref"):
-                    continue
+                has_ref = bool(group.get("supplier_invoice_ref"))
                 ids = list(
                     PurchaseInvoice.objects.filter(
                         organization_id=organization_id,
@@ -116,15 +119,20 @@ class ExactMatchDetector:
                     ).values_list("id", flat=True).order_by("id")[:2]
                 )
                 if len(ids) >= 2:
+                    score = Decimal("1.0") if has_ref else Decimal("0.90")
+                    reason = (
+                        f"Same supplier, ref '{group['supplier_invoice_ref']}', "
+                        f"amount {group['grand_total']}, date {group['invoice_date']}."
+                        if has_ref else
+                        f"Same supplier, amount {group['grand_total']}, date {group['invoice_date']} "
+                        f"(no supplier reference — possible unref'd duplicate)."
+                    )
                     results.append(DuplicatePair(
                         entity_type="purchases.purchaseinvoice",
                         left_entity_id=ids[0],
                         right_entity_id=ids[1],
-                        similarity_score=Decimal("1.0"),
-                        duplicate_reason=(
-                            f"Same supplier, ref '{group['supplier_invoice_ref']}', "
-                            f"amount {group['grand_total']}, date {group['invoice_date']}."
-                        ),
+                        similarity_score=score,
+                        duplicate_reason=reason,
                         severity="high",
                     ))
         except Exception as exc:
@@ -153,8 +161,9 @@ class NearMatchDetector:
     ) -> list[DuplicatePair]:
         results: list[DuplicatePair] = []
 
+        # Purchase invoices
         try:
-            from apps.purchases.infrastructure.payable_models import PurchaseInvoice, PurchaseInvoiceStatus
+            from apps.purchases.infrastructure.payable_models import PurchaseInvoice
 
             invoices = list(
                 PurchaseInvoice.objects.filter(
@@ -193,6 +202,47 @@ class NearMatchDetector:
         except Exception as exc:
             logger.warning("NearMatchDetector: purchase invoice query failed: %s", exc, exc_info=True)
 
+        # Sales invoices
+        try:
+            from apps.sales.infrastructure.invoice_models import SalesInvoice
+
+            invoices = list(
+                SalesInvoice.objects.filter(
+                    organization_id=organization_id,
+                    invoice_date__gte=date_from - timedelta(days=self.DATE_GAP_DAYS),
+                    invoice_date__lte=date_to,
+                ).order_by("customer_id", "grand_total", "invoice_date")
+            )
+
+            seen_s: set[tuple[int, int]] = set()
+            for i, inv_a in enumerate(invoices):
+                for inv_b in invoices[i + 1:]:
+                    if inv_b.customer_id != inv_a.customer_id:
+                        break
+                    if inv_b.grand_total != inv_a.grand_total:
+                        continue
+                    gap = abs((inv_b.invoice_date - inv_a.invoice_date).days)
+                    if gap > self.DATE_GAP_DAYS:
+                        continue
+                    key = (min(inv_a.pk, inv_b.pk), max(inv_a.pk, inv_b.pk))
+                    if key in seen_s:
+                        continue
+                    seen_s.add(key)
+                    score = Decimal("1.0") - Decimal(str(gap)) * Decimal("0.05")
+                    results.append(DuplicatePair(
+                        entity_type="sales.salesinvoice",
+                        left_entity_id=inv_a.pk,
+                        right_entity_id=inv_b.pk,
+                        similarity_score=score,
+                        duplicate_reason=(
+                            f"Same customer #{inv_a.customer_id}, same amount "
+                            f"{inv_a.grand_total}, date gap {gap} days."
+                        ),
+                        severity="high" if score >= Decimal("0.95") else "medium",
+                    ))
+        except Exception as exc:
+            logger.warning("NearMatchDetector: sales invoice query failed: %s", exc, exc_info=True)
+
         return results
 
 
@@ -217,6 +267,7 @@ class FuzzyMatchDetector:
     ) -> list[DuplicatePair]:
         results: list[DuplicatePair] = []
 
+        # Purchase invoices
         try:
             from apps.purchases.infrastructure.payable_models import PurchaseInvoice
 
@@ -246,7 +297,6 @@ class FuzzyMatchDetector:
                     if key in seen:
                         continue
                     seen.add(key)
-                    # Score: 0.80 base, reduced by amount diff and date gap
                     score = max(
                         Decimal("0.80") - amount_pct * Decimal("10") - Decimal(str(gap)) * Decimal("0.02"),
                         Decimal("0.70"),
@@ -265,6 +315,55 @@ class FuzzyMatchDetector:
                     ))
         except Exception as exc:
             logger.warning("FuzzyMatchDetector: purchase invoice query failed: %s", exc, exc_info=True)
+
+        # Sales invoices
+        try:
+            from apps.sales.infrastructure.invoice_models import SalesInvoice
+
+            invoices = list(
+                SalesInvoice.objects.filter(
+                    organization_id=organization_id,
+                    invoice_date__gte=date_from - timedelta(days=self.DATE_GAP_DAYS),
+                    invoice_date__lte=date_to,
+                ).order_by("customer_id", "invoice_date")
+            )
+
+            seen_s: set[tuple[int, int]] = set()
+            for i, inv_a in enumerate(invoices):
+                if inv_a.grand_total == _ZERO:
+                    continue
+                for inv_b in invoices[i + 1:]:
+                    if inv_b.customer_id != inv_a.customer_id:
+                        break
+                    gap = abs((inv_b.invoice_date - inv_a.invoice_date).days)
+                    if gap > self.DATE_GAP_DAYS:
+                        continue
+                    amount_diff = abs(inv_b.grand_total - inv_a.grand_total)
+                    amount_pct = amount_diff / inv_a.grand_total
+                    if amount_pct > self.AMOUNT_TOLERANCE:
+                        continue
+                    key = (min(inv_a.pk, inv_b.pk), max(inv_a.pk, inv_b.pk))
+                    if key in seen_s:
+                        continue
+                    seen_s.add(key)
+                    score = max(
+                        Decimal("0.80") - amount_pct * Decimal("10") - Decimal(str(gap)) * Decimal("0.02"),
+                        Decimal("0.70"),
+                    )
+                    results.append(DuplicatePair(
+                        entity_type="sales.salesinvoice",
+                        left_entity_id=inv_a.pk,
+                        right_entity_id=inv_b.pk,
+                        similarity_score=score.quantize(Decimal("0.0001")),
+                        duplicate_reason=(
+                            f"Same customer #{inv_a.customer_id}, amounts "
+                            f"{inv_a.grand_total} vs {inv_b.grand_total} "
+                            f"({float(amount_pct)*100:.2f}% diff), date gap {gap} days."
+                        ),
+                        severity="medium",
+                    ))
+        except Exception as exc:
+            logger.warning("FuzzyMatchDetector: sales invoice query failed: %s", exc, exc_info=True)
 
         return results
 

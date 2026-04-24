@@ -13,6 +13,7 @@ addopts = [
     "--strict-markers",
     "--strict-config",
     "--tb=short",
+    "--reuse-db",
 ]
 markers = [
     "unit: pure unit tests (no DB, no network)",

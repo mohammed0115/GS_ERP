@@ -456,7 +456,6 @@ from apps.inventory.application.use_cases.finalise_stock_count import (
 from apps.inventory.infrastructure.models import (
     CountStatusChoices,
     StockCount,
-    StockCountLine,
     StockOnHand,
 )
 
@@ -629,31 +628,32 @@ class StockCountCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, FormV
             form.add_error(None, "Count must include at least one product.")
             return self.render_to_response(self.get_context_data(form=form))
 
-        # Persist directly — StockCount draft creation doesn't need to go
-        # through a use case; there are no side effects. The use case
-        # runs on finalise, not on draft.
-        from django.db import transaction
+        from apps.inventory.application.use_cases.create_stock_count import (
+            CreateStockCount,
+            CreateStockCountCommand,
+            StockCountLineSpec,
+        )
         try:
-            with transaction.atomic():
-                count = StockCount.objects.create(
-                    reference=reference,
-                    count_date=header["count_date"],
-                    warehouse=warehouse,
-                    status=CountStatusChoices.DRAFT,
-                    memo=header.get("memo") or "",
-                )
-                for idx, line in enumerate(lines_data, start=1):
-                    StockCountLine.objects.create(
-                        count=count,
+            result = CreateStockCount().execute(CreateStockCountCommand(
+                reference=reference,
+                count_date=header["count_date"],
+                warehouse_id=warehouse.pk,
+                memo=header.get("memo") or "",
+                lines=tuple(
+                    StockCountLineSpec(
                         product_id=line["product_id"],
                         expected_quantity=line["expected"],
                         counted_quantity=line["counted"],
                         uom_code=line["uom_code"],
-                        line_number=idx,
                     )
+                    for line in lines_data
+                ),
+            ))
         except Exception as exc:
             form.add_error(None, f"Could not save count: {exc}")
             return self.render_to_response(self.get_context_data(form=form))
+
+        count = StockCount.objects.get(pk=result.count_id)
 
         messages.success(
             request,

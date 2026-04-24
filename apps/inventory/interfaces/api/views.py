@@ -24,9 +24,12 @@ from apps.inventory.infrastructure.models import (
     Warehouse,
 )
 from apps.inventory.interfaces.api.serializers import (
+    InventoryValuationRowSerializer,
+    ItemLedgerSerializer,
     StockAdjustmentSerializer,
     StockAdjustmentWriteSerializer,
     StockCountSerializer,
+    StockCountWriteSerializer,
     StockMovementSerializer,
     StockOnHandSerializer,
     StockTransferSerializer,
@@ -205,6 +208,7 @@ class StockAdjustmentPostView(APIView):
     )
     def post(self, request, pk):
         from apps.inventory.application.use_cases.record_adjustment import RecordAdjustment
+        from apps.inventory.domain.exceptions import AdjustmentAlreadyPostedError
 
         adj = get_object_or_404(StockAdjustment, pk=pk)
         if adj.status != "draft":
@@ -213,7 +217,9 @@ class StockAdjustmentPostView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
         try:
-            RecordAdjustment().execute(adjustment_id=adj.pk, actor_id=request.user.pk)
+            RecordAdjustment().execute_by_id(adj.pk)
+        except AdjustmentAlreadyPostedError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
         except Exception as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         adj.refresh_from_db()
@@ -290,6 +296,7 @@ class StockTransferPostView(APIView):
     )
     def post(self, request, pk):
         from apps.inventory.application.use_cases.post_transfer import PostTransfer
+        from apps.inventory.domain.exceptions import TransferAlreadyPostedError
 
         trf = get_object_or_404(StockTransfer, pk=pk)
         if trf.status != "draft":
@@ -298,7 +305,9 @@ class StockTransferPostView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
         try:
-            PostTransfer().execute(transfer_id=trf.pk, actor_id=request.user.pk)
+            PostTransfer().execute_by_id(trf.pk)
+        except TransferAlreadyPostedError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
         except Exception as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         trf.refresh_from_db()
@@ -323,6 +332,49 @@ class StockCountListView(APIView):
             qs = qs.filter(status=st)
         return Response(StockCountSerializer(qs[:200], many=True).data)
 
+    @extend_schema(request=StockCountWriteSerializer, responses=StockCountSerializer, tags=["Inventory"])
+    def post(self, request):
+        import uuid
+        from apps.inventory.application.use_cases.create_stock_count import (
+            CreateStockCount,
+            CreateStockCountCommand,
+            StockCountLineSpec,
+        )
+
+        ser = StockCountWriteSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        d = ser.validated_data
+
+        reference = d.get("reference", "").strip()
+        if not reference:
+            reference = f"CNT-{d['count_date'].strftime('%Y%m%d')}-{uuid.uuid4().hex[:8].upper()}"
+
+        try:
+            result = CreateStockCount().execute(CreateStockCountCommand(
+                reference=reference,
+                count_date=d["count_date"],
+                warehouse_id=d["warehouse_id"],
+                memo=d.get("memo", ""),
+                lines=tuple(
+                    StockCountLineSpec(
+                        product_id=line["product_id"],
+                        expected_quantity=line["expected_quantity"],
+                        counted_quantity=line["counted_quantity"],
+                        uom_code=line["uom_code"],
+                    )
+                    for line in d["lines"]
+                ),
+            ))
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        cnt = get_object_or_404(
+            StockCount.objects.prefetch_related("lines__product"), pk=result.count_id
+        )
+        return Response(StockCountSerializer(cnt).data, status=status.HTTP_201_CREATED)
+
 
 class StockCountDetailView(APIView):
     permission_classes = [IsAuthenticated]
@@ -345,7 +397,12 @@ class StockCountFinaliseView(APIView):
         description="Finalise a Draft stock count, creating adjustment movements for variances.",
     )
     def post(self, request, pk):
-        from apps.inventory.application.use_cases.finalise_stock_count import FinaliseStockCount
+        import uuid
+        from apps.inventory.application.use_cases.finalise_stock_count import (
+            FinaliseStockCount,
+            FinaliseStockCountCommand,
+        )
+        from apps.inventory.domain.exceptions import StockCountAlreadyFinalizedError
 
         cnt = get_object_or_404(StockCount, pk=pk)
         if cnt.status != "draft":
@@ -354,8 +411,104 @@ class StockCountFinaliseView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
         try:
-            FinaliseStockCount().execute(count_id=cnt.pk, actor_id=request.user.pk)
+            FinaliseStockCount().execute(FinaliseStockCountCommand(
+                count_id=cnt.pk,
+                adjustment_reference=f"ADJ-CNT-{cnt.pk}-{uuid.uuid4().hex[:8].upper()}",
+            ))
+        except StockCountAlreadyFinalizedError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
         except Exception as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         cnt.refresh_from_db()
         return Response(StockCountSerializer(cnt).data)
+
+
+# ---------------------------------------------------------------------------
+# Inventory reports (I-16)
+# ---------------------------------------------------------------------------
+class InventoryValuationView(APIView):
+    """
+    GET /inventory/reports/valuation/
+
+    Query params:
+      warehouse_id  (int, optional)
+      category_id   (int, optional)
+    """
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        responses=InventoryValuationRowSerializer(many=True),
+        tags=["Inventory Reports"],
+        description="Current inventory value per (product, warehouse) using weighted-average cost.",
+    )
+    def get(self, request):
+        from apps.reports.application.selectors import inventory_valuation
+
+        warehouse_id = request.query_params.get("warehouse_id")
+        category_id = request.query_params.get("category_id")
+
+        try:
+            rows = inventory_valuation(
+                warehouse_id=int(warehouse_id) if warehouse_id else None,
+                category_id=int(category_id) if category_id else None,
+            )
+        except Exception as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        import dataclasses
+        return Response([dataclasses.asdict(r) for r in rows])
+
+
+class ItemLedgerView(APIView):
+    """
+    GET /inventory/reports/item-ledger/
+
+    Query params (all required unless noted):
+      product_id    (int, required)
+      warehouse_id  (int, optional)
+      date_from     (YYYY-MM-DD, optional)
+      date_to       (YYYY-MM-DD, optional)
+    """
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        responses=ItemLedgerSerializer,
+        tags=["Inventory Reports"],
+        description="Running-quantity ledger for a single product.",
+    )
+    def get(self, request):
+        from datetime import date as _date
+        from apps.reports.application.selectors import item_ledger
+
+        product_id = request.query_params.get("product_id")
+        if not product_id:
+            return Response(
+                {"detail": "product_id is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            product_id = int(product_id)
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "product_id must be an integer."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        warehouse_id = request.query_params.get("warehouse_id")
+        date_from_str = request.query_params.get("date_from")
+        date_to_str = request.query_params.get("date_to")
+
+        try:
+            ledger = item_ledger(
+                product_id=product_id,
+                warehouse_id=int(warehouse_id) if warehouse_id else None,
+                date_from=_date.fromisoformat(date_from_str) if date_from_str else None,
+                date_to=_date.fromisoformat(date_to_str) if date_to_str else None,
+            )
+        except Exception as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        import dataclasses
+        data = dataclasses.asdict(ledger)
+        return Response(data)

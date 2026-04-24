@@ -443,6 +443,24 @@ class BankStatementLine(TimestampedModel):
     class Meta:
         db_table = "treasury_bank_statement_line"
         ordering = ("statement_id", "sequence")
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(debit_amount__gte=0),
+                name="treasury_stmt_line_debit_non_negative",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(credit_amount__gte=0),
+                name="treasury_stmt_line_credit_non_negative",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(debit_amount__gt=0, credit_amount=0)
+                    | models.Q(debit_amount=0, credit_amount__gt=0)
+                    | models.Q(debit_amount=0, credit_amount=0)
+                ),
+                name="treasury_stmt_line_not_both_sides",
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"Line {self.sequence} {self.txn_date} {self.debit_amount}/{self.credit_amount}"

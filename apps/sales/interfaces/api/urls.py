@@ -19,6 +19,8 @@ urlpatterns = [
     path("receipts/<int:pk>/",                views.CustomerReceiptDetailView.as_view(),      name="receipt_detail"),
     path("receipts/<int:pk>/post/",           views.CustomerReceiptPostView.as_view(),        name="receipt_post"),
     path("receipts/<int:pk>/allocate/",       views.CustomerReceiptAllocateView.as_view(),    name="receipt_allocate"),
+    path("receipts/<int:pk>/reverse/",        views.CustomerReceiptReverseView.as_view(),     name="receipt_reverse"),
+    path("receipts/<int:pk>/unallocate/",     views.CustomerReceiptUnallocateView.as_view(),  name="receipt_unallocate"),
 
     # ---- CreditNote ----
     path("credit-notes/",                     views.CreditNoteListCreateView.as_view(),    name="credit_note_list"),

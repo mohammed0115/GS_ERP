@@ -54,6 +54,13 @@ class AllocateVendorPaymentService:
     def execute(self, command: AllocateVendorPaymentCommand) -> VendorAllocationResult:
         _ZERO = Decimal("0")
 
+        seen_ids = {spec.invoice_id for spec in command.allocations}
+        if len(seen_ids) != len(command.allocations):
+            from apps.purchases.domain.exceptions import AllocationExceedsPaymentError
+            raise AllocationExceedsPaymentError(
+                "Duplicate invoice_id in allocations tuple — each invoice must appear at most once."
+            )
+
         try:
             payment = VendorPayment.objects.get(pk=command.payment_id)
         except VendorPayment.DoesNotExist:

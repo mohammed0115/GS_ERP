@@ -80,6 +80,31 @@ class GenerateClosingEntries:
         except AccountingPeriod.DoesNotExist:
             raise ValueError(f"AccountingPeriod {command.period_id} not found.")
 
+        # Validate that the provided accounts exist and have the correct types.
+        try:
+            re_acct = Account.objects.get(pk=command.retained_earnings_account_id)
+        except Account.DoesNotExist:
+            raise ValueError(
+                f"retained_earnings_account_id {command.retained_earnings_account_id} not found."
+            )
+        if re_acct.account_type != AccountTypeChoices.EQUITY:
+            raise ValueError(
+                f"retained_earnings_account (code={re_acct.code}) must be type 'equity', "
+                f"got '{re_acct.account_type}'."
+            )
+
+        try:
+            is_acct = Account.objects.get(pk=command.income_summary_account_id)
+        except Account.DoesNotExist:
+            raise ValueError(
+                f"income_summary_account_id {command.income_summary_account_id} not found."
+            )
+        if is_acct.account_type not in (AccountTypeChoices.EQUITY, AccountTypeChoices.INCOME):
+            raise ValueError(
+                f"income_summary_account (code={is_acct.code}) must be type 'equity' or 'income', "
+                f"got '{is_acct.account_type}'."
+            )
+
         income_summary_id = command.income_summary_account_id
         retained_earnings_id = command.retained_earnings_account_id
         currency = Currency(code=command.currency_code)

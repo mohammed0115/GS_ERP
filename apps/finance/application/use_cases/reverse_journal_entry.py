@@ -69,7 +69,7 @@ class ReverseJournalEntry:
             )
 
         # Guard: must not already be reversed.
-        if hasattr(original, "reversal_entry") and original.reversal_entry_id:
+        if JournalEntry.objects.filter(reversed_from=original).exists():
             raise JournalAlreadyReversedError(
                 f"Entry {original.reference} has already been reversed."
             )

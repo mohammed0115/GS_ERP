@@ -108,6 +108,35 @@ class SalesInvoice(TenantOwnedModel, TimestampedModel, AuditMetaMixin):
     allocated_amount = models.DecimalField(max_digits=18, decimal_places=4, default=0)
 
     notes = models.TextField(blank=True, default="")
+    payment_terms_text = models.CharField(
+        max_length=64, blank=True, default="",
+        help_text="Human-readable payment terms printed on the invoice (e.g. 'Net 30', '2/10 Net 30').",
+    )
+    po_number = models.CharField(
+        max_length=64, blank=True, default="",
+        help_text="Buyer's purchase-order reference — required for US B2B AP matching.",
+    )
+
+    # Address snapshots — captured at issue time so audit trail is preserved
+    # even if customer address changes later.  Required for USA sales-tax nexus
+    # determination (ship-to address) and ZATCA buyer address in XML.
+    billing_address_line1 = models.CharField(max_length=255, blank=True, default="")
+    billing_address_line2 = models.CharField(max_length=255, blank=True, default="")
+    billing_address_city = models.CharField(max_length=128, blank=True, default="")
+    billing_address_state = models.CharField(max_length=128, blank=True, default="")
+    billing_address_postal_code = models.CharField(max_length=32, blank=True, default="")
+    billing_address_country = models.CharField(max_length=2, blank=True, default="")
+    billing_building_number = models.CharField(
+        max_length=16, blank=True, default="",
+        help_text="Building number — required by ZATCA XML buyer address.",
+    )
+
+    shipping_address_line1 = models.CharField(max_length=255, blank=True, default="")
+    shipping_address_line2 = models.CharField(max_length=255, blank=True, default="")
+    shipping_address_city = models.CharField(max_length=128, blank=True, default="")
+    shipping_address_state = models.CharField(max_length=128, blank=True, default="")
+    shipping_address_postal_code = models.CharField(max_length=32, blank=True, default="")
+    shipping_address_country = models.CharField(max_length=2, blank=True, default="")
 
     fiscal_period = models.ForeignKey(
         "finance.AccountingPeriod",

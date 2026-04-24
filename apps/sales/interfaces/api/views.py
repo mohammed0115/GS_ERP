@@ -14,8 +14,10 @@ Endpoints:
     GET  /api/sales/receipts/          list
     POST /api/sales/receipts/          create draft
     GET  /api/sales/receipts/{id}/     retrieve
-    POST /api/sales/receipts/{id}/post/     → PostCustomerReceipt
-    POST /api/sales/receipts/{id}/allocate/ → AllocateReceiptService
+    POST /api/sales/receipts/{id}/post/        → PostCustomerReceipt
+    POST /api/sales/receipts/{id}/allocate/    → AllocateReceiptService
+    POST /api/sales/receipts/{id}/reverse/     → ReverseCustomerReceipt
+    POST /api/sales/receipts/{id}/unallocate/  → UnallocateReceipt
 
   CreditNote
     GET  /api/sales/credit-notes/          list
@@ -582,3 +584,59 @@ class DebitNoteIssueView(APIView):
 
         dn = DebitNote.objects.prefetch_related("lines").get(pk=pk)
         return Response(DebitNoteSerializer(dn).data)
+
+
+# ===========================================================================
+# CustomerReceipt — Reverse & Unallocate
+# ===========================================================================
+class CustomerReceiptReverseView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        summary="Reverse a posted customer receipt (creates mirror GL entry and deallocates all invoices)",
+        responses={200: CustomerReceiptSerializer},
+    )
+    def post(self, request, pk):
+        from apps.sales.application.use_cases.reverse_customer_receipt import (
+            ReverseCustomerReceipt, ReverseCustomerReceiptCommand,
+        )
+        try:
+            ReverseCustomerReceipt().execute(
+                ReverseCustomerReceiptCommand(receipt_id=pk, actor_id=request.user.pk)
+            )
+        except Exception as exc:
+            raise ValidationError({"detail": str(exc)})
+
+        receipt = CustomerReceipt.objects.prefetch_related("allocations__invoice").get(pk=pk)
+        return Response(CustomerReceiptSerializer(receipt).data)
+
+
+class CustomerReceiptUnallocateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        summary="Remove receipt allocations from specific invoices",
+        request={"application/json": {"type": "object", "properties": {"invoice_ids": {"type": "array", "items": {"type": "integer"}}}}},
+        responses={200: CustomerReceiptSerializer},
+    )
+    def post(self, request, pk):
+        from apps.sales.application.use_cases.unallocate_receipt import (
+            UnallocateReceipt, UnallocateReceiptCommand,
+        )
+        invoice_ids = request.data.get("invoice_ids")
+        if not invoice_ids or not isinstance(invoice_ids, list):
+            raise ValidationError({"invoice_ids": "A non-empty list of invoice IDs is required."})
+
+        try:
+            UnallocateReceipt().execute(
+                UnallocateReceiptCommand(
+                    receipt_id=pk,
+                    invoice_ids=tuple(int(i) for i in invoice_ids),
+                    actor_id=request.user.pk,
+                )
+            )
+        except Exception as exc:
+            raise ValidationError({"detail": str(exc)})
+
+        receipt = CustomerReceipt.objects.prefetch_related("allocations__invoice").get(pk=pk)
+        return Response(CustomerReceiptSerializer(receipt).data)

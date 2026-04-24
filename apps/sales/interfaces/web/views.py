@@ -142,7 +142,7 @@ class SaleHeaderForm(BootstrapFormMixin, forms.Form):
         widget=forms.DateInput(attrs={"type": "date"}),
         initial=date.today,
     )
-    currency_code = forms.CharField(max_length=3, min_length=3, initial="USD")
+    currency_code = forms.CharField(max_length=3, min_length=3, initial="SAR")
 
     default_warehouse = forms.ModelChoiceField(
         queryset=Warehouse.objects.all_tenants().filter(is_active=True),
@@ -673,7 +673,7 @@ class SaleReturnHeaderForm(BootstrapFormMixin, forms.Form):
         widget=forms.DateInput(attrs={"type": "date"}),
         initial=date.today,
     )
-    currency_code = forms.CharField(max_length=3, min_length=3, initial="USD")
+    currency_code = forms.CharField(max_length=3, min_length=3, initial="SAR")
 
     default_warehouse = forms.ModelChoiceField(
         queryset=Warehouse.objects.all_tenants().filter(is_active=True),
@@ -1392,6 +1392,58 @@ class CustomerReceiptAllocateView(LoginRequiredMixin, OrgPermissionRequiredMixin
             )
         except Exception as exc:
             messages.error(request, f"Allocation failed: {exc}")
+        return HttpResponseRedirect(reverse("sales:receipt_detail", args=[pk]))
+
+
+class CustomerReceiptReverseView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
+    """POST-only: reverse a posted CustomerReceipt and undo all its allocations."""
+    permission_required = "sales.customerreceipt.post"
+
+    def post(self, request, pk):
+        from apps.sales.application.use_cases.reverse_customer_receipt import (
+            ReverseCustomerReceipt, ReverseCustomerReceiptCommand,
+        )
+        try:
+            result = ReverseCustomerReceipt().execute(
+                ReverseCustomerReceiptCommand(receipt_id=pk, actor_id=request.user.pk)
+            )
+            messages.success(
+                request,
+                f"Receipt reversed — reversing JE #{result.reversal_entry_id}. "
+                f"{len(result.deallocated_invoices)} invoice(s) de-allocated.",
+            )
+        except Exception as exc:
+            messages.error(request, f"Could not reverse receipt: {exc}")
+        return HttpResponseRedirect(reverse("sales:receipt_detail", args=[pk]))
+
+
+class CustomerReceiptUnallocateView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
+    """POST-only: remove specific allocations from a posted receipt (no GL impact)."""
+    permission_required = "sales.customerreceipt.allocate"
+
+    def post(self, request, pk):
+        from apps.sales.application.use_cases.unallocate_receipt import (
+            UnallocateReceipt, UnallocateReceiptCommand,
+        )
+        try:
+            raw = json.loads(request.POST.get("invoice_ids_json", "[]"))
+            invoice_ids = tuple(int(i) for i in raw if i)
+            if not invoice_ids:
+                messages.warning(request, "No invoices selected for de-allocation.")
+                return HttpResponseRedirect(reverse("sales:receipt_detail", args=[pk]))
+            result = UnallocateReceipt().execute(
+                UnallocateReceiptCommand(
+                    receipt_id=pk,
+                    invoice_ids=invoice_ids,
+                    actor_id=request.user.pk,
+                )
+            )
+            messages.success(
+                request,
+                f"Released {result.total_released} from {len(result.invoices_updated)} invoice(s).",
+            )
+        except Exception as exc:
+            messages.error(request, f"De-allocation failed: {exc}")
         return HttpResponseRedirect(reverse("sales:receipt_detail", args=[pk]))
 
 

@@ -3,8 +3,10 @@ CloseFiscalPeriod — execute the period-close workflow (Phase 6).
 
 Prerequisites (enforced in this use case):
   1. Period is OPEN.
-  2. A `ClosingChecklist` exists and `is_complete=True` (all items done).
-  3. No `ClosingRun` already in COMPLETED state for this period.
+  2. Parent FiscalYear is OPEN.
+  3. A `ClosingChecklist` exists and `is_complete=True` (all items done or N/A,
+     with at least one item marked 'done').
+  4. No `ClosingRun` already in COMPLETED state for this period.
 
 Actions (all atomic):
   a. Create a `ClosingRun` in RUNNING state.
@@ -13,6 +15,9 @@ Actions (all atomic):
   c. Lock the `AccountingPeriod` (status = CLOSED).
   d. Seal the `ClosingRun` (status = COMPLETED).
   e. Record an audit event.
+
+Concurrency: the entire method runs inside a single `transaction.atomic()` with
+`select_for_update()` on the period row, preventing duplicate closes.
 
 Idempotency: if the period is already CLOSED, raises `PeriodAlreadyClosedError`
 rather than silently succeeding, so callers can distinguish duplicate calls
@@ -66,38 +71,55 @@ class CloseFiscalPeriod:
     """Stateless."""
 
     def execute(self, command: CloseFiscalPeriodCommand) -> ClosedPeriod:
-        try:
-            period = AccountingPeriod.objects.select_for_update().get(pk=command.period_id)
-        except AccountingPeriod.DoesNotExist:
-            raise ValueError(f"AccountingPeriod {command.period_id} not found.")
-
-        if period.status == AccountingPeriodStatus.CLOSED:
-            raise PeriodAlreadyClosedError(f"Period {command.period_id} is already closed.")
-
-        # 1. Validate checklist
-        try:
-            checklist = period.closing_checklist
-        except Exception:
-            raise ChecklistIncompleteError(
-                f"No closing checklist found for period {command.period_id}. "
-                "Run GenerateClosingChecklist first."
-            )
-        if not checklist.is_complete:
-            pending = checklist.items.filter(status="pending").values_list("item_key", flat=True)
-            raise ChecklistIncompleteError(
-                f"Closing checklist is not complete. Pending items: {list(pending)}"
-            )
-
-        # 2. Guard against duplicate run
-        if ClosingRun.objects.filter(
-            period=period,
-            status=ClosingRunStatus.COMPLETED,
-        ).exists():
-            raise ClosingRunAlreadyExistsError(
-                f"A completed ClosingRun already exists for period {command.period_id}."
-            )
-
+        # C-1: entire method inside one transaction so select_for_update() holds
+        # the lock through every validation step and the actual close operation.
         with transaction.atomic():
+            try:
+                period = AccountingPeriod.objects.select_for_update().get(pk=command.period_id)
+            except AccountingPeriod.DoesNotExist:
+                raise ValueError(f"AccountingPeriod {command.period_id} not found.")
+
+            if period.status == AccountingPeriodStatus.CLOSED:
+                raise PeriodAlreadyClosedError(f"Period {command.period_id} is already closed.")
+
+            # C-2: parent FiscalYear must still be open
+            from apps.finance.infrastructure.fiscal_year_models import FiscalYearStatus
+            if period.fiscal_year.status == FiscalYearStatus.CLOSED:
+                raise PeriodAlreadyClosedError(
+                    f"Cannot close period {command.period_id}: "
+                    f"parent FiscalYear '{period.fiscal_year.name}' is already closed."
+                )
+
+            # 1. Validate checklist
+            try:
+                checklist = period.closing_checklist
+            except AccountingPeriod.closing_checklist.RelatedObjectDoesNotExist:
+                raise ChecklistIncompleteError(
+                    f"No closing checklist found for period {command.period_id}. "
+                    "Run GenerateClosingChecklist first."
+                )
+            if not checklist.is_complete:
+                pending = checklist.items.filter(status="pending").values_list("item_key", flat=True)
+                raise ChecklistIncompleteError(
+                    f"Closing checklist is not complete. Pending items: {list(pending)}"
+                )
+            # C-5: at least one item must be marked 'done' — cannot bypass by marking all N/A
+            done_count = checklist.items.filter(status="done").count()
+            if done_count == 0:
+                raise ChecklistIncompleteError(
+                    "All checklist items are marked N/A. At least one item must be "
+                    "verified as 'done' before the period can be closed."
+                )
+
+            # 2. Guard against duplicate run
+            if ClosingRun.objects.filter(
+                period=period,
+                status=ClosingRunStatus.COMPLETED,
+            ).exists():
+                raise ClosingRunAlreadyExistsError(
+                    f"A completed ClosingRun already exists for period {command.period_id}."
+                )
+
             now = datetime.now(tz=timezone.utc)
 
             # Remove any rolled-back runs so we can create a fresh one.

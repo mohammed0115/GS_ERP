@@ -46,6 +46,26 @@ def _today() -> date:
     return date.today()
 
 
+def _gl_balance(gl_account_id: int, opening_balance) -> "Decimal":
+    """
+    Compute the current balance of a treasury GL account from posted journal lines.
+
+    Balance = opening_balance + sum(debits) - sum(credits)
+    (Asset accounts have a debit normal balance.)
+    """
+    from decimal import Decimal
+    from django.db.models import Sum
+    from apps.finance.infrastructure.models import JournalLine
+    agg = (
+        JournalLine.objects
+        .filter(account_id=gl_account_id, entry__is_posted=True)
+        .aggregate(total_dr=Sum("debit"), total_cr=Sum("credit"))
+    )
+    dr = agg["total_dr"] or Decimal("0")
+    cr = agg["total_cr"] or Decimal("0")
+    return Decimal(str(opening_balance)) + dr - cr
+
+
 # ===========================================================================
 # Cashbox
 # ===========================================================================
@@ -57,14 +77,43 @@ class CashboxListView(LoginRequiredMixin, OrgPermissionRequiredMixin, ListView):
     paginate_by = 50
 
     def get_queryset(self):
-        qs = Cashbox.objects.select_related("gl_account")
-        if self.request.GET.get("inactive"):
-            pass  # show all
-        else:
+        from django.db.models import OuterRef, Subquery, Sum, DecimalField, Value
+        from django.db.models.functions import Coalesce
+        from apps.finance.infrastructure.models import JournalLine
+        dr_sub = (
+            JournalLine.objects
+            .filter(account_id=OuterRef("gl_account_id"), entry__is_posted=True)
+            .values("account_id")
+            .annotate(s=Sum("debit"))
+            .values("s")
+        )
+        cr_sub = (
+            JournalLine.objects
+            .filter(account_id=OuterRef("gl_account_id"), entry__is_posted=True)
+            .values("account_id")
+            .annotate(s=Sum("credit"))
+            .values("s")
+        )
+        from django.db.models import ExpressionWrapper, F
+        qs = (
+            Cashbox.objects
+            .select_related("gl_account")
+            .annotate(
+                gl_debit=Coalesce(Subquery(dr_sub, output_field=DecimalField()), Value(0, output_field=DecimalField())),
+                gl_credit=Coalesce(Subquery(cr_sub, output_field=DecimalField()), Value(0, output_field=DecimalField())),
+            )
+            .annotate(
+                computed_balance=ExpressionWrapper(
+                    F("opening_balance") + F("gl_debit") - F("gl_credit"),
+                    output_field=DecimalField(),
+                )
+            )
+        )
+        if not self.request.GET.get("inactive"):
             qs = qs.filter(is_active=True)
         q = self.request.GET.get("q", "").strip()
         if q:
-            qs = qs.filter(code__icontains=q) | Cashbox.objects.filter(name__icontains=q)
+            qs = qs.filter(code__icontains=q) | qs.filter(name__icontains=q)
         return qs.order_by("code")
 
 
@@ -79,6 +128,11 @@ class CashboxDetailView(LoginRequiredMixin, OrgPermissionRequiredMixin, DetailVi
         ctx["recent_txns"] = TreasuryTransaction.objects.filter(
             cashbox=self.object
         ).order_by("-transaction_date", "-id")[:20]
+        cb = self.object
+        if cb.gl_account_id:
+            ctx["computed_balance"] = _gl_balance(cb.gl_account_id, cb.opening_balance)
+        else:
+            ctx["computed_balance"] = cb.current_balance
         return ctx
 
 
@@ -144,12 +198,38 @@ class BankAccountListView(LoginRequiredMixin, OrgPermissionRequiredMixin, ListVi
     paginate_by = 50
 
     def get_queryset(self):
-        qs = BankAccount.objects.select_related("gl_account")
+        from django.db.models import OuterRef, Subquery, Sum, DecimalField, Value, Q
+        from django.db.models.functions import Coalesce
+        from apps.finance.infrastructure.models import JournalLine
+        dr_sub = (
+            JournalLine.objects
+            .filter(account_id=OuterRef("gl_account_id"), entry__is_posted=True)
+            .values("account_id").annotate(s=Sum("debit")).values("s")
+        )
+        cr_sub = (
+            JournalLine.objects
+            .filter(account_id=OuterRef("gl_account_id"), entry__is_posted=True)
+            .values("account_id").annotate(s=Sum("credit")).values("s")
+        )
+        from django.db.models import ExpressionWrapper, F
+        qs = (
+            BankAccount.objects
+            .select_related("gl_account")
+            .annotate(
+                gl_debit=Coalesce(Subquery(dr_sub, output_field=DecimalField()), Value(0, output_field=DecimalField())),
+                gl_credit=Coalesce(Subquery(cr_sub, output_field=DecimalField()), Value(0, output_field=DecimalField())),
+            )
+            .annotate(
+                computed_balance=ExpressionWrapper(
+                    F("opening_balance") + F("gl_debit") - F("gl_credit"),
+                    output_field=DecimalField(),
+                )
+            )
+        )
         if not self.request.GET.get("inactive"):
             qs = qs.filter(is_active=True)
         q = self.request.GET.get("q", "").strip()
         if q:
-            from django.db.models import Q
             qs = qs.filter(Q(code__icontains=q) | Q(bank_name__icontains=q) | Q(account_name__icontains=q))
         return qs.order_by("code")
 
@@ -168,6 +248,11 @@ class BankAccountDetailView(LoginRequiredMixin, OrgPermissionRequiredMixin, Deta
         ctx["recent_statements"] = BankStatement.objects.filter(
             bank_account=self.object
         ).order_by("-statement_date")[:5]
+        ba = self.object
+        if ba.gl_account_id:
+            ctx["computed_balance"] = _gl_balance(ba.gl_account_id, ba.opening_balance)
+        else:
+            ctx["computed_balance"] = ba.current_balance
         return ctx
 
 

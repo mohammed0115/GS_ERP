@@ -44,11 +44,11 @@ class DetectionResult:
     source_type:   str
     source_id:     int
     anomaly_type:  str          # AnomalyType choice value
-    severity:      str          # AnomalySeverity choice value
-    score:         Decimal      # 0–100
     title:         str
     description:   str
-    evidence_json: dict
+    severity:      str = "low"           # AnomalySeverity choice value
+    score:         Decimal = Decimal("0")  # 0–100
+    evidence_json: dict = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -341,8 +341,9 @@ class TimingOutlierDetector:
             entry_date__lte=date_to,
         ).select_related("posted_by")
 
+        from django.utils import timezone as _tz
         for entry in entries:
-            posted = entry.created_at
+            posted = _tz.localtime(entry.created_at)
             hour = posted.hour
             weekday = posted.weekday()  # 5=Sat, 6=Sun
 

@@ -2,6 +2,10 @@
 from __future__ import annotations
 
 
+class TreasuryNotFoundError(Exception):
+    """Raised when a treasury entity is not found."""
+
+
 class TreasuryNotDraftError(Exception):
     """Raised when trying to post/process a non-draft treasury entity."""
 

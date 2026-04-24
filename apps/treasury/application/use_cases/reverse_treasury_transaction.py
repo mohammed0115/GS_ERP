@@ -6,7 +6,7 @@ Reverses the GL lines and restores the cashbox/bank balance.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from django.db import transaction
 from django.db.models import F
@@ -39,8 +39,8 @@ class ReverseTreasuryTransaction:
                 "journal_entry",
             ).get(pk=command.transaction_id)
         except TreasuryTransaction.DoesNotExist:
-            from apps.treasury.domain.exceptions import TreasuryNotDraftError
-            raise TreasuryNotDraftError(f"TreasuryTransaction {command.transaction_id} not found.")
+            from apps.treasury.domain.exceptions import TreasuryNotFoundError
+            raise TreasuryNotFoundError(f"TreasuryTransaction {command.transaction_id} not found.")
 
         if txn.status != TreasuryStatus.POSTED:
             from apps.treasury.domain.exceptions import TreasuryAlreadyReversedError
@@ -60,7 +60,8 @@ class ReverseTreasuryTransaction:
         from apps.finance.domain.entities import JournalLine as DomainLine
         from apps.core.domain.value_objects import Currency, Money
 
-        _assert_period_open(txn.transaction_date)
+        reversal_date = date.today()
+        _assert_period_open(reversal_date)
 
         currency = Currency(code=txn.currency_code)
         amount = Money(txn.amount, currency)
@@ -83,7 +84,7 @@ class ReverseTreasuryTransaction:
         )
 
         draft = JournalEntryDraft(
-            entry_date=txn.transaction_date,
+            entry_date=reversal_date,
             reference=f"REV-TXN-{txn.pk}",
             memo=f"Reversal of treasury transaction {txn.transaction_number}",
             lines=rev_lines,

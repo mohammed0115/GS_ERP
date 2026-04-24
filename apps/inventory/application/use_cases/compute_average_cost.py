@@ -121,11 +121,13 @@ class ComputeAverageCost:
         """
         Handle a stock-adjustment movement.
 
-        If `unit_cost` is provided (positive adjustment with a known cost),
-        delegates to `on_inbound`. If missing or adjustment is negative,
-        delegates to `on_outbound` using the absolute quantity.
+        Positive adjustment: delegates to `on_inbound` using the provided
+        unit_cost, or the current WAC if no cost is given (adding stock at
+        current cost leaves WAC unchanged but increases inventory_value).
+        Negative adjustment: delegates to `on_outbound`.
         """
-        if signed_qty > _ZERO and unit_cost is not None:
-            return self.on_inbound(soh, signed_qty, unit_cost)
+        if signed_qty > _ZERO:
+            cost = unit_cost if unit_cost is not None else soh.average_cost
+            return self.on_inbound(soh, signed_qty, cost)
         else:
             return self.on_outbound(soh, abs(signed_qty))

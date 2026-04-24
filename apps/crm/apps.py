@@ -14,3 +14,5 @@ class CRMConfig(AppConfig):
         register_permissions("suppliers", ("view", "create", "update", "deactivate", "import"))
         register_permissions("billers", ("view", "create", "update", "deactivate"))
         register_permissions("wallets", ("view", "deposit", "redeem", "refund", "adjust"))
+        from apps.crm.signals import register_signals
+        register_signals()

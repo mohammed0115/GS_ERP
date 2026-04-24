@@ -54,9 +54,17 @@ class AllocateReceiptService:
     def execute(self, command: AllocateReceiptCommand) -> AllocationResult:
         _ZERO = Decimal("0")
 
+        seen_ids = {spec.invoice_id for spec in command.allocations}
+        if len(seen_ids) != len(command.allocations):
+            from apps.sales.domain.exceptions import AllocationExceedsReceiptError
+            raise AllocationExceedsReceiptError(
+                "Duplicate invoice_id in allocations tuple — each invoice must appear at most once."
+            )
+
         total_requested = sum(a.amount for a in command.allocations)
 
         invoices_updated: list[int] = []
+        total_actually_allocated = Decimal("0")
 
         with transaction.atomic():
             # Load receipt inside the transaction with a row-level lock to prevent
@@ -79,7 +87,7 @@ class AllocateReceiptService:
 
             # Re-read available balance inside the lock (prevents stale reads).
             available = receipt.amount - receipt.allocated_amount
-            if total_requested > available + Decimal("0.0001"):  # tiny tolerance
+            if total_requested > available:
                 from apps.sales.domain.exceptions import AllocationExceedsReceiptError
                 raise AllocationExceedsReceiptError(
                     f"Total allocation {total_requested} exceeds unallocated balance "
@@ -112,12 +120,15 @@ class AllocateReceiptService:
                     )
 
                 invoice_open = invoice.grand_total - invoice.allocated_amount
-                if spec.amount > invoice_open + Decimal("0.0001"):
+                _PENNY = Decimal("0.01")
+                if spec.amount > invoice_open + _PENNY:
                     from apps.sales.domain.exceptions import AllocationExceedsReceiptError
                     raise AllocationExceedsReceiptError(
                         f"Allocation {spec.amount} exceeds open balance {invoice_open} "
                         f"for invoice {invoice.invoice_number}."
                     )
+                # EC-006: cap at invoice_open to absorb final-penny rounding differences.
+                actual_amount = min(spec.amount, invoice_open)
 
                 # Upsert allocation
                 existing = CustomerReceiptAllocation.objects.filter(
@@ -125,7 +136,7 @@ class AllocateReceiptService:
                     invoice_id=invoice.pk,
                 ).first()
                 if existing:
-                    new_amount = existing.allocated_amount + spec.amount
+                    new_amount = existing.allocated_amount + actual_amount
                     CustomerReceiptAllocation.objects.filter(pk=existing.pk).update(
                         allocated_amount=new_amount
                     )
@@ -133,11 +144,11 @@ class AllocateReceiptService:
                     CustomerReceiptAllocation(
                         receipt=receipt,
                         invoice=invoice,
-                        allocated_amount=spec.amount,
+                        allocated_amount=actual_amount,
                     ).save()
 
                 # Update invoice allocated_amount and status
-                new_inv_alloc = invoice.allocated_amount + spec.amount
+                new_inv_alloc = invoice.allocated_amount + actual_amount
                 new_open = invoice.grand_total - new_inv_alloc
                 if new_open <= _ZERO:
                     new_status = SalesInvoiceStatus.PAID
@@ -148,10 +159,11 @@ class AllocateReceiptService:
                     allocated_amount=new_inv_alloc,
                     status=new_status,
                 )
+                total_actually_allocated += actual_amount
                 invoices_updated.append(invoice.pk)
 
             # Update receipt allocated total
-            new_receipt_alloc = receipt.allocated_amount + total_requested
+            new_receipt_alloc = receipt.allocated_amount + total_actually_allocated
             CustomerReceipt.objects.filter(pk=receipt.pk).update(
                 allocated_amount=new_receipt_alloc
             )
@@ -159,7 +171,7 @@ class AllocateReceiptService:
         remaining = receipt.amount - new_receipt_alloc
         return AllocationResult(
             receipt_id=receipt.pk,
-            total_allocated=total_requested,
+            total_allocated=total_actually_allocated,
             unallocated_remaining=max(remaining, _ZERO),
             invoices_updated=tuple(invoices_updated),
         )

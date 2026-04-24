@@ -139,28 +139,55 @@ class TestRunDuplicateDetectionConfig:
 
 
 # ---------------------------------------------------------------------------
-# Financial assistant — stub returns structured response
+# Financial assistant — returns structured (text, type, citations) tuple
 # ---------------------------------------------------------------------------
 
-class TestFinancialAssistantStub:
-    def test_returns_tuple(self):
+class TestFinancialAssistant:
+    """Tests use mocks so no DB / tenant context is needed."""
+
+    def _make_assistant(self):
         from apps.intelligence.application.services.financial_assistant import FinancialAssistant
-        user = MagicMock()
-        assistant = FinancialAssistant(organization_id=1, user=user)
-        result = assistant.answer("What is my revenue?")
+        return FinancialAssistant(organization_id=1, user=MagicMock())
+
+    def test_returns_tuple_of_three(self):
+        assistant = self._make_assistant()
+        with patch.object(assistant, "_revenue_summary", return_value=("revenue text", "factual", [])):
+            result = assistant.answer("What is my revenue?")
         assert isinstance(result, tuple)
-        assert len(result) == 3  # (text, response_type, citations)
+        assert len(result) == 3
 
     def test_response_type_is_string(self):
-        from apps.intelligence.application.services.financial_assistant import FinancialAssistant
-        user = MagicMock()
-        assistant = FinancialAssistant(organization_id=1, user=user)
-        _, response_type, _ = assistant.answer("Show me the balance")
+        assistant = self._make_assistant()
+        with patch.object(assistant, "_ar_summary", return_value=("ar text", "factual", [])):
+            _, response_type, _ = assistant.answer("Show me receivables")
         assert isinstance(response_type, str)
 
     def test_citations_is_list(self):
-        from apps.intelligence.application.services.financial_assistant import FinancialAssistant
-        user = MagicMock()
-        assistant = FinancialAssistant(organization_id=1, user=user)
-        _, _, citations = assistant.answer("Any anomalies?")
+        assistant = self._make_assistant()
+        with patch.object(assistant, "_anomaly_summary", return_value=("text", "analytical", [{"source": "x"}])):
+            _, _, citations = assistant.answer("Any anomalies?")
         assert isinstance(citations, list)
+
+    def test_unknown_query_returns_no_data(self):
+        assistant = self._make_assistant()
+        _, response_type, citations = assistant.answer("banana penguin 12345")
+        assert response_type == "no_data"
+        assert citations == []
+
+    def test_revenue_intent_dispatch(self):
+        assistant = self._make_assistant()
+        with patch.object(assistant, "_revenue_summary", return_value=("rev", "factual", [])) as mock:
+            assistant.answer("Show me sales revenue for this month")
+        mock.assert_called_once()
+
+    def test_overdue_intent_dispatch(self):
+        assistant = self._make_assistant()
+        with patch.object(assistant, "_overdue_summary", return_value=("ov", "analytical", [])) as mock:
+            assistant.answer("What invoices are overdue?")
+        mock.assert_called_once()
+
+    def test_alert_intent_dispatch(self):
+        assistant = self._make_assistant()
+        with patch.object(assistant, "_alert_summary", return_value=("al", "analytical", [])) as mock:
+            assistant.answer("Show current alerts")
+        mock.assert_called_once()

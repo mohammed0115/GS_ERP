@@ -57,7 +57,22 @@ class PostVendorPayment:
             raise APAccountMissingError(
                 f"Vendor {payment.vendor.code} has no payable_account."
             )
+        from apps.finance.infrastructure.models import AccountTypeChoices
+        if ap_account.account_type != AccountTypeChoices.LIABILITY:
+            from apps.purchases.domain.exceptions import APAccountMissingError
+            raise APAccountMissingError(
+                f"Payable account {ap_account.code} must be type 'liability', "
+                f"got '{ap_account.account_type}'."
+            )
+        bank_account_obj = payment.bank_account
+        if bank_account_obj and bank_account_obj.account_type != AccountTypeChoices.ASSET:
+            from apps.purchases.domain.exceptions import APAccountMissingError
+            raise APAccountMissingError(
+                f"Bank account {bank_account_obj.code} must be type 'asset', "
+                f"got '{bank_account_obj.account_type}'."
+            )
 
+        from decimal import Decimal, ROUND_HALF_UP
         from apps.finance.application.use_cases.post_journal_entry import (
             PostJournalEntry, PostJournalEntryCommand, _assert_period_open,
         )
@@ -71,20 +86,46 @@ class PostVendorPayment:
         currency = Currency(code=currency_code)
         payment_number = f"VPAY-{payment.payment_date.year}-{payment.pk:06d}"
 
-        domain_lines = [
-            # DR: AP (reduces the liability to the vendor)
+        # Auto-compute withholding amount if percent is set but amount is zero.
+        wht_amount = payment.withholding_tax_amount
+        if wht_amount == Decimal("0") and payment.withholding_tax_percent > Decimal("0"):
+            wht_amount = (payment.amount * payment.withholding_tax_percent / Decimal("100")
+                         ).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+
+        net_to_bank = payment.amount - wht_amount
+
+        domain_lines: list = [
+            # DR: AP — full gross reduces the liability to the vendor
             DomainLine.debit_only(
                 ap_account.pk,
                 Money(payment.amount, currency),
                 memo=f"Vendor payment {payment_number}",
             ),
-            # CR: Bank / Cash
-            DomainLine.credit_only(
+        ]
+
+        if wht_amount > Decimal("0"):
+            # Withholding present: split the credit side.
+            if payment.withholding_tax_account_id is None:
+                from apps.purchases.domain.exceptions import APAccountMissingError
+                raise APAccountMissingError(
+                    "withholding_tax_account is required when withholding_tax_amount > 0."
+                )
+            domain_lines.append(DomainLine.credit_only(
+                payment.bank_account_id,
+                Money(net_to_bank, currency),
+                memo=f"Vendor payment (net) {payment_number}",
+            ))
+            domain_lines.append(DomainLine.credit_only(
+                payment.withholding_tax_account_id,
+                Money(wht_amount, currency),
+                memo=f"WHT withheld {payment_number}",
+            ))
+        else:
+            domain_lines.append(DomainLine.credit_only(
                 payment.bank_account_id,
                 Money(payment.amount, currency),
                 memo=f"Vendor payment {payment_number}",
-            ),
-        ]
+            ))
 
         draft = JournalEntryDraft(
             entry_date=payment.payment_date,
@@ -99,12 +140,14 @@ class PostVendorPayment:
                     draft=draft,
                     source_type="vendor_payment",
                     source_id=payment.pk,
+                    exchange_rate=payment.exchange_rate,
                 )
             )
             VendorPayment.objects.filter(pk=payment.pk).update(
                 status=VendorPaymentStatus.POSTED,
                 payment_number=payment_number,
                 journal_entry_id=result.entry_id,
+                withholding_tax_amount=wht_amount,
             )
 
         from apps.audit.infrastructure.models import record_audit_event

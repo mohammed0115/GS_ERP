@@ -57,12 +57,16 @@ class TaxCode(TenantOwnedModel, TimestampedModel):
         max_digits=7, decimal_places=4,
         help_text="Percentage rate, e.g. 15.0000 for 15%.",
     )
+    # DEPRECATED: use output_tax_account / input_tax_account instead.
+    # Kept for backward compatibility with existing data; do not write to this
+    # field in new code. Will be removed in a future migration once all records
+    # have been migrated to the directional account fields.
     tax_account = models.ForeignKey(
         "finance.Account",
         on_delete=models.PROTECT,
         related_name="tax_codes",
         null=True, blank=True,
-        help_text="Legacy single GL account. Prefer output_tax_account / input_tax_account.",
+        help_text="Deprecated. Prefer output_tax_account / input_tax_account.",
     )
 
     # Phase 6 — separate output/input VAT accounts
@@ -91,6 +95,13 @@ class TaxCode(TenantOwnedModel, TimestampedModel):
         related_name="input_tax_codes",
         null=True, blank=True,
         help_text="GL asset account for input VAT reclaimable on purchases.",
+    )
+
+    # USA sales tax: FIPS-based jurisdiction code (e.g. "US-CA-06037" = LA County).
+    # Leave blank for non-US or flat-rate codes.
+    jurisdiction_code = models.CharField(
+        max_length=32, blank=True, default="",
+        help_text="Tax jurisdiction identifier for US sales tax (e.g. 'US-CA-06037'). Blank for flat/VAT codes.",
     )
 
     is_active = models.BooleanField(default=True, db_index=True)

@@ -10,6 +10,7 @@
     <a href="{% url 'sales:receipt_list' %}" class="btn btn-outline-secondary btn-sm">
         <i class="fas fa-arrow-left"></i> {% trans "Back" %}
     </a>
+
     {% if object.status == "draft" %}
         {% if request.user|can:"sales.customerreceipt.post" %}
         <form method="post" action="{% url 'sales:receipt_post' object.pk %}" class="d-inline">
@@ -19,10 +20,29 @@
             </button>
         </form>
         {% endif %}
-    {% elif object.status == "posted" and object.unallocated_amount > 0 %}
+
+    {% elif object.status == "posted" %}
+        {% if object.unallocated_amount > 0 %}
         <button type="button" class="btn btn-info btn-sm" data-toggle="modal" data-target="#allocate-modal">
             <i class="fas fa-link"></i> {% trans "Allocate" %}
         </button>
+        {% endif %}
+
+        {% if object.allocations.all and request.user|can:"sales.customerreceipt.allocate" %}
+        <button type="button" class="btn btn-outline-warning btn-sm" data-toggle="modal" data-target="#unallocate-modal">
+            <i class="fas fa-unlink"></i> {% trans "De-allocate" %}
+        </button>
+        {% endif %}
+
+        {% if request.user|can:"sales.customerreceipt.post" %}
+        <form method="post" action="{% url 'sales:receipt_reverse' object.pk %}" class="d-inline"
+              onsubmit="return confirm('{% trans "Reverse this receipt? This will undo all allocations and post a reversing GL entry." %}')">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-danger btn-sm">
+                <i class="fas fa-undo"></i> {% trans "Reverse" %}
+            </button>
+        </form>
+        {% endif %}
     {% endif %}
 </div>
 
@@ -38,8 +58,9 @@
                     <dd class="col-sm-7">
                         {% if object.status == "draft" %}<span class="badge badge-secondary">{% trans "Draft" %}</span>
                         {% elif object.status == "posted" %}<span class="badge badge-success">{% trans "Posted" %}</span>
+                        {% elif object.status == "reversed" %}<span class="badge badge-warning">{% trans "Reversed" %}</span>
                         {% elif object.status == "cancelled" %}<span class="badge badge-danger">{% trans "Cancelled" %}</span>
-                        {% else %}<span class="badge badge-warning">{{ object.status }}</span>{% endif %}
+                        {% else %}<span class="badge badge-light">{{ object.status }}</span>{% endif %}
                     </dd>
                     <dt class="col-sm-5">{% trans "Date" %}</dt>
                     <dd class="col-sm-7">{{ object.receipt_date }}</dd>
@@ -75,7 +96,7 @@
 </div>
 
 {% if object.allocations.all %}
-<div class="card shadow-sm">
+<div class="card shadow-sm mb-3">
     <div class="card-header">{% trans "Allocations" %}</div>
     <div class="card-body p-0">
         <table class="table table-sm mb-0">
@@ -102,7 +123,7 @@
 </div>
 {% endif %}
 
-{# Allocation modal #}
+{# ---- Allocate modal ---- #}
 {% if object.status == "posted" and object.unallocated_amount > 0 %}
 <div class="modal fade" id="allocate-modal" tabindex="-1">
     <div class="modal-dialog modal-lg">
@@ -160,4 +181,59 @@ document.getElementById('alloc-form').addEventListener('submit', function() {
 });
 </script>
 {% endif %}
+
+{# ---- De-allocate modal ---- #}
+{% if object.status == "posted" and object.allocations.all %}
+<div class="modal fade" id="unallocate-modal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">{% trans "De-allocate Invoices" %}</h5>
+                <button type="button" class="close" data-dismiss="modal">&times;</button>
+            </div>
+            <form method="post" action="{% url 'sales:receipt_unallocate' object.pk %}" id="unalloc-form">
+                {% csrf_token %}
+                <input type="hidden" name="invoice_ids_json" id="unalloc-json">
+                <div class="modal-body">
+                    <p class="text-muted small">{% trans "Select allocations to release. No GL entry is created — only the allocation records are removed." %}</p>
+                    <table class="table table-sm">
+                        <thead><tr>
+                            <th><input type="checkbox" id="unalloc-all"></th>
+                            <th>{% trans "Invoice #" %}</th>
+                            <th class="text-right">{% trans "Allocated" %}</th>
+                        </tr></thead>
+                        <tbody>
+                            {% for alloc in object.allocations.all %}
+                            <tr>
+                                <td><input type="checkbox" class="unalloc-chk" value="{{ alloc.invoice.pk }}"></td>
+                                <td>
+                                    <a href="{% url 'sales:invoice_detail' alloc.invoice.pk %}" target="_blank">
+                                        {{ alloc.invoice.invoice_number|default:alloc.invoice.pk }}
+                                    </a>
+                                </td>
+                                <td class="text-right">{{ alloc.allocated_amount|money:object.currency_code }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">{% trans "Close" %}</button>
+                    <button type="submit" class="btn btn-warning">{% trans "De-allocate Selected" %}</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<script>
+document.getElementById('unalloc-all').addEventListener('change', function() {
+    document.querySelectorAll('.unalloc-chk').forEach(c => c.checked = this.checked);
+});
+document.getElementById('unalloc-form').addEventListener('submit', function() {
+    const ids = Array.from(document.querySelectorAll('.unalloc-chk:checked')).map(c => c.value);
+    document.getElementById('unalloc-json').value = JSON.stringify(ids);
+});
+</script>
+{% endif %}
+
 {% endblock %}

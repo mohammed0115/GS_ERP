@@ -171,6 +171,18 @@ class OTPCode(TimestampedModel):
 
     @classmethod
     def generate_for(cls, user: "User", expiry_minutes: int = 10) -> "OTPCode":
+        # Reuse an existing valid OTP that still has >1 minute of life.
+        # This prevents double form submission or page refresh from invalidating
+        # the code already sent to the user's inbox.
+        still_valid = (
+            cls.objects
+            .filter(user=user, is_used=False, expires_at__gt=timezone.now() + timedelta(seconds=60))
+            .order_by("-created_at")
+            .first()
+        )
+        if still_valid:
+            return still_valid
+
         cls.objects.filter(user=user, is_used=False).update(is_used=True)
         code = "".join(secrets.choice(string.digits) for _ in range(6))
         return cls.objects.create(

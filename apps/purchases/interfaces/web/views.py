@@ -962,6 +962,7 @@ class VendorPaymentDetailView(LoginRequiredMixin, OrgPermissionRequiredMixin, De
         pmt: VendorPayment = self.object  # type: ignore[assignment]
         ctx["can_post"] = pmt.status == VendorPaymentStatus.DRAFT
         ctx["can_allocate"] = pmt.status == VendorPaymentStatus.POSTED
+        ctx["can_reverse"] = pmt.status == VendorPaymentStatus.POSTED
         ctx["unallocated"] = pmt.unallocated_amount
 
         if pmt.status == VendorPaymentStatus.POSTED:
@@ -1084,6 +1085,63 @@ class VendorPaymentAllocateView(LoginRequiredMixin, OrgPermissionRequiredMixin, 
                 request,
                 f"Allocated {result.total_allocated} to {len(result.invoices_updated)} invoice(s). "
                 f"Remaining: {result.unallocated_remaining}.",
+            )
+        except Exception as exc:
+            messages.error(request, str(exc))
+        return HttpResponseRedirect(reverse("purchases:vendor_payment_detail", args=[pk]))
+
+
+class VendorPaymentReverseView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
+    permission_required = "purchases.vendor_payments.post"
+
+    def post(self, request, pk):
+        from apps.purchases.application.use_cases.reverse_vendor_payment import (
+            ReverseVendorPayment, ReverseVendorPaymentCommand,
+        )
+        try:
+            result = ReverseVendorPayment().execute(
+                ReverseVendorPaymentCommand(payment_id=pk, actor_id=request.user.pk)
+            )
+            messages.success(
+                request,
+                f"Payment reversed (reversing JE #{result.reversal_entry_id}).",
+            )
+        except Exception as exc:
+            messages.error(request, str(exc))
+        return HttpResponseRedirect(reverse("purchases:vendor_payment_detail", args=[pk]))
+
+
+class VendorPaymentUnallocateView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
+    permission_required = "purchases.vendor_payments.allocate"
+
+    def post(self, request, pk):
+        from apps.purchases.application.use_cases.unallocate_vendor_payment import (
+            UnallocateVendorPayment, UnallocateVendorPaymentCommand,
+        )
+        import json as _json
+
+        raw = request.POST.get("invoice_ids_json", "[]")
+        try:
+            ids = _json.loads(raw)
+        except Exception:
+            messages.error(request, "Invalid invoice_ids payload.")
+            return HttpResponseRedirect(reverse("purchases:vendor_payment_detail", args=[pk]))
+
+        if not ids:
+            messages.error(request, "No invoices selected for de-allocation.")
+            return HttpResponseRedirect(reverse("purchases:vendor_payment_detail", args=[pk]))
+
+        try:
+            result = UnallocateVendorPayment().execute(
+                UnallocateVendorPaymentCommand(
+                    payment_id=pk,
+                    invoice_ids=tuple(int(i) for i in ids),
+                    actor_id=request.user.pk,
+                )
+            )
+            messages.success(
+                request,
+                f"Released {result.total_released} from {len(result.invoices_updated)} invoice(s).",
             )
         except Exception as exc:
             messages.error(request, str(exc))

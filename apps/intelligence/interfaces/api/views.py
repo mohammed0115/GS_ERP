@@ -38,6 +38,7 @@ from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+from common.drf_permissions import IsFinanceManager
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -81,8 +82,36 @@ from apps.intelligence.interfaces.api.serializers import (
 
 
 def _org(request):
-    """Return the organization from the tenant context."""
-    return request.user.organization_id
+    """Return the organization_id for the current request.
+
+    Prefers the active TenantContext (set by middleware for both session and
+    JWT requests). Falls back to OrganizationMember lookup so that callers
+    always get an integer even when the middleware path is bypassed in tests.
+    """
+    from apps.tenancy.domain.context import TenantContext
+
+    ctx = TenantContext.current()
+    if ctx is not None:
+        return ctx.organization_id
+
+    # Fallback: derive from user memberships
+    from apps.users.infrastructure.models import OrganizationMember
+
+    member = (
+        OrganizationMember.objects.filter(user=request.user, is_active=True)
+        .values_list("organization_id", flat=True)
+        .first()
+    )
+    return member
+
+
+def _require_org(request):
+    """Return organization_id or raise PermissionDenied (→ 403) if unresolvable."""
+    org_id = _org(request)
+    if org_id is None:
+        from rest_framework.exceptions import PermissionDenied
+        raise PermissionDenied("No active organization found for this user.")
+    return org_id
 
 
 # ===========================================================================
@@ -95,7 +124,7 @@ class KPIValueListView(APIView):
     @extend_schema(responses=KPIValueSerializer(many=True))
     def get(self, request):
         qs = (
-            KPIValue.objects.filter(organization_id=_org(request))
+            KPIValue.objects.filter(organization_id=_require_org(request))
             .order_by("-calculated_at")[:100]
         )
         return Response(KPIValueSerializer(qs, many=True).data)
@@ -114,7 +143,7 @@ class KPIComputeView(APIView):
             ComputeKPIs, ComputeKPIsCommand,
         )
         cmd = ComputeKPIsCommand(
-            organization_id=_org(request),
+            organization_id=_require_org(request),
             period_start=d["period_start"],
             period_end=d["period_end"],
             prior_start=d.get("prior_start"),
@@ -136,7 +165,7 @@ class AnomalyCaseListView(APIView):
     @extend_schema(responses=AnomalyCaseSerializer(many=True))
     def get(self, request):
         qs = (
-            AnomalyCase.objects.filter(organization_id=_org(request))
+            AnomalyCase.objects.filter(organization_id=_require_org(request))
             .order_by("-detected_at")[:200]
         )
         return Response(AnomalyCaseSerializer(qs, many=True).data)
@@ -147,16 +176,16 @@ class AnomalyCaseDetailView(APIView):
 
     @extend_schema(responses=AnomalyCaseSerializer)
     def get(self, request, pk: int):
-        obj = get_object_or_404(AnomalyCase, pk=pk, organization_id=_org(request))
+        obj = get_object_or_404(AnomalyCase, pk=pk, organization_id=_require_org(request))
         return Response(AnomalyCaseSerializer(obj).data)
 
 
 class AnomalyCaseAssignView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsFinanceManager]
 
     @extend_schema(request=AnomalyAssignSerializer, responses={200: AnomalyCaseSerializer})
     def post(self, request, pk: int):
-        obj = get_object_or_404(AnomalyCase, pk=pk, organization_id=_org(request))
+        obj = get_object_or_404(AnomalyCase, pk=pk, organization_id=_require_org(request))
         ser = AnomalyAssignSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         obj.assigned_to_id = ser.validated_data["assigned_to_id"]
@@ -167,11 +196,11 @@ class AnomalyCaseAssignView(APIView):
 
 
 class AnomalyCaseResolveView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsFinanceManager]
 
     @extend_schema(request=AnomalyResolveSerializer, responses={200: AnomalyCaseSerializer})
     def post(self, request, pk: int):
-        obj = get_object_or_404(AnomalyCase, pk=pk, organization_id=_org(request))
+        obj = get_object_or_404(AnomalyCase, pk=pk, organization_id=_require_org(request))
         ser = AnomalyResolveSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         d = ser.validated_data
@@ -192,7 +221,7 @@ class DuplicateMatchListView(APIView):
     @extend_schema(responses=DuplicateMatchSerializer(many=True))
     def get(self, request):
         qs = (
-            DuplicateMatch.objects.filter(organization_id=_org(request))
+            DuplicateMatch.objects.filter(organization_id=_require_org(request))
             .order_by("-similarity_score")[:200]
         )
         return Response(DuplicateMatchSerializer(qs, many=True).data)
@@ -203,16 +232,16 @@ class DuplicateMatchDetailView(APIView):
 
     @extend_schema(responses=DuplicateMatchSerializer)
     def get(self, request, pk: int):
-        obj = get_object_or_404(DuplicateMatch, pk=pk, organization_id=_org(request))
+        obj = get_object_or_404(DuplicateMatch, pk=pk, organization_id=_require_org(request))
         return Response(DuplicateMatchSerializer(obj).data)
 
 
 class DuplicateMatchReviewView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsFinanceManager]
 
     @extend_schema(request=DuplicateReviewSerializer, responses={200: DuplicateMatchSerializer})
     def post(self, request, pk: int):
-        obj = get_object_or_404(DuplicateMatch, pk=pk, organization_id=_org(request))
+        obj = get_object_or_404(DuplicateMatch, pk=pk, organization_id=_require_org(request))
         ser = DuplicateReviewSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         d = ser.validated_data
@@ -235,7 +264,7 @@ class RiskScoreListView(APIView):
     def get(self, request):
         from apps.intelligence.infrastructure.models import RiskScore
         qs = (
-            RiskScore.objects.filter(organization_id=_org(request))
+            RiskScore.objects.filter(organization_id=_require_org(request))
             .order_by("-calculated_at")[:200]
         )
         return Response(RiskScoreSerializer(qs, many=True).data)
@@ -251,7 +280,7 @@ class AuditCaseListView(APIView):
     @extend_schema(responses=AuditCaseSerializer(many=True))
     def get(self, request):
         qs = (
-            AuditCase.objects.filter(organization_id=_org(request))
+            AuditCase.objects.filter(organization_id=_require_org(request))
             .order_by("-opened_at")[:200]
         )
         return Response(AuditCaseSerializer(qs, many=True).data)
@@ -262,24 +291,20 @@ class AuditCaseListView(APIView):
         ser.is_valid(raise_exception=True)
         d = ser.validated_data
 
-        # Generate sequential case number per org
-        count = AuditCase.objects.filter(organization_id=_org(request)).count()
-        year = date.today().year
-        case_number = f"AC-{year}-{count + 1:04d}"
-
-        obj = AuditCase.objects.create(
-            organization_id=_org(request),
-            case_number=case_number,
+        from apps.intelligence.application.use_cases.audit_cases import (
+            OpenAuditCase, OpenAuditCaseCommand,
+        )
+        cmd = OpenAuditCaseCommand(
+            organization_id=_require_org(request),
+            opened_by_id=request.user.pk,
             source_type=d["source_type"],
             source_id=d.get("source_id"),
-            signal_type=d.get("signal_type", ""),
-            signal_id=d.get("signal_id"),
             case_type=d["case_type"],
             severity=d.get("severity", "medium"),
-            status=AuditCaseStatus.OPEN,
-            opened_at=timezone.now(),
-            opened_by=request.user,
+            signal_type=d.get("signal_type", ""),
+            signal_id=d.get("signal_id"),
         )
+        obj = OpenAuditCase().execute(cmd)
         return Response(AuditCaseSerializer(obj).data, status=status.HTTP_201_CREATED)
 
 
@@ -288,16 +313,16 @@ class AuditCaseDetailView(APIView):
 
     @extend_schema(responses=AuditCaseSerializer)
     def get(self, request, pk: int):
-        obj = get_object_or_404(AuditCase, pk=pk, organization_id=_org(request))
+        obj = get_object_or_404(AuditCase, pk=pk, organization_id=_require_org(request))
         return Response(AuditCaseSerializer(obj).data)
 
 
 class AuditCaseAssignView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsFinanceManager]
 
     @extend_schema(request=AuditCaseAssignSerializer, responses={200: AuditCaseSerializer})
     def post(self, request, pk: int):
-        obj = get_object_or_404(AuditCase, pk=pk, organization_id=_org(request))
+        obj = get_object_or_404(AuditCase, pk=pk, organization_id=_require_org(request))
         ser = AuditCaseAssignSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         obj.assigned_to_id = ser.validated_data["assigned_to_id"]
@@ -308,11 +333,11 @@ class AuditCaseAssignView(APIView):
 
 
 class AuditCaseTransitionView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsFinanceManager]
 
     @extend_schema(request=AuditCaseTransitionSerializer, responses={200: AuditCaseSerializer})
     def post(self, request, pk: int):
-        obj = get_object_or_404(AuditCase, pk=pk, organization_id=_org(request))
+        obj = get_object_or_404(AuditCase, pk=pk, organization_id=_require_org(request))
         ser = AuditCaseTransitionSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         d = ser.validated_data
@@ -335,11 +360,11 @@ class AuditCaseTransitionView(APIView):
 # ===========================================================================
 
 class AlertRuleListView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsFinanceManager]
 
     @extend_schema(responses=AlertRuleSerializer(many=True))
     def get(self, request):
-        qs = AlertRule.objects.filter(organization_id=_org(request)).order_by("code")
+        qs = AlertRule.objects.filter(organization_id=_require_org(request)).order_by("code")
         return Response(AlertRuleSerializer(qs, many=True).data)
 
     @extend_schema(request=AlertRuleWriteSerializer, responses={201: AlertRuleSerializer})
@@ -347,23 +372,23 @@ class AlertRuleListView(APIView):
         ser = AlertRuleWriteSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         obj = AlertRule.objects.create(
-            organization_id=_org(request),
+            organization_id=_require_org(request),
             **ser.validated_data,
         )
         return Response(AlertRuleSerializer(obj).data, status=status.HTTP_201_CREATED)
 
 
 class AlertRuleDetailView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsFinanceManager]
 
     @extend_schema(responses=AlertRuleSerializer)
     def get(self, request, pk: int):
-        obj = get_object_or_404(AlertRule, pk=pk, organization_id=_org(request))
+        obj = get_object_or_404(AlertRule, pk=pk, organization_id=_require_org(request))
         return Response(AlertRuleSerializer(obj).data)
 
     @extend_schema(request=AlertRuleWriteSerializer, responses={200: AlertRuleSerializer})
     def put(self, request, pk: int):
-        obj = get_object_or_404(AlertRule, pk=pk, organization_id=_org(request))
+        obj = get_object_or_404(AlertRule, pk=pk, organization_id=_require_org(request))
         ser = AlertRuleWriteSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         for attr, val in ser.validated_data.items():
@@ -382,7 +407,7 @@ class AlertEventListView(APIView):
     @extend_schema(responses=AlertEventSerializer(many=True))
     def get(self, request):
         qs = (
-            AlertEvent.objects.filter(organization_id=_org(request))
+            AlertEvent.objects.filter(organization_id=_require_org(request))
             .select_related("alert_rule")
             .order_by("-triggered_at")[:200]
         )
@@ -390,14 +415,14 @@ class AlertEventListView(APIView):
 
 
 class AlertEventAcknowledgeView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsFinanceManager]
 
     @extend_schema(request=AlertEventAcknowledgeSerializer, responses={200: AlertEventSerializer})
     def post(self, request, pk: int):
         obj = get_object_or_404(
             AlertEvent.objects.select_related("alert_rule"),
             pk=pk,
-            organization_id=_org(request),
+            organization_id=_require_org(request),
         )
         ser = AlertEventAcknowledgeSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
@@ -421,7 +446,7 @@ class InsightSnapshotListView(APIView):
     @extend_schema(responses=InsightSnapshotSerializer(many=True))
     def get(self, request):
         qs = (
-            InsightSnapshot.objects.filter(organization_id=_org(request))
+            InsightSnapshot.objects.filter(organization_id=_require_org(request))
             .order_by("-generated_at")[:50]
         )
         return Response(InsightSnapshotSerializer(qs, many=True).data)
@@ -432,7 +457,7 @@ class InsightSnapshotDetailView(APIView):
 
     @extend_schema(responses=InsightSnapshotSerializer)
     def get(self, request, pk: int):
-        obj = get_object_or_404(InsightSnapshot, pk=pk, organization_id=_org(request))
+        obj = get_object_or_404(InsightSnapshot, pk=pk, organization_id=_require_org(request))
         return Response(InsightSnapshotSerializer(obj).data)
 
 
@@ -451,7 +476,7 @@ class GenerateInsightsView(APIView):
 
         from apps.intelligence.application.services.narrative_insights import GenerateInsights
         snapshots = GenerateInsights().execute(
-            organization_id=_org(request),
+            organization_id=_require_org(request),
             period_start=d["period_start"],
             period_end=d["period_end"],
         )
@@ -469,7 +494,7 @@ class AssistantQueryListView(APIView):
     def get(self, request):
         qs = (
             AssistantQuery.objects.filter(
-                organization_id=_org(request),
+                organization_id=_require_org(request),
                 user=request.user,
             )
             .order_by("-created_at")[:100]
@@ -499,7 +524,7 @@ class FinancialQueryView(APIView):
         start = timezone.now()
         try:
             assistant = FinancialAssistant(
-                organization_id=_org(request),
+                organization_id=_require_org(request),
                 user=request.user,
             )
             response_text, response_type, citations = assistant.answer(query_text)
@@ -512,7 +537,7 @@ class FinancialQueryView(APIView):
         latency_ms = int((end - start).total_seconds() * 1000)
 
         record = AssistantQuery.objects.create(
-            organization_id=_org(request),
+            organization_id=_require_org(request),
             user=request.user,
             query_text=query_text,
             response_text=response_text,
@@ -534,11 +559,6 @@ class ExecutiveDashboardView(APIView):
     def get(self, request):
         today = date.today()
         first_of_month = today.replace(day=1)
-        period_start = date(
-            request.query_params.get("year", today.year) if False else today.year,
-            1, 1,
-        )
-        # Allow ?period_start=YYYY-MM-DD&period_end=YYYY-MM-DD overrides
         try:
             period_start = date.fromisoformat(request.query_params.get("period_start", str(first_of_month)))
             period_end   = date.fromisoformat(request.query_params.get("period_end", str(today)))
@@ -550,7 +570,7 @@ class ExecutiveDashboardView(APIView):
             executive_dashboard_kpis,
         )
         dashboard = executive_dashboard_kpis(
-            organization_id=_org(request),
+            organization_id=_require_org(request),
             period_start=period_start,
             period_end=period_end,
         )
@@ -575,8 +595,60 @@ class FinanceOpsDashboardView(APIView):
             finance_ops_dashboard,
         )
         dashboard = finance_ops_dashboard(
-            organization_id=_org(request),
+            organization_id=_require_org(request),
             period_start=period_start,
             period_end=period_end,
         )
         return Response(FinanceOpsDashboardSerializer(dashboard).data)
+
+
+# ===========================================================================
+# On-demand intelligence triggers (Finance Managers only)
+# ===========================================================================
+
+class AnomalyRunView(APIView):
+    """
+    POST /api/intelligence/anomalies/run/
+
+    Trigger anomaly detection for the requesting user's organization.
+    Accepts optional `lookback_days` (default 7, max 90).
+    Returns the count of new AnomalyCase records created.
+    """
+    permission_classes = [IsAuthenticated, IsFinanceManager]
+
+    def post(self, request):
+        from datetime import date as _date, timedelta
+        from apps.intelligence.application.services.anomaly_detection import RunAnomalyDetection
+
+        org_id = _require_org(request)
+        try:
+            lookback_days = min(int(request.data.get("lookback_days", 7)), 90)
+        except (TypeError, ValueError):
+            lookback_days = 7
+
+        date_to   = _date.today()
+        date_from = date_to - timedelta(days=lookback_days)
+
+        count = RunAnomalyDetection().execute(
+            organization_id=org_id,
+            date_from=date_from,
+            date_to=date_to,
+        )
+        return Response({"new_cases": count, "date_from": str(date_from), "date_to": str(date_to)})
+
+
+class AlertEvaluateView(APIView):
+    """
+    POST /api/intelligence/alerts/evaluate/
+
+    Evaluate all active alert rules for the requesting user's organization.
+    Returns the count of AlertEvent records fired.
+    """
+    permission_classes = [IsAuthenticated, IsFinanceManager]
+
+    def post(self, request):
+        from apps.intelligence.application.services.alert_engine import EvaluateAlertRules
+
+        org_id = _require_org(request)
+        count = EvaluateAlertRules().execute(organization_id=org_id)
+        return Response({"alerts_fired": count})

@@ -18,6 +18,30 @@
         </button>
     </form>
     {% endif %}
+
+    {% if object.status == "posted" %}
+        {% if object.unallocated_amount > 0 %}
+        <button type="button" class="btn btn-info btn-sm" data-toggle="modal" data-target="#allocate-modal">
+            <i class="fas fa-link"></i> {% trans "Allocate" %}
+        </button>
+        {% endif %}
+
+        {% if object.allocations.all %}
+        <button type="button" class="btn btn-outline-warning btn-sm" data-toggle="modal" data-target="#unallocate-modal">
+            <i class="fas fa-unlink"></i> {% trans "De-allocate" %}
+        </button>
+        {% endif %}
+
+        {% if can_reverse %}
+        <form method="post" action="{% url 'purchases:vendor_payment_reverse' object.pk %}" class="d-inline"
+              onsubmit="return confirm('{% trans "Reverse this payment? This will undo all allocations and post a reversing GL entry." %}')">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-danger btn-sm">
+                <i class="fas fa-undo"></i> {% trans "Reverse" %}
+            </button>
+        </form>
+        {% endif %}
+    {% endif %}
 </div>
 
 <div class="row">
@@ -106,46 +130,58 @@
     </div>
 </div>
 
-{# Allocation modal (only when posted and open invoices exist) #}
+{# ---- Allocate modal (only when posted and open invoices exist) ---- #}
 {% if can_allocate and open_invoices %}
-<div class="card shadow-sm">
-    <div class="card-header">{% trans "Allocate to Invoices" %}</div>
-    <div class="card-body">
-        <form method="post" action="{% url 'purchases:vendor_payment_allocate' object.pk %}" id="alloc-form">
-            {% csrf_token %}
-            <input type="hidden" name="allocations_json" id="allocations_json">
-            <table class="table table-sm" id="alloc-table">
-                <thead class="thead-light">
-                    <tr>
-                        <th>{% trans "Invoice #" %}</th>
-                        <th>{% trans "Due" %}</th>
-                        <th class="text-right">{% trans "Open Balance" %}</th>
-                        <th class="text-right" style="width:150px">{% trans "Allocate Amount" %}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for inv in open_invoices %}
-                    <tr>
-                        <td><code>{{ inv.invoice_number|default:inv.pk }}</code></td>
-                        <td>{{ inv.due_date }}</td>
-                        <td class="text-right">{{ inv.open_amount|money:object.currency_code }}</td>
-                        <td>
-                            <input type="number" class="form-control form-control-sm text-right alloc-amt"
-                                   step="0.0001" min="0" value="0"
-                                   data-invoice-id="{{ inv.pk }}"
-                                   data-max="{{ inv.open_amount }}">
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-            <button type="submit" class="btn btn-primary">
-                <i class="fas fa-link"></i> {% trans "Apply Allocation" %}
-            </button>
-        </form>
+<div class="modal fade" id="allocate-modal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">{% trans "Allocate Payment" %}</h5>
+                <button type="button" class="close" data-dismiss="modal">&times;</button>
+            </div>
+            <form method="post" action="{% url 'purchases:vendor_payment_allocate' object.pk %}" id="alloc-form">
+                {% csrf_token %}
+                <input type="hidden" name="allocations_json" id="allocations_json">
+                <div class="modal-body">
+                    <p class="text-muted">
+                        {% trans "Available:" %} <strong>{{ unallocated|money:object.currency_code }}</strong>
+                    </p>
+                    <table class="table table-sm" id="alloc-table">
+                        <thead class="thead-light">
+                            <tr>
+                                <th>{% trans "Invoice #" %}</th>
+                                <th>{% trans "Due" %}</th>
+                                <th class="text-right">{% trans "Open Balance" %}</th>
+                                <th class="text-right" style="width:150px">{% trans "Allocate Amount" %}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for inv in open_invoices %}
+                            <tr>
+                                <td><code>{{ inv.invoice_number|default:inv.pk }}</code></td>
+                                <td>{{ inv.due_date }}</td>
+                                <td class="text-right">{{ inv.open_amount|money:object.currency_code }}</td>
+                                <td>
+                                    <input type="number" class="form-control form-control-sm text-right alloc-amt"
+                                           step="0.0001" min="0" value="0"
+                                           data-invoice-id="{{ inv.pk }}"
+                                           data-max="{{ inv.open_amount }}">
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">{% trans "Close" %}</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-link"></i> {% trans "Apply Allocation" %}
+                    </button>
+                </div>
+            </form>
+        </div>
     </div>
 </div>
-
 <script>
 document.getElementById('alloc-form').addEventListener('submit', function () {
     const rows = [];
@@ -159,4 +195,59 @@ document.getElementById('alloc-form').addEventListener('submit', function () {
 });
 </script>
 {% endif %}
+
+{# ---- De-allocate modal ---- #}
+{% if object.status == "posted" and object.allocations.all %}
+<div class="modal fade" id="unallocate-modal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">{% trans "De-allocate Invoices" %}</h5>
+                <button type="button" class="close" data-dismiss="modal">&times;</button>
+            </div>
+            <form method="post" action="{% url 'purchases:vendor_payment_unallocate' object.pk %}" id="unalloc-form">
+                {% csrf_token %}
+                <input type="hidden" name="invoice_ids_json" id="unalloc-json">
+                <div class="modal-body">
+                    <p class="text-muted small">{% trans "Select allocations to release. No GL entry is created — only the allocation records are removed." %}</p>
+                    <table class="table table-sm">
+                        <thead><tr>
+                            <th><input type="checkbox" id="unalloc-all"></th>
+                            <th>{% trans "Invoice #" %}</th>
+                            <th class="text-right">{% trans "Allocated" %}</th>
+                        </tr></thead>
+                        <tbody>
+                            {% for alloc in object.allocations.all %}
+                            <tr>
+                                <td><input type="checkbox" class="unalloc-chk" value="{{ alloc.invoice.pk }}"></td>
+                                <td>
+                                    <a href="{% url 'purchases:invoice_detail' alloc.invoice.pk %}" target="_blank">
+                                        {{ alloc.invoice.invoice_number|default:alloc.invoice.pk }}
+                                    </a>
+                                </td>
+                                <td class="text-right">{{ alloc.allocated_amount|money:object.currency_code }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">{% trans "Close" %}</button>
+                    <button type="submit" class="btn btn-warning">{% trans "De-allocate Selected" %}</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<script>
+document.getElementById('unalloc-all').addEventListener('change', function() {
+    document.querySelectorAll('.unalloc-chk').forEach(c => c.checked = this.checked);
+});
+document.getElementById('unalloc-form').addEventListener('submit', function() {
+    const ids = Array.from(document.querySelectorAll('.unalloc-chk:checked')).map(c => c.value);
+    document.getElementById('unalloc-json').value = JSON.stringify(ids);
+});
+</script>
+{% endif %}
+
 {% endblock %}

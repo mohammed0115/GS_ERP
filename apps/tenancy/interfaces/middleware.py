@@ -36,14 +36,52 @@ _ORG_HEADER = "HTTP_X_ORGANIZATION"
 _BRANCH_HEADER = "HTTP_X_BRANCH"
 
 
+def _authenticate_jwt(request: HttpRequest) -> Any | None:
+    """Extract and validate a Bearer JWT token, returning the User or None.
+
+    Django's AuthenticationMiddleware only handles session auth, so JWT tokens
+    (used by the REST API) leave request.user as AnonymousUser at middleware
+    time. This helper resolves the user from the token so TenantContextMiddleware
+    can install the correct TenantContext before the DRF view runs.
+    """
+    auth_header = request.META.get("HTTP_AUTHORIZATION", "")
+    if not auth_header.startswith("Bearer "):
+        return None
+    token_str = auth_header[7:].strip()
+    try:
+        from rest_framework_simplejwt.tokens import AccessToken
+
+        token = AccessToken(token_str)
+        user_id = token.get("user_id")
+        if user_id is None:
+            return None
+        from apps.users.infrastructure.models import User
+
+        return User.objects.filter(pk=user_id, is_active=True).first()
+    except Exception:
+        return None
+
+
 class TenantContextMiddleware:
-    """Installs a `TenantContext` for authenticated requests."""
+    """Installs a `TenantContext` for authenticated requests.
+
+    Works for both session-authenticated (HTML views) and JWT-authenticated
+    (REST API) requests. For JWT requests Django's AuthenticationMiddleware
+    hasn't run yet, so we decode the token ourselves here.
+    """
 
     def __init__(self, get_response: Callable[[HttpRequest], HttpResponse]) -> None:
         self.get_response = get_response
 
     def __call__(self, request: HttpRequest) -> HttpResponse:
         user = getattr(request, "user", None)
+
+        # For JWT API requests, request.user is still AnonymousUser at this
+        # point because DRF authentication runs inside the view, not here.
+        # Decode the Bearer token early so we can set the tenant context.
+        if user is None or not getattr(user, "is_authenticated", False):
+            user = _authenticate_jwt(request)
+
         if user is None or not getattr(user, "is_authenticated", False):
             # No tenant to install; leave `current()` as None so tenant-scoped
             # reads fail closed if they are attempted.

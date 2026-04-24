@@ -30,6 +30,20 @@ from apps.finance.infrastructure.models import (
 from common.forms import BootstrapFormMixin
 
 
+def _org_currency() -> str:
+    """Return the active organization's functional currency code, defaulting to SAR."""
+    from apps.tenancy.domain import context as tenant_context
+    from apps.tenancy.infrastructure.models import Organization
+    ctx = tenant_context.current()
+    if ctx is None:
+        return "SAR"
+    try:
+        org = Organization.objects.get(pk=ctx.organization_id)
+        return org.default_currency_code or "SAR"
+    except Organization.DoesNotExist:
+        return "SAR"
+
+
 # ---------------------------------------------------------------------------
 # Account — full CRUD
 # ---------------------------------------------------------------------------
@@ -232,24 +246,27 @@ class FiscalYearCloseView(LoginRequiredMixin, OrgPermissionRequiredMixin, FormVi
         from apps.finance.infrastructure.fiscal_year_models import FiscalYear, FiscalYearStatus
         from django.shortcuts import get_object_or_404
         fy = get_object_or_404(FiscalYear, pk=pk)
-        if fy.status == FiscalYearStatus.OPEN:
-            fy.status = FiscalYearStatus.CLOSED
-            event_type = "fiscal_year.closed"
-            msg = f"Fiscal year '{fy.name}' has been closed."
-        else:
-            fy.status = FiscalYearStatus.OPEN
-            event_type = "fiscal_year.reopened"
-            msg = f"Fiscal year '{fy.name}' has been reopened."
+        # C-3: FiscalYear may only be closed (OPEN → CLOSED) via this form.
+        # Reopening requires going through the controlled ReopenPeriodView workflow
+        # which reverses closing entries and resets checklist state.
+        if fy.status != FiscalYearStatus.OPEN:
+            messages.error(
+                request,
+                f"Fiscal year '{fy.name}' is already closed. "
+                "To reopen, use the Reopen Period workflow for each period.",
+            )
+            return redirect("finance:fiscal_year_list")
+        fy.status = FiscalYearStatus.CLOSED
         fy.save(update_fields=["status", "updated_at"])
         record_audit_event(
-            event_type=event_type,
+            event_type="fiscal_year.closed",
             object_type="FiscalYear",
             object_id=fy.pk,
             actor_id=request.user.pk if request.user.is_authenticated else None,
-            summary=msg,
+            summary=f"Fiscal year '{fy.name}' has been closed.",
             payload={"name": fy.name, "status": fy.status},
         )
-        messages.success(request, msg)
+        messages.success(request, f"Fiscal year '{fy.name}' has been closed.")
         return redirect("finance:fiscal_year_list")
 
 
@@ -285,7 +302,7 @@ class JournalEntryCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, For
     def get(self, request, *args, **kwargs):
         from apps.finance.infrastructure.models import Account
         accounts = list(Account.objects.filter(is_active=True).order_by("code").values("id", "code", "name"))
-        return self.render_to_response({"accounts": accounts})
+        return self.render_to_response({"accounts": accounts, "org_currency": _org_currency()})
 
     def post(self, request, *args, **kwargs):
         from datetime import date as date_cls
@@ -551,6 +568,7 @@ class ClosePeriodView(LoginRequiredMixin, View):
         return render(request, self.template_name, {
             "period": period,
             "equity_accounts": equity_accounts,
+            "org_currency": _org_currency(),
         })
 
     def post(self, request, period_pk):
@@ -599,11 +617,23 @@ class ReopenPeriodView(LoginRequiredMixin, View):
             messages.error(request, "A reason for reopening is required.")
             return redirect("finance:fiscal_year_list")
 
+        force = request.POST.get("force", "").lower() in ("1", "true", "yes")
+        if force and not (
+            request.user.is_superuser
+            or request.user.has_perm("finance.force_reopen_period")
+        ):
+            messages.error(
+                request,
+                "force=True requires CFO / super-admin privilege (finance.force_reopen_period).",
+            )
+            return redirect("finance:fiscal_year_list")
+
         try:
             ReopenFiscalPeriod().execute(
                 ReopenFiscalPeriodCommand(
                     period_id=period.pk,
                     reason=reason,
+                    force=force,
                     actor_id=request.user.pk,
                 )
             )

@@ -77,7 +77,8 @@
                         <button class="btn btn-xs btn-outline-primary"
                                 data-toggle="modal" data-target="#matchModal"
                                 data-line-pk="{{ line.pk }}"
-                                data-stmt-pk="{{ statement.pk }}">
+                                data-stmt-pk="{{ statement.pk }}"
+                                data-match-url="{% url 'treasury_web:bank_statement_match_line' stmt_pk=statement.pk line_pk=line.pk %}">
                             {% trans "Match" %}
                         </button>
                         {% endif %}
@@ -129,9 +130,7 @@
 <script>
 $('#matchModal').on('show.bs.modal', function(e) {
     var btn = $(e.relatedTarget);
-    var linePk = btn.data('line-pk');
-    var stmtPk = btn.data('stmt-pk');
-    var url = '/treasury/bank-statements/' + stmtPk + '/lines/' + linePk + '/match/';
+    var url = btn.data('match-url');
     $('#matchForm').attr('action', url);
 });
 </script>

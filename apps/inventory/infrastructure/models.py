@@ -173,8 +173,8 @@ class StockOnHand(TenantOwnedModel, TimestampedModel):
         db_table = "inventory_stock_on_hand"
         constraints = [
             models.UniqueConstraint(
-                fields=("product", "warehouse"),
-                name="inventory_soh_unique_product_warehouse",
+                fields=("organization", "product", "warehouse"),
+                name="inventory_soh_unique_product_warehouse_per_org",
             ),
             models.CheckConstraint(
                 condition=models.Q(quantity__gte=0),

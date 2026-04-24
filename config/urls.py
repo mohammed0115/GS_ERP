@@ -33,6 +33,7 @@ urlpatterns = [
 
     # --- API (JSON) ---
     path("api/auth/", include("apps.users.interfaces.http.urls")),
+    path("api/crm/", include("apps.crm.interfaces.api.urls", namespace="crm_api")),
     path("api/sales/", include("apps.sales.interfaces.api.urls", namespace="sales_api")),
     path("api/purchases/", include("apps.purchases.interfaces.api.urls", namespace="purchases_api")),
     path("api/treasury/", include("apps.treasury.interfaces.api.urls", namespace="treasury_api")),
@@ -40,6 +41,7 @@ urlpatterns = [
     path("api/catalog/", include("apps.catalog.interfaces.api.urls", namespace="catalog_api")),
     path("api/finance/", include("apps.finance.interfaces.api.urls", namespace="finance_api")),
     path("api/intelligence/", include("apps.intelligence.interfaces.api.urls", namespace="intelligence_api")),
+    path("api/zatca/",        include("apps.zatca.interfaces.api.urls",        namespace="zatca")),
 
     # --- HTML (server-rendered templates) ---
     path("", include("apps.dashboard.urls")),

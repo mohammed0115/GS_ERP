@@ -47,7 +47,7 @@
                     <td>{{ ba.bank_name }}</td>
                     <td>{{ ba.account_name }}</td>
                     <td>{{ ba.currency_code }}</td>
-                    <td class="text-right">{{ ba.current_balance|erp_money }}</td>
+                    <td class="text-right">{{ ba.computed_balance|erp_money }}</td>
                     <td>
                         {% if ba.is_active %}
                             <span class="badge badge-success">{% trans "Active" %}</span>

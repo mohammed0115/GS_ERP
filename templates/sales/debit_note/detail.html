@@ -54,11 +54,11 @@
             <div class="card-body">
                 <dl class="row mb-0">
                     <dt class="col-sm-5">{% trans "Subtotal" %}</dt>
-                    <dd class="col-sm-5">{{ object.subtotal|money:object.currency_code }}</dd>
+                    <dd class="col-sm-7">{{ object.subtotal|money:object.currency_code }}</dd>
                     <dt class="col-sm-5">{% trans "Tax" %}</dt>
-                    <dd class="col-sm-5">{{ object.tax_total|money:object.currency_code }}</dd>
+                    <dd class="col-sm-7">{{ object.tax_total|money:object.currency_code }}</dd>
                     <dt class="col-sm-5 font-weight-bold">{% trans "Grand Total" %}</dt>
-                    <dd class="col-sm-5 font-weight-bold">{{ object.grand_total|money:object.currency_code }}</dd>
+                    <dd class="col-sm-7 font-weight-bold">{{ object.grand_total|money:object.currency_code }}</dd>
                 </dl>
             </div>
         </div>

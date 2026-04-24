@@ -72,7 +72,18 @@ class Customer(TenantOwnedModel, TimestampedModel, AuditMetaMixin):
     state = models.CharField(max_length=128, blank=True, default="")
     postal_code = models.CharField(max_length=32, blank=True, default="")
     country_code = models.CharField(max_length=2, blank=True, default="")
-    tax_number = models.CharField(max_length=64, blank=True, default="")
+    tax_number = models.CharField(
+        max_length=64, blank=True, default="",
+        help_text="VAT registration / tax ID. For SA: 15-digit ZATCA number.",
+    )
+    building_number = models.CharField(
+        max_length=16, blank=True, default="",
+        help_text="Building/unit number — required by ZATCA XML buyer address.",
+    )
+    commercial_registration_number = models.CharField(
+        max_length=64, blank=True, default="",
+        help_text="Commercial registration number — required for ZATCA B2B invoices.",
+    )
     note = models.TextField(blank=True, default="")
 
     # Financial profile (Phase 2)
@@ -153,6 +164,10 @@ class Supplier(TenantOwnedModel, TimestampedModel, AuditMetaMixin):
     postal_code = models.CharField(max_length=32, blank=True, default="")
     country_code = models.CharField(max_length=2, blank=True, default="")
     tax_number = models.CharField(max_length=64, blank=True, default="")
+    is_1099_vendor = models.BooleanField(
+        default=False,
+        help_text="USA: True if this supplier requires a 1099-NEC/1099-MISC at year-end.",
+    )
     note = models.TextField(blank=True, default="")
 
     # Phase 3 financial profile

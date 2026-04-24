@@ -106,6 +106,14 @@ class PurchaseInvoice(TenantOwnedModel, TimestampedModel, AuditMetaMixin):
     )
 
     notes = models.TextField(blank=True, default="")
+    withholding_tax_percent = models.DecimalField(
+        max_digits=6, decimal_places=4, default=0,
+        help_text="Withholding tax rate applied at payment (e.g. 5 for 5%). 0 = none.",
+    )
+    withholding_tax_amount = models.DecimalField(
+        max_digits=18, decimal_places=4, default=0,
+        help_text="Computed withholding tax amount deducted from payment.",
+    )
 
     fiscal_period = models.ForeignKey(
         "finance.AccountingPeriod",
@@ -140,6 +148,11 @@ class PurchaseInvoice(TenantOwnedModel, TimestampedModel, AuditMetaMixin):
             models.Index(fields=("organization", "status", "due_date")),
         ]
         constraints = [
+            models.UniqueConstraint(
+                fields=("organization", "invoice_number"),
+                condition=models.Q(invoice_number__gt=""),
+                name="purchases_pinv_unique_number_per_org",
+            ),
             models.CheckConstraint(
                 condition=models.Q(due_date__gte=models.F("invoice_date")),
                 name="purchases_pinv_due_date_after_invoice_date",
@@ -186,6 +199,25 @@ class PurchaseInvoiceLine(TenantOwnedModel, TimestampedModel):
         related_name="purchase_invoice_lines",
         null=True, blank=True,
         help_text="Expense/purchases GL account for this line.",
+    )
+
+    # USA capital-asset tracking (P3-3)
+    is_capitalized = models.BooleanField(
+        default=False,
+        help_text="True = capital expenditure (depreciated over time); False = immediate expense.",
+    )
+    useful_life_months = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        help_text="Useful life in months for straight-line depreciation. Required when is_capitalized=True.",
+    )
+    depreciation_method = models.CharField(
+        max_length=20, blank=True, default="",
+        choices=[
+            ("straight_line", "Straight-Line"),
+            ("declining_balance", "Declining Balance"),
+            ("sum_of_years", "Sum-of-Years-Digits"),
+        ],
+        help_text="Depreciation method. Required when is_capitalized=True.",
     )
 
     class Meta:
@@ -241,6 +273,25 @@ class VendorPayment(TenantOwnedModel, TimestampedModel, AuditMetaMixin):
     )
     reference = models.CharField(max_length=64, blank=True, default="")
     notes = models.TextField(blank=True, default="")
+    withholding_tax_percent = models.DecimalField(
+        max_digits=6, decimal_places=4, default=0,
+        help_text="Withholding rate applied to this payment (overrides invoice rate if set).",
+    )
+    withholding_tax_amount = models.DecimalField(
+        max_digits=18, decimal_places=4, default=0,
+        help_text="Amount withheld from this payment and remitted to tax authority.",
+    )
+    withholding_tax_account = models.ForeignKey(
+        "finance.Account",
+        on_delete=models.PROTECT,
+        related_name="withholding_vendor_payments",
+        null=True, blank=True,
+        help_text="Withholding Tax Payable GL account. Required when withholding_tax_amount > 0.",
+    )
+    exchange_rate = models.DecimalField(
+        max_digits=18, decimal_places=6, default=1,
+        help_text="Rate of this payment's currency to the org's functional currency.",
+    )
 
     status = models.CharField(
         max_length=16,

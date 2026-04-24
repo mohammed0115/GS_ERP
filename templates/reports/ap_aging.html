@@ -41,7 +41,7 @@
                     <td class="text-right">{{ row.not_due|money:currency }}</td>
                     <td class="text-right {% if row.days_1_30 > 0 %}text-warning{% endif %}">{{ row.days_1_30|money:currency }}</td>
                     <td class="text-right {% if row.days_31_60 > 0 %}text-warning{% endif %}">{{ row.days_31_60|money:currency }}</td>
-                    <td class="text-right {% if row.days_61_90 > 0 %}text-danger{% endif %}">{{ row.days_61_90|money:currency }}</td>
+                    <td class="text-right {% if row.days_61_90 > 0 %}text-orange{% endif %}">{{ row.days_61_90|money:currency }}</td>
                     <td class="text-right {% if row.over_90 > 0 %}text-danger font-weight-bold{% endif %}">{{ row.over_90|money:currency }}</td>
                     <td class="text-right font-weight-bold">{{ row.total|money:currency }}</td>
                 </tr>

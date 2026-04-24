@@ -28,8 +28,8 @@
                 <div class="col-md-2">
                     <label class="font-weight-bold">{% trans "Currency" %}</label>
                     <input type="text" name="currency_code" class="form-control"
-                           value="{{ post.currency_code|default:'SAR' }}"
-                           maxlength="3" placeholder="SAR">
+                           value="{{ post.currency_code|default:org_currency }}"
+                           maxlength="3" placeholder="{{ org_currency }}">
                 </div>
                 <div class="col-md-4">
                     <label class="font-weight-bold">{% trans "Memo" %}</label>

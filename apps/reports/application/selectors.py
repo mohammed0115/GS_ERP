@@ -59,7 +59,7 @@ class WarehouseStockRow:
     warehouse_id: int
     warehouse_code: str
     on_hand: Decimal
-    uom_code: str
+    uom_code: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +77,7 @@ class BestSellerRow:
     product_code: str
     quantity_sold: Decimal
     revenue: Decimal
+    product_name: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,6 +89,16 @@ class ProfitLossRow:
     expenses: Decimal
     gross_profit: Decimal
     net_profit: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class ProfitAndLossRow:
+    """Per-account P&L row (account-level breakdown)."""
+    account_id: int
+    account_code: str
+    account_name: str
+    account_type: str   # "revenue" | "expense" | "cogs"
+    balance: Decimal    # positive = revenue contribution; negative = expense
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +116,14 @@ class DueReceivableRow:
     customer_code: str
     customer_name: str
     total_due: Decimal
+    invoice_id: int | None = None
+    invoice_number: str = ""
+    invoice_date: date | None = None
+    due_date: date | None = None
+    total_amount: Decimal = Decimal("0")
+    allocated_amount: Decimal = Decimal("0")
+    currency_code: str = ""
+    days_overdue: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -320,6 +339,49 @@ def daily_sales(
     ]
 
 
+def monthly_sales(
+    *, year: int, warehouse_id: int | None = None,
+) -> list[DailySalesRow]:
+    """Per-month totals for the given year (returns DailySalesRow with sale_date=first of month)."""
+    from apps.sales.infrastructure.models import Sale
+    from apps.sales.domain.entities import SaleStatus
+    import datetime as _dt
+
+    qs = Sale.objects.filter(
+        sale_date__year=year,
+        status=SaleStatus.POSTED.value,
+    )
+    if warehouse_id is not None:
+        qs = qs.filter(lines__warehouse_id=warehouse_id).distinct()
+
+    agg = (
+        qs.values("sale_date__month")
+          .annotate(
+              total_sales=Sum("grand_total"),
+              total_qty=Sum("total_quantity"),
+              order_count=Count("id"),
+          )
+          .order_by("sale_date__month")
+    )
+    return [
+        DailySalesRow(
+            sale_date=_dt.date(year, row["sale_date__month"], 1),
+            warehouse_id=warehouse_id,
+            total_sales=row["total_sales"] or Decimal("0"),
+            total_qty=row["total_qty"] or Decimal("0"),
+            order_count=row["order_count"],
+        )
+        for row in agg
+    ]
+
+
+def sales_report(
+    *, date_from: date, date_to: date,
+) -> list[BestSellerRow]:
+    """Product-level sales summary for a date range (alias for best_sellers with higher limit)."""
+    return best_sellers(date_from=date_from, date_to=date_to, limit=1000)
+
+
 def best_sellers(
     *, date_from: date, date_to: date, limit: int = 20,
 ) -> list[BestSellerRow]:
@@ -356,11 +418,12 @@ def profit_and_loss(*, date_from: date, date_to: date) -> ProfitLossRow:
     """
     Aggregate P&L from posted journal lines in the period.
 
-    Revenue = Σ credits on INCOME accounts
-    Expenses = Σ debits on EXPENSE accounts
-    COGS is a subset of EXPENSE with account.code starting 'COGS' by
-    convention — chart-of-account-dependent. Callers can refine this by
-    querying specific account IDs in a follow-up selector.
+    All amounts are converted to the org's functional currency using the
+    functional_credit / functional_debit fields on JournalLine (which store
+    debit/credit × exchange_rate at posting time).
+
+    Revenue = Σ functional_credits on INCOME accounts
+    Expenses = Σ functional_debits on EXPENSE accounts
     """
     from apps.finance.infrastructure.models import JournalLine, Account
     from apps.finance.domain.entities import AccountType
@@ -372,19 +435,37 @@ def profit_and_loss(*, date_from: date, date_to: date) -> ProfitLossRow:
     )
     revenue = (
         base.filter(account__account_type=AccountType.INCOME.value)
-        .aggregate(v=Sum(F("credit") - F("debit")))["v"]
+        .aggregate(v=Sum(F("functional_credit") - F("functional_debit")))["v"]
     ) or Decimal("0")
     expenses = (
         base.filter(account__account_type=AccountType.EXPENSE.value)
-        .aggregate(v=Sum(F("debit") - F("credit")))["v"]
+        .aggregate(v=Sum(F("functional_debit") - F("functional_credit")))["v"]
     ) or Decimal("0")
-    cogs = (
-        base.filter(
-            account__account_type=AccountType.EXPENSE.value,
-            account__code__istartswith="COGS",
+
+    # C-8: identify COGS accounts via AccountReportMapping first (section name
+    # contains "cost"), then fall back to account-code prefix convention.
+    from apps.finance.infrastructure.report_models import AccountReportMapping
+    cogs_acct_ids = list(
+        AccountReportMapping.objects
+        .filter(
+            report_line__report_type="income_statement",
+            report_line__section__icontains="cost",
         )
-        .aggregate(v=Sum(F("debit") - F("credit")))["v"]
-    ) or Decimal("0")
+        .values_list("account_id", flat=True)
+    )
+    if cogs_acct_ids:
+        cogs = (
+            base.filter(account_id__in=cogs_acct_ids)
+            .aggregate(v=Sum(F("functional_debit") - F("functional_credit")))["v"]
+        ) or Decimal("0")
+    else:
+        cogs = (
+            base.filter(
+                account__account_type=AccountType.EXPENSE.value,
+                account__code__istartswith="COGS",
+            )
+            .aggregate(v=Sum(F("functional_debit") - F("functional_credit")))["v"]
+        ) or Decimal("0")
 
     gross = revenue - cogs
     net = revenue - expenses
@@ -551,10 +632,9 @@ def trial_balance(
 
     debit_normal = {AccountType.ASSET.value, AccountType.EXPENSE.value}
 
-    # Opening balances (lines *before* date_from, if set).
+    # Opening balances (lines *before* date_from, if set) — in functional currency.
     opening_by_acct: dict[int, Decimal] = {}
     if date_from_eff is not None:
-        from datetime import timedelta
         pre_qs = (
             JournalLine.objects
             .filter(
@@ -565,7 +645,7 @@ def trial_balance(
                 "account_id",
                 atype=F("account__account_type"),
             )
-            .annotate(dr=Sum("debit"), cr=Sum("credit"))
+            .annotate(dr=Sum("functional_debit"), cr=Sum("functional_credit"))
         )
         for r in pre_qs:
             dr, cr = r["dr"] or Decimal("0"), r["cr"] or Decimal("0")
@@ -589,7 +669,10 @@ def trial_balance(
             name=F("account__name"),
             atype=F("account__account_type"),
         )
-        .annotate(period_debit=Sum("debit"), period_credit=Sum("credit"))
+        .annotate(
+            period_debit=Sum("functional_debit"),
+            period_credit=Sum("functional_credit"),
+        )
         .order_by("code")
     )
 
@@ -646,7 +729,10 @@ def balance_sheet(*, as_of: date) -> list[BalanceSheetRow]:
             code=F("account__code"),
             name=F("account__name"),
         )
-        .annotate(total_debit=Sum("debit"), total_credit=Sum("credit"))
+        .annotate(
+            total_debit=Sum("functional_debit"),
+            total_credit=Sum("functional_credit"),
+        )
         .order_by("account__account_type", "code")
     )
 
@@ -668,13 +754,13 @@ def balance_sheet(*, as_of: date) -> list[BalanceSheetRow]:
         JournalLine.objects
         .filter(entry__is_posted=True, entry__entry_date__lte=as_of,
                 account__account_type=AccountType.INCOME.value)
-        .aggregate(v=Sum(F("credit") - F("debit")))["v"]
+        .aggregate(v=Sum(F("functional_credit") - F("functional_debit")))["v"]
     ) or Decimal("0")
     expense_total = (
         JournalLine.objects
         .filter(entry__is_posted=True, entry__entry_date__lte=as_of,
                 account__account_type=AccountType.EXPENSE.value)
-        .aggregate(v=Sum(F("debit") - F("credit")))["v"]
+        .aggregate(v=Sum(F("functional_debit") - F("functional_credit")))["v"]
     ) or Decimal("0")
     net_pl = income_total - expense_total
     rows.append(BalanceSheetRow(
@@ -683,6 +769,18 @@ def balance_sheet(*, as_of: date) -> list[BalanceSheetRow]:
         account_name="Net Profit / (Loss)",
         balance=net_pl,
     ))
+
+    # P2-5: verify Assets = Liabilities + Equity
+    import logging as _logging
+    _bs_log = _logging.getLogger(__name__)
+    total_assets = sum(r.balance for r in rows if r.section == AccountType.ASSET.value)
+    total_liab_equity = sum(r.balance for r in rows if r.section != AccountType.ASSET.value)
+    if abs(total_assets - total_liab_equity) > Decimal("0.01"):
+        _bs_log.warning(
+            "Balance sheet out of balance: Assets=%.2f  Liabilities+Equity=%.2f  diff=%.4f",
+            total_assets, total_liab_equity, total_assets - total_liab_equity,
+        )
+
     return rows
 
 
@@ -862,7 +960,13 @@ def ar_aging(*, as_of: date) -> list[ARAgingRow]:
     qs = (
         SalesInvoice.objects
         .filter(
-            status__in=[SalesInvoiceStatus.ISSUED, SalesInvoiceStatus.PARTIALLY_PAID],
+            # Include CREDITED defensively: BUG-002 fix means CREDITED always
+            # has open_amount=0, but the loop skips zero-balance rows anyway.
+            status__in=[
+                SalesInvoiceStatus.ISSUED,
+                SalesInvoiceStatus.PARTIALLY_PAID,
+                SalesInvoiceStatus.CREDITED,
+            ],
             invoice_date__lte=as_of,
         )
         .select_related("customer")
@@ -2039,13 +2143,16 @@ def _income_statement_mapped(
     date_to: date,
     currency_code: str,
 ) -> IncomeStatement:
-    """Income statement using configured ReportLine → AccountReportMapping structure."""
+    """Income statement using configured ReportLine → AccountReportMapping structure.
+
+    Revenue/expense classification is determined by the account_type of mapped
+    accounts (INCOME → revenue; EXPENSE → expenses) rather than by fragile
+    section-name string matching.  Subtotal lines without mapped accounts fall
+    back to keyword matching on section names as a last resort.
+    """
     from django.db.models import Sum as _Sum
-    from apps.finance.infrastructure.models import JournalLine
-    from apps.finance.infrastructure.report_models import (
-        AccountReportMapping,
-        ReportLine,
-    )
+    from apps.finance.infrastructure.models import Account, AccountTypeChoices, JournalLine
+    from apps.finance.infrastructure.report_models import AccountReportMapping, ReportLine
 
     report_lines = (
         ReportLine.objects
@@ -2054,9 +2161,23 @@ def _income_statement_mapped(
         .order_by("sort_order")
     )
 
+    # Pre-load account types for all mapped accounts in one query
+    all_mapped_ids = list(
+        AccountReportMapping.objects
+        .filter(report_line__report_type="income_statement")
+        .values_list("account_id", flat=True)
+    )
+    account_types: dict[int, str] = {
+        a["pk"]: a["account_type"]
+        for a in Account.objects.filter(pk__in=all_mapped_ids).values("pk", "account_type")
+    }
+
     lines_out: list[IncomeStatementLine] = []
     total_revenue = Decimal("0")
     total_expenses = Decimal("0")
+
+    _REVENUE_KW = ("revenue", "income", "sales", "turnover")
+    _EXPENSE_KW = ("expense", "cost", "opex", "operating", "depreciation", "amortis")
 
     for rl in report_lines:
         acct_ids = list(rl.account_mappings.values_list("account_id", flat=True))
@@ -2077,10 +2198,20 @@ def _income_statement_mapped(
         if rl.negate:
             net = -net
 
-        if rl.section.lower() in ("revenue", "income"):
-            total_revenue += net
-        elif rl.section.lower() in ("expenses", "cost of sales", "operating expenses"):
-            total_expenses += net
+        # Classify by account_type of the mapped accounts (primary)
+        if not rl.is_subtotal and acct_ids:
+            line_acct_types = {account_types.get(aid) for aid in acct_ids}
+            if AccountTypeChoices.INCOME in line_acct_types:
+                total_revenue += net
+            elif AccountTypeChoices.EXPENSE in line_acct_types:
+                total_expenses += net
+        else:
+            # Subtotal / unmapped lines: fall back to section keyword matching
+            sec = rl.section.lower()
+            if any(kw in sec for kw in _REVENUE_KW):
+                total_revenue += net
+            elif any(kw in sec for kw in _EXPENSE_KW):
+                total_expenses += net
 
         lines_out.append(IncomeStatementLine(
             section=rl.section,
@@ -2130,58 +2261,63 @@ def adjusted_trial_balance(
     """
     Adjusted trial balance: opening balances + period movements = closing balances.
 
-    Adjusted means it includes both regular posted entries AND period-end
-    adjustment entries (AdjustmentEntry-linked journal entries).
-    All posted journal entries are included (adjusting or otherwise).
+    Uses three aggregation queries (opening, period, account lookup) instead of
+    N+1 per-account queries — safe for charts of accounts of any size.
     """
     from django.db.models import Sum as _Sum
     from apps.finance.infrastructure.models import Account, JournalLine
-
-    accounts = (
-        Account.objects
-        .filter(is_postable=True, is_active=True)
-        .order_by("code")
-    )
-
-    def _balance(account_id: int, date_end: date) -> tuple[Decimal, Decimal]:
-        """Returns (cumulative_debit, cumulative_credit) up to date_end (inclusive)."""
-        agg = (
-            JournalLine.objects
-            .filter(
-                account_id=account_id,
-                entry__entry_date__lte=date_end,
-                entry__is_posted=True,
-            )
-            .aggregate(dr=_Sum("debit"), cr=_Sum("credit"))
-        )
-        return (agg["dr"] or Decimal("0"), agg["cr"] or Decimal("0"))
-
-    def _period_balance(account_id: int) -> tuple[Decimal, Decimal]:
-        """Returns (period_debit, period_credit) between date_from and date_to."""
-        agg = (
-            JournalLine.objects
-            .filter(
-                account_id=account_id,
-                entry__entry_date__gte=date_from,
-                entry__entry_date__lte=date_to,
-                entry__is_posted=True,
-            )
-            .aggregate(dr=_Sum("debit"), cr=_Sum("credit"))
-        )
-        return (agg["dr"] or Decimal("0"), agg["cr"] or Decimal("0"))
-
     import datetime as _dt
+
     day_before = date_from - _dt.timedelta(days=1)
 
+    # Query 1: cumulative posted lines up to day_before
+    pre_qs = (
+        JournalLine.objects
+        .filter(entry__is_posted=True, entry__entry_date__lte=day_before)
+        .values("account_id")
+        .annotate(dr=_Sum("debit"), cr=_Sum("credit"))
+    )
+    opening: dict[int, tuple[Decimal, Decimal]] = {
+        r["account_id"]: (r["dr"] or Decimal("0"), r["cr"] or Decimal("0"))
+        for r in pre_qs
+    }
+
+    # Query 2: posted lines in the period [date_from, date_to]
+    period_qs = (
+        JournalLine.objects
+        .filter(
+            entry__is_posted=True,
+            entry__entry_date__gte=date_from,
+            entry__entry_date__lte=date_to,
+        )
+        .values("account_id")
+        .annotate(dr=_Sum("debit"), cr=_Sum("credit"))
+    )
+    period: dict[int, tuple[Decimal, Decimal]] = {
+        r["account_id"]: (r["dr"] or Decimal("0"), r["cr"] or Decimal("0"))
+        for r in period_qs
+    }
+
+    all_ids = set(opening.keys()) | set(period.keys())
+    if not all_ids:
+        return []
+
+    # Query 3: account metadata for all active postable accounts with activity
+    accounts = {
+        a.pk: a
+        for a in Account.objects
+        .filter(pk__in=all_ids, is_postable=True, is_active=True)
+        .order_by("code")
+    }
+
     rows: list[TrialBalanceLine] = []
-    for acct in accounts:
-        open_dr, open_cr = _balance(acct.pk, day_before)
-        prd_dr, prd_cr = _period_balance(acct.pk)
+    for acct in sorted(accounts.values(), key=lambda a: a.code):
+        open_dr, open_cr = opening.get(acct.pk, (Decimal("0"), Decimal("0")))
+        prd_dr, prd_cr = period.get(acct.pk, (Decimal("0"), Decimal("0")))
         close_dr = open_dr + prd_dr
         close_cr = open_cr + prd_cr
 
-        # Skip zero-balance accounts with no activity
-        if not any([open_dr, open_cr, prd_dr, prd_cr, close_dr, close_cr]):
+        if not any([open_dr, open_cr, prd_dr, prd_cr]):
             continue
 
         rows.append(TrialBalanceLine(
@@ -2198,3 +2334,310 @@ def adjusted_trial_balance(
         ))
 
     return rows
+
+
+# ---------------------------------------------------------------------------
+# Cash Flow Statement (indirect method)
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class CashFlowLine:
+    section: str    # "Operating" | "Investing" | "Financing" | "Summary"
+    label: str
+    amount: Decimal
+    is_subtotal: bool = False
+
+
+@dataclass(frozen=True)
+class CashFlowStatement:
+    date_from: date
+    date_to: date
+    currency_code: str
+    lines: list[CashFlowLine]
+    operating_total: Decimal
+    investing_total: Decimal
+    financing_total: Decimal
+    net_change: Decimal
+    opening_cash: Decimal
+    closing_cash: Decimal
+
+
+def cash_flow_statement(
+    *,
+    date_from: date,
+    date_to: date,
+    currency_code: str = "SAR",
+) -> CashFlowStatement:
+    """
+    Cash flow statement using the indirect method.
+
+    If `ReportLine` records with `report_type="cash_flow"` are configured and
+    mapped via `AccountReportMapping`, those mappings drive the classification.
+    Otherwise falls back to account-code prefix conventions:
+
+      11xx → Cash & Bank (opening/closing cash)
+      12xx → AR  (working-capital adjustment)
+      13xx → Inventory (working-capital adjustment)
+      21xx → AP  (working-capital adjustment)
+      15xx → Fixed Assets (investing)
+      25xx → Long-term Debt (financing)
+      3xxx → Equity (financing)
+
+    Configure `ReportLine` records to override these defaults for tenants with
+    different chart-of-accounts numbering schemes.
+    """
+    from apps.finance.infrastructure.report_models import AccountReportMapping
+    if AccountReportMapping.objects.filter(report_line__report_type="cash_flow").exists():
+        return _cash_flow_mapped(date_from, date_to, currency_code)
+    return _cash_flow_prefix(date_from, date_to, currency_code)
+
+
+def _cash_flow_prefix(
+    date_from: date,
+    date_to: date,
+    currency_code: str,
+) -> CashFlowStatement:
+    """Fallback: classify cash-flow lines by account-code prefix conventions."""
+    from django.db.models import Sum as _Sum
+    from apps.finance.infrastructure.models import JournalLine, AccountTypeChoices
+    import datetime as _dt
+
+    ZERO = Decimal("0")
+
+    def _net_dr_cr(account_type: str, code_prefix: str, d_from: date, d_to: date) -> Decimal:
+        agg = (
+            JournalLine.objects.filter(
+                account__account_type=account_type,
+                account__code__startswith=code_prefix,
+                entry__is_posted=True,
+                entry__entry_date__gte=d_from,
+                entry__entry_date__lte=d_to,
+            ).aggregate(dr=_Sum("debit"), cr=_Sum("credit"))
+        )
+        return (agg["dr"] or ZERO) - (agg["cr"] or ZERO)
+
+    def _cumulative(account_type: str, code_prefix: str, as_of: date) -> Decimal:
+        agg = (
+            JournalLine.objects.filter(
+                account__account_type=account_type,
+                account__code__startswith=code_prefix,
+                entry__is_posted=True,
+                entry__entry_date__lte=as_of,
+            ).aggregate(dr=_Sum("debit"), cr=_Sum("credit"))
+        )
+        return (agg["dr"] or ZERO) - (agg["cr"] or ZERO)
+
+    day_before = date_from - _dt.timedelta(days=1)
+
+    rev_agg = (
+        JournalLine.objects.filter(
+            account__account_type=AccountTypeChoices.INCOME,
+            entry__is_posted=True,
+            entry__entry_date__gte=date_from,
+            entry__entry_date__lte=date_to,
+        ).aggregate(dr=_Sum("debit"), cr=_Sum("credit"))
+    )
+    revenue = (rev_agg["cr"] or ZERO) - (rev_agg["dr"] or ZERO)
+
+    exp_agg = (
+        JournalLine.objects.filter(
+            account__account_type=AccountTypeChoices.EXPENSE,
+            entry__is_posted=True,
+            entry__entry_date__gte=date_from,
+            entry__entry_date__lte=date_to,
+        ).aggregate(dr=_Sum("debit"), cr=_Sum("credit"))
+    )
+    expenses = (exp_agg["dr"] or ZERO) - (exp_agg["cr"] or ZERO)
+    net_income = revenue - expenses
+
+    ar_change  = _net_dr_cr(AccountTypeChoices.ASSET,     "12", date_from, date_to)
+    inv_change = _net_dr_cr(AccountTypeChoices.ASSET,     "13", date_from, date_to)
+    ap_change  = _net_dr_cr(AccountTypeChoices.LIABILITY, "21", date_from, date_to)
+
+    ar_adj  = -ar_change
+    inv_adj = -inv_change
+    ap_adj  = -ap_change
+
+    operating_total = net_income + ar_adj + inv_adj + ap_adj
+
+    fa_change = _net_dr_cr(AccountTypeChoices.ASSET, "15", date_from, date_to)
+    investing_total = -fa_change
+
+    lt_liab_change = _net_dr_cr(AccountTypeChoices.LIABILITY, "25", date_from, date_to)
+    equity_change  = _net_dr_cr(AccountTypeChoices.EQUITY,    "3",  date_from, date_to)
+    financing_total = (-lt_liab_change) + (-equity_change)
+
+    opening_cash = _cumulative(AccountTypeChoices.ASSET, "11", day_before)
+    closing_cash  = _cumulative(AccountTypeChoices.ASSET, "11", date_to)
+    net_change = closing_cash - opening_cash
+
+    lines: list[CashFlowLine] = [
+        CashFlowLine("Operating", "Net Income / (Loss)", net_income),
+        CashFlowLine("Operating", "Change in Accounts Receivable", ar_adj),
+        CashFlowLine("Operating", "Change in Inventory", inv_adj),
+        CashFlowLine("Operating", "Change in Accounts Payable", ap_adj),
+        CashFlowLine("Operating", "Net Cash from Operating Activities", operating_total, is_subtotal=True),
+        CashFlowLine("Investing", "Purchase / Sale of Fixed Assets", -fa_change),
+        CashFlowLine("Investing", "Net Cash from Investing Activities", investing_total, is_subtotal=True),
+        CashFlowLine("Financing", "Net Change in Long-term Debt", -lt_liab_change),
+        CashFlowLine("Financing", "Net Change in Equity", -equity_change),
+        CashFlowLine("Financing", "Net Cash from Financing Activities", financing_total, is_subtotal=True),
+        CashFlowLine("Summary", "Net Change in Cash", net_change, is_subtotal=True),
+        CashFlowLine("Summary", "Opening Cash Balance", opening_cash),
+        CashFlowLine("Summary", "Closing Cash Balance", closing_cash, is_subtotal=True),
+    ]
+
+    return CashFlowStatement(
+        date_from=date_from,
+        date_to=date_to,
+        currency_code=currency_code,
+        lines=lines,
+        operating_total=operating_total,
+        investing_total=investing_total,
+        financing_total=financing_total,
+        net_change=net_change,
+        opening_cash=opening_cash,
+        closing_cash=closing_cash,
+    )
+
+
+def _cash_flow_mapped(
+    date_from: date,
+    date_to: date,
+    currency_code: str,
+) -> CashFlowStatement:
+    """
+    Cash-flow statement driven by ReportLine / AccountReportMapping configuration.
+
+    Sections expected in ReportLine.section:
+      "Operating"  — net income line + working-capital items
+      "Investing"  — capex / disposals
+      "Financing"  — debt / equity movements
+      "Cash"       — opening/closing cash balances (account_type=asset)
+
+    The "Operating" section must contain exactly one line whose label contains
+    "income" or "profit" (case-insensitive); that line's amount is computed as
+    net income (revenue − expenses).  All other Operating lines use the mapped
+    accounts' net debit-credit movement, negated (increase in asset = cash used).
+    """
+    from django.db.models import Sum as _Sum
+    from apps.finance.infrastructure.models import JournalLine, AccountTypeChoices
+    from apps.finance.infrastructure.report_models import AccountReportMapping, ReportLine
+    import datetime as _dt
+
+    ZERO = Decimal("0")
+    day_before = date_from - _dt.timedelta(days=1)
+
+    def _period_net(account_ids: list[int]) -> Decimal:
+        if not account_ids:
+            return ZERO
+        agg = JournalLine.objects.filter(
+            account_id__in=account_ids,
+            entry__is_posted=True,
+            entry__entry_date__gte=date_from,
+            entry__entry_date__lte=date_to,
+        ).aggregate(dr=_Sum("debit"), cr=_Sum("credit"))
+        return (agg["dr"] or ZERO) - (agg["cr"] or ZERO)
+
+    def _cumulative_net(account_ids: list[int], as_of: date) -> Decimal:
+        if not account_ids:
+            return ZERO
+        agg = JournalLine.objects.filter(
+            account_id__in=account_ids,
+            entry__is_posted=True,
+            entry__entry_date__lte=as_of,
+        ).aggregate(dr=_Sum("debit"), cr=_Sum("credit"))
+        return (agg["dr"] or ZERO) - (agg["cr"] or ZERO)
+
+    # Pre-load all cash_flow ReportLines ordered by sort_order
+    report_lines = list(
+        ReportLine.objects.filter(report_type="cash_flow").order_by("sort_order", "id")
+    )
+    # Map report_line_id → list of account_ids
+    mappings: dict[int, list[int]] = {}
+    for m in AccountReportMapping.objects.filter(
+        report_line__report_type="cash_flow"
+    ).values("report_line_id", "account_id"):
+        mappings.setdefault(m["report_line_id"], []).append(m["account_id"])
+
+    # Compute net income for the Operating income line
+    rev_agg = JournalLine.objects.filter(
+        account__account_type=AccountTypeChoices.INCOME,
+        entry__is_posted=True,
+        entry__entry_date__gte=date_from,
+        entry__entry_date__lte=date_to,
+    ).aggregate(dr=_Sum("debit"), cr=_Sum("credit"))
+    exp_agg = JournalLine.objects.filter(
+        account__account_type=AccountTypeChoices.EXPENSE,
+        entry__is_posted=True,
+        entry__entry_date__gte=date_from,
+        entry__entry_date__lte=date_to,
+    ).aggregate(dr=_Sum("debit"), cr=_Sum("credit"))
+    net_income = (
+        ((rev_agg["cr"] or ZERO) - (rev_agg["dr"] or ZERO))
+        - ((exp_agg["dr"] or ZERO) - (exp_agg["cr"] or ZERO))
+    )
+
+    lines: list[CashFlowLine] = []
+    section_totals: dict[str, Decimal] = {}
+
+    for rl in report_lines:
+        section = rl.section or "Other"
+        acct_ids = mappings.get(rl.pk, [])
+
+        if rl.is_subtotal:
+            amount = section_totals.get(section, ZERO)
+            lines.append(CashFlowLine(section, rl.label, amount, is_subtotal=True))
+            continue
+
+        # Determine line amount
+        label_lower = rl.label.lower()
+        if section.lower() == "operating" and any(
+            kw in label_lower for kw in ("income", "profit", "loss", "earnings")
+        ):
+            amount = net_income
+        elif section.lower() == "cash":
+            # Opening / closing cash balance
+            if "opening" in label_lower:
+                amount = _cumulative_net(acct_ids, day_before)
+            else:
+                amount = _cumulative_net(acct_ids, date_to)
+        else:
+            raw = _period_net(acct_ids)
+            # Asset increase = cash used (negative); liability/equity increase = cash provided
+            if acct_ids:
+                from apps.finance.infrastructure.models import Account
+                first_acct = Account.objects.filter(pk__in=acct_ids).values("account_type").first()
+                acct_type = first_acct["account_type"] if first_acct else ""
+            else:
+                acct_type = ""
+            amount = -raw if acct_type == AccountTypeChoices.ASSET else raw
+            if rl.negate:
+                amount = -amount
+
+        section_totals[section] = section_totals.get(section, ZERO) + amount
+        lines.append(CashFlowLine(section, rl.label, amount))
+
+    # Extract summary totals
+    operating_total = section_totals.get("Operating", ZERO)
+    investing_total = section_totals.get("Investing", ZERO)
+    financing_total = section_totals.get("Financing", ZERO)
+
+    # Opening/closing cash from "Cash" section lines
+    cash_lines = [l for l in lines if l.section == "Cash" and not l.is_subtotal]
+    opening_cash = cash_lines[0].amount if len(cash_lines) >= 1 else ZERO
+    closing_cash  = cash_lines[1].amount if len(cash_lines) >= 2 else ZERO
+    net_change = operating_total + investing_total + financing_total
+
+    return CashFlowStatement(
+        date_from=date_from,
+        date_to=date_to,
+        currency_code=currency_code,
+        lines=lines,
+        operating_total=operating_total,
+        investing_total=investing_total,
+        financing_total=financing_total,
+        net_change=net_change,
+        opening_cash=opening_cash,
+        closing_cash=closing_cash,
+    )

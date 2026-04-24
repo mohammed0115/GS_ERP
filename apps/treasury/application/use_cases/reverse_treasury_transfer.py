@@ -4,7 +4,7 @@ ReverseTreasuryTransfer — reverses a posted TreasuryTransfer.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from django.db import transaction
 from django.db.models import F
@@ -37,8 +37,8 @@ class ReverseTreasuryTransfer:
                 "to_bank_account__gl_account",
             ).get(pk=command.transfer_id)
         except TreasuryTransfer.DoesNotExist:
-            from apps.treasury.domain.exceptions import TreasuryNotDraftError
-            raise TreasuryNotDraftError(f"TreasuryTransfer {command.transfer_id} not found.")
+            from apps.treasury.domain.exceptions import TreasuryNotFoundError
+            raise TreasuryNotFoundError(f"TreasuryTransfer {command.transfer_id} not found.")
 
         if xfer.status != TreasuryStatus.POSTED:
             from apps.treasury.domain.exceptions import TreasuryAlreadyReversedError
@@ -62,7 +62,8 @@ class ReverseTreasuryTransfer:
         from apps.finance.domain.entities import JournalLine as DomainLine
         from apps.core.domain.value_objects import Currency, Money
 
-        _assert_period_open(xfer.transfer_date)
+        reversal_date = date.today()
+        _assert_period_open(reversal_date)
 
         currency = Currency(code=xfer.currency_code)
         amount = Money(xfer.amount, currency)
@@ -74,13 +75,28 @@ class ReverseTreasuryTransfer:
         )
 
         draft = JournalEntryDraft(
-            entry_date=xfer.transfer_date,
+            entry_date=reversal_date,
             reference=f"REV-XFER-{xfer.pk}",
             memo=f"Reversal of internal transfer {xfer.transfer_number}",
             lines=lines,
         )
 
         with transaction.atomic():
+            # Lock both parties before updating balances
+            if xfer.from_cashbox_id:
+                from apps.treasury.infrastructure.models import Cashbox
+                Cashbox.objects.select_for_update().get(pk=xfer.from_cashbox_id)
+            else:
+                from apps.treasury.infrastructure.models import BankAccount
+                BankAccount.objects.select_for_update().get(pk=xfer.from_bank_account_id)
+
+            if xfer.to_cashbox_id:
+                from apps.treasury.infrastructure.models import Cashbox
+                Cashbox.objects.select_for_update().get(pk=xfer.to_cashbox_id)
+            else:
+                from apps.treasury.infrastructure.models import BankAccount
+                BankAccount.objects.select_for_update().get(pk=xfer.to_bank_account_id)
+
             result = PostJournalEntry().execute(
                 PostJournalEntryCommand(
                     draft=draft,

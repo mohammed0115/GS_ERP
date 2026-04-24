@@ -14,3 +14,5 @@ class FinanceConfig(AppConfig):
         register_permissions("payments", ("view", "record", "refund"))
         register_permissions("expenses", ("view", "record", "update", "delete"))
         register_permissions("money_transfers", ("view", "record"))
+        from apps.finance.signals import register_signals
+        register_signals()

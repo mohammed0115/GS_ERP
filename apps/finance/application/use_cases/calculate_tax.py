@@ -63,7 +63,7 @@ class TaxCalculationResult:
     tax_amount: Decimal
     gross_amount: Decimal
     currency_code: str
-    tax_transaction_id: Optional[int]   # None when no record created (zero-rate)
+    tax_transaction_id: Optional[int]
 
 
 _PRECISION = Decimal("0.0001")
@@ -79,15 +79,21 @@ class CalculateTax:
         except TaxCode.DoesNotExist:
             raise ValueError(f"TaxCode {command.tax_code_id} not found or inactive.")
 
+        # T-2: validate direction is consistent with tax_code.tax_type
+        if command.direction != tax_code.tax_type:
+            raise ValueError(
+                f"TaxCode '{tax_code.code}' is type '{tax_code.tax_type}' but "
+                f"direction '{command.direction}' was supplied. They must match."
+            )
+
         rate = tax_code.rate                          # Decimal e.g. 15.0000
         tax_amount = (command.net_amount * rate / _HUNDRED).quantize(
             _PRECISION, ROUND_HALF_UP
         )
         gross_amount = command.net_amount + tax_amount
 
-        txn_id: Optional[int] = None
-        if tax_amount != Decimal("0"):
-            txn_id = self._persist_tax_transaction(command, tax_code, tax_amount)
+        # T-1: always persist a TaxTransaction — zero-rate lines need an audit trail
+        txn_id: Optional[int] = self._persist_tax_transaction(command, tax_code, tax_amount)
 
         return TaxCalculationResult(
             tax_code_id=command.tax_code_id,

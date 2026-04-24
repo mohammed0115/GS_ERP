@@ -9,18 +9,18 @@ from django.contrib.auth.decorators import login_required
 from django.db.models import Sum
 from django.shortcuts import render
 
+from apps.sales.infrastructure.models import Sale
+from apps.sales.domain.entities import SaleStatus
+from apps.reports.application import selectors
+
 
 @login_required
 def home(request):
-    from apps.sales.infrastructure.models import Sale
-    from apps.sales.domain.entities import SaleStatus
-    from apps.reports.application import selectors
 
     today = date.today()
     first_of_month = today.replace(day=1)
     thirty_days_ago = today - timedelta(days=30)
 
-    # Today's sales
     today_sales = (
         Sale.objects.filter(status=SaleStatus.POSTED.value, sale_date=today)
         .aggregate(t=Sum("grand_total"))["t"]

@@ -2,11 +2,12 @@
 CancelSalesInvoice — cancels a Draft or Issued invoice.
 
 A Draft invoice can be cancelled freely (no GL impact).
-An Issued invoice can only be cancelled if it has no allocations, and
-requires a reversing journal entry to be created automatically.
+An Issued invoice can only be cancelled if it has no linked credit notes
+(Issued or Applied — WG-001), and requires a reversing journal entry to
+be created automatically.
 
 Business rules:
-  - Paid / Partially Paid invoices cannot be cancelled (use CreditNote).
+  - Paid / Partially Paid / Credited invoices cannot be cancelled (use CreditNote).
   - Cancelled invoices are immutable.
 """
 from __future__ import annotations
@@ -16,6 +17,8 @@ from dataclasses import dataclass
 from django.db import transaction
 
 from apps.sales.infrastructure.invoice_models import (
+    CreditNote,
+    NoteStatus,
     SalesInvoice,
     SalesInvoiceStatus,
 )
@@ -47,12 +50,27 @@ class CancelSalesInvoice:
         if invoice.status in (
             SalesInvoiceStatus.PARTIALLY_PAID,
             SalesInvoiceStatus.PAID,
+            SalesInvoiceStatus.CREDITED,
             SalesInvoiceStatus.CANCELLED,
         ):
             from apps.finance.domain.exceptions import JournalAlreadyPostedError
             raise JournalAlreadyPostedError(
                 f"Cannot cancel invoice {invoice.invoice_number} with status '{invoice.status}'."
             )
+
+        # WG-001: Reject cancellation if any credit notes (issued or applied) exist
+        # against this invoice — their GL entries would become orphaned.
+        if invoice.status == SalesInvoiceStatus.ISSUED:
+            linked_cn = CreditNote.objects.filter(
+                related_invoice=invoice,
+                status__in=[NoteStatus.ISSUED, NoteStatus.APPLIED],
+            ).count()
+            if linked_cn:
+                from apps.finance.domain.exceptions import JournalAlreadyPostedError
+                raise JournalAlreadyPostedError(
+                    f"Cannot cancel invoice {invoice.invoice_number}: it has "
+                    f"{linked_cn} credit note(s). Reverse them first."
+                )
 
         reversal_entry_id = None
 

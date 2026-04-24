@@ -40,8 +40,8 @@ class PostTreasuryTransaction:
                 "contra_account",
             ).get(pk=command.transaction_id)
         except TreasuryTransaction.DoesNotExist:
-            from apps.treasury.domain.exceptions import TreasuryNotDraftError
-            raise TreasuryNotDraftError(f"TreasuryTransaction {command.transaction_id} not found.")
+            from apps.treasury.domain.exceptions import TreasuryNotFoundError
+            raise TreasuryNotFoundError(f"TreasuryTransaction {command.transaction_id} not found.")
 
         if txn.status != TreasuryStatus.DRAFT:
             from apps.treasury.domain.exceptions import TreasuryAlreadyPostedError
@@ -50,27 +50,47 @@ class PostTreasuryTransaction:
             )
 
         # Resolve the treasury party and its GL account
+        from apps.finance.infrastructure.models import AccountTypeChoices
         if txn.cashbox_id:
             party = txn.cashbox
             if not party.is_active:
                 from apps.treasury.domain.exceptions import CashboxInactiveError
                 raise CashboxInactiveError(f"Cashbox {party.code} is not active.")
             treasury_gl_account_id = party.gl_account_id
+            gl_account = party.gl_account
         else:
             party = txn.bank_account
             if not party.is_active:
                 from apps.treasury.domain.exceptions import BankAccountInactiveError
                 raise BankAccountInactiveError(f"BankAccount {party.code} is not active.")
             treasury_gl_account_id = party.gl_account_id
+            gl_account = party.gl_account
+
+        if gl_account.account_type != AccountTypeChoices.ASSET:
+            from apps.treasury.domain.exceptions import InvalidTreasuryPartyError
+            raise InvalidTreasuryPartyError(
+                f"GL account {gl_account.code} must be type 'asset', "
+                f"got '{gl_account.account_type}'."
+            )
 
         from apps.finance.application.use_cases.post_journal_entry import (
             PostJournalEntry, PostJournalEntryCommand, _assert_period_open,
+            _find_open_period_id,
         )
         from apps.finance.domain.entities import JournalEntryDraft
         from apps.finance.domain.entities import JournalLine as DomainLine
         from apps.core.domain.value_objects import Currency, Money
 
         _assert_period_open(txn.transaction_date)
+        fiscal_period_id = _find_open_period_id(txn.transaction_date)
+
+        # Overdraft guard for outflow/adjustment
+        if txn.transaction_type != TransactionType.INFLOW and party.current_balance < txn.amount:
+            from apps.treasury.domain.exceptions import BalanceInsufficientError
+            raise BalanceInsufficientError(
+                f"Insufficient balance: {party.current_balance} available, "
+                f"{txn.amount} required."
+            )
 
         currency = Currency(code=txn.currency_code)
         amount = Money(txn.amount, currency)
@@ -121,6 +141,7 @@ class PostTreasuryTransaction:
                 status=TreasuryStatus.POSTED,
                 transaction_number=txn_number,
                 journal_entry_id=result.entry_id,
+                fiscal_period_id=fiscal_period_id,
                 posted_by_id=command.actor_id,
                 updated_at=now,
             )

@@ -13,8 +13,9 @@ already-posted header.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Protocol
 
 from django.db import transaction
@@ -39,6 +40,7 @@ class PostJournalEntryCommand:
     draft: JournalEntryDraft
     source_type: str = ""
     source_id: int | None = None
+    exchange_rate: Decimal = field(default_factory=lambda: Decimal("1"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +86,7 @@ class PostJournalEntry:
 
         with transaction.atomic():
             now = datetime.now(timezone.utc)
+            fiscal_period_id = _find_open_period_id(draft.entry_date)
             entry = JournalEntry(
                 entry_date=draft.entry_date,
                 reference=draft.reference,
@@ -94,6 +97,7 @@ class PostJournalEntry:
                 status=JournalEntryStatus.POSTED,
                 is_posted=True,
                 posted_at=now,
+                fiscal_period_id=fiscal_period_id,
             )
             # TenantOwnedModel.save() auto-assigns organization from context.
             entry.save()
@@ -115,6 +119,7 @@ class PostJournalEntry:
                     currency_code=line.currency.code,
                     memo=line.memo,
                     line_number=index,
+                    exchange_rate=command.exchange_rate,
                 )
                 row.save()
                 line_ids.append(row.pk)
@@ -194,3 +199,16 @@ def _assert_period_open(entry_date: "date") -> None:
             f"Accounting period {closed_period.period_year}-{closed_period.period_month:02d} "
             "is closed. Post the entry in an open period."
         )
+
+
+def _find_open_period_id(entry_date: "date") -> "int | None":
+    """Return the pk of the open AccountingPeriod that covers entry_date, or None."""
+    from apps.finance.infrastructure.fiscal_year_models import (
+        AccountingPeriod, AccountingPeriodStatus,
+    )
+    period = AccountingPeriod.objects.filter(
+        period_year=entry_date.year,
+        period_month=entry_date.month,
+        status=AccountingPeriodStatus.OPEN,
+    ).values_list("pk", flat=True).first()
+    return period

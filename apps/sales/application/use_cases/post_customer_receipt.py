@@ -11,7 +11,7 @@ separately by AllocateReceiptService.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from django.db import transaction
 
@@ -53,6 +53,14 @@ class PostCustomerReceipt:
         if not receipt.customer.is_active:
             from apps.sales.domain.exceptions import CustomerInactiveError
             raise CustomerInactiveError(f"Customer {receipt.customer.code} is not active.")
+
+        # EC-003: Reject future-dated receipts to prevent period cut-off manipulation.
+        if receipt.receipt_date > date.today():
+            from apps.finance.domain.exceptions import JournalAlreadyPostedError
+            raise JournalAlreadyPostedError(
+                f"Receipt date {receipt.receipt_date} is in the future. "
+                "Post-dating receipts is not permitted."
+            )
 
         ar_account = receipt.customer.receivable_account
         if ar_account is None:

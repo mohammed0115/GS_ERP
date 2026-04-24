@@ -98,6 +98,12 @@ class Account(TenantOwnedModel, TimestampedModel):
         ]
 
     def save(self, *args, **kwargs):
+        # Detect parent change so we can cascade level updates to children.
+        parent_changed = False
+        if self.pk:
+            old_parent_id = Account.objects.filter(pk=self.pk).values_list("parent_id", flat=True).first()
+            parent_changed = old_parent_id != self.parent_id
+
         # Auto-derive level from parent depth.
         if self.parent_id is None:
             self.level = 1
@@ -111,6 +117,15 @@ class Account(TenantOwnedModel, TimestampedModel):
         else:
             self.normal_balance = NormalBalanceChoices.CREDIT
         super().save(*args, **kwargs)
+
+        # Cascade level recalculation to all descendants when parent changes.
+        if parent_changed:
+            self._update_descendants_level()
+
+    def _update_descendants_level(self) -> None:
+        """Recursively update `level` for all children of this account."""
+        for child in Account.objects.filter(parent_id=self.pk):
+            child.save()  # triggers level recalc + further cascade
 
     def __str__(self) -> str:
         return f"{self.code} {self.name}"
@@ -197,6 +212,11 @@ class JournalEntry(TenantOwnedModel, TimestampedModel):
                 fields=("organization", "reference"),
                 name="finance_journal_entry_unique_reference_per_org",
             ),
+            models.UniqueConstraint(
+                fields=("organization", "entry_number"),
+                condition=models.Q(entry_number__gt=""),
+                name="finance_journal_entry_unique_entry_number_per_org",
+            ),
         ]
         indexes = [
             models.Index(fields=("organization", "entry_date")),
@@ -231,6 +251,18 @@ class JournalLine(TenantOwnedModel, TimestampedModel):
     debit = models.DecimalField(max_digits=18, decimal_places=4, default=0)
     credit = models.DecimalField(max_digits=18, decimal_places=4, default=0)
     currency_code = models.CharField(max_length=3)
+    exchange_rate = models.DecimalField(
+        max_digits=18, decimal_places=6, default=1,
+        help_text="Rate from line currency to org functional currency at posting time.",
+    )
+    functional_debit = models.DecimalField(
+        max_digits=18, decimal_places=4, default=0,
+        help_text="Debit converted to org functional currency (debit × exchange_rate).",
+    )
+    functional_credit = models.DecimalField(
+        max_digits=18, decimal_places=4, default=0,
+        help_text="Credit converted to org functional currency (credit × exchange_rate).",
+    )
     memo = models.CharField(max_length=255, blank=True, default="")
     line_number = models.PositiveSmallIntegerField()
 

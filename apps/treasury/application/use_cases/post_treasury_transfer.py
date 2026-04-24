@@ -40,14 +40,16 @@ class PostTreasuryTransfer:
                 "to_bank_account__gl_account",
             ).get(pk=command.transfer_id)
         except TreasuryTransfer.DoesNotExist:
-            from apps.treasury.domain.exceptions import TreasuryNotDraftError
-            raise TreasuryNotDraftError(f"TreasuryTransfer {command.transfer_id} not found.")
+            from apps.treasury.domain.exceptions import TreasuryNotFoundError
+            raise TreasuryNotFoundError(f"TreasuryTransfer {command.transfer_id} not found.")
 
         if xfer.status != TreasuryStatus.DRAFT:
             from apps.treasury.domain.exceptions import TreasuryAlreadyPostedError
             raise TreasuryAlreadyPostedError(
                 f"TreasuryTransfer {xfer.transfer_number or xfer.pk} is not Draft."
             )
+
+        from apps.finance.infrastructure.models import AccountTypeChoices
 
         # Resolve source
         if xfer.from_cashbox_id:
@@ -56,12 +58,21 @@ class PostTreasuryTransfer:
                 from apps.treasury.domain.exceptions import CashboxInactiveError
                 raise CashboxInactiveError(f"Source cashbox {src.code} is not active.")
             src_gl_id = src.gl_account_id
+            src_gl = src.gl_account
         else:
             src = xfer.from_bank_account
             if not src.is_active:
                 from apps.treasury.domain.exceptions import BankAccountInactiveError
                 raise BankAccountInactiveError(f"Source bank account {src.code} is not active.")
             src_gl_id = src.gl_account_id
+            src_gl = src.gl_account
+
+        if src_gl.account_type != AccountTypeChoices.ASSET:
+            from apps.treasury.domain.exceptions import InvalidTreasuryPartyError
+            raise InvalidTreasuryPartyError(
+                f"Source GL account {src_gl.code} must be type 'asset', "
+                f"got '{src_gl.account_type}'."
+            )
 
         # Resolve destination
         if xfer.to_cashbox_id:
@@ -70,12 +81,21 @@ class PostTreasuryTransfer:
                 from apps.treasury.domain.exceptions import CashboxInactiveError
                 raise CashboxInactiveError(f"Destination cashbox {dst.code} is not active.")
             dst_gl_id = dst.gl_account_id
+            dst_gl = dst.gl_account
         else:
             dst = xfer.to_bank_account
             if not dst.is_active:
                 from apps.treasury.domain.exceptions import BankAccountInactiveError
                 raise BankAccountInactiveError(f"Destination bank account {dst.code} is not active.")
             dst_gl_id = dst.gl_account_id
+            dst_gl = dst.gl_account
+
+        if dst_gl.account_type != AccountTypeChoices.ASSET:
+            from apps.treasury.domain.exceptions import InvalidTreasuryPartyError
+            raise InvalidTreasuryPartyError(
+                f"Destination GL account {dst_gl.code} must be type 'asset', "
+                f"got '{dst_gl.account_type}'."
+            )
 
         # Self-transfer check (same GL account)
         if src_gl_id == dst_gl_id:
@@ -84,12 +104,14 @@ class PostTreasuryTransfer:
 
         from apps.finance.application.use_cases.post_journal_entry import (
             PostJournalEntry, PostJournalEntryCommand, _assert_period_open,
+            _find_open_period_id,
         )
         from apps.finance.domain.entities import JournalEntryDraft
         from apps.finance.domain.entities import JournalLine as DomainLine
         from apps.core.domain.value_objects import Currency, Money
 
         _assert_period_open(xfer.transfer_date)
+        fiscal_period_id = _find_open_period_id(xfer.transfer_date)
 
         currency = Currency(code=xfer.currency_code)
         amount = Money(xfer.amount, currency)
@@ -118,10 +140,10 @@ class PostTreasuryTransfer:
 
             if xfer.to_cashbox_id:
                 from apps.treasury.infrastructure.models import Cashbox
-                Cashbox.objects.select_for_update().filter(pk=xfer.to_cashbox_id)
+                Cashbox.objects.select_for_update().get(pk=xfer.to_cashbox_id)
             else:
                 from apps.treasury.infrastructure.models import BankAccount
-                BankAccount.objects.select_for_update().filter(pk=xfer.to_bank_account_id)
+                BankAccount.objects.select_for_update().get(pk=xfer.to_bank_account_id)
 
             result = PostJournalEntry().execute(
                 PostJournalEntryCommand(
@@ -158,6 +180,7 @@ class PostTreasuryTransfer:
                 status=TreasuryStatus.POSTED,
                 transfer_number=transfer_number,
                 journal_entry_id=result.entry_id,
+                fiscal_period_id=fiscal_period_id,
                 posted_by_id=command.actor_id,
                 updated_at=datetime.now(timezone.utc),
             )

@@ -45,7 +45,7 @@
                     <td><a href="{% url 'treasury_web:cashbox_detail' cb.pk %}">{{ cb.code }}</a></td>
                     <td>{{ cb.name }}</td>
                     <td>{{ cb.currency_code }}</td>
-                    <td class="text-right">{{ cb.current_balance|erp_money }}</td>
+                    <td class="text-right">{{ cb.computed_balance|erp_money }}</td>
                     <td>
                         {% if cb.is_active %}
                             <span class="badge badge-success">{% trans "Active" %}</span>

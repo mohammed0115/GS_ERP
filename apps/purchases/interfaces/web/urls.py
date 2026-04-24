@@ -29,8 +29,10 @@ urlpatterns = [
     path("vendor-payments/",                    views.VendorPaymentListView.as_view(),   name="vendor_payment_list"),
     path("vendor-payments/create/",             views.VendorPaymentCreateView.as_view(), name="vendor_payment_create"),
     path("vendor-payments/<int:pk>/",           views.VendorPaymentDetailView.as_view(), name="vendor_payment_detail"),
-    path("vendor-payments/<int:pk>/post/",      views.VendorPaymentPostView.as_view(),   name="vendor_payment_post"),
-    path("vendor-payments/<int:pk>/allocate/",  views.VendorPaymentAllocateView.as_view(), name="vendor_payment_allocate"),
+    path("vendor-payments/<int:pk>/post/",        views.VendorPaymentPostView.as_view(),       name="vendor_payment_post"),
+    path("vendor-payments/<int:pk>/allocate/",   views.VendorPaymentAllocateView.as_view(),   name="vendor_payment_allocate"),
+    path("vendor-payments/<int:pk>/reverse/",    views.VendorPaymentReverseView.as_view(),    name="vendor_payment_reverse"),
+    path("vendor-payments/<int:pk>/unallocate/", views.VendorPaymentUnallocateView.as_view(), name="vendor_payment_unallocate"),
 
     # Phase 3 — Vendor Credit Notes
     path("vendor-credit-notes/",                views.VendorCreditNoteListView.as_view(),   name="vendor_credit_note_list"),

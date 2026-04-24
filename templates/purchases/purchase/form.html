@@ -174,7 +174,13 @@
                 } catch (_) {}
             }, 200);
         });
-        search.addEventListener('blur', () => setTimeout(() => sug.classList.remove('visible'), 150));
+        search.addEventListener('blur', () => setTimeout(() => sug.classList.remove('visible'), 200));
+        sug.addEventListener('pointerdown', (e) => {
+            const item = e.target.closest('.item');
+            if (!item) return;
+            e.preventDefault();
+            pickProduct(row, item.dataset);
+        });
         row.querySelector('.remove-line').addEventListener('click', () => removeRow(row));
         ['qty', 'unit-price', 'disc', 'tax'].forEach(cls => {
             row.querySelector('.' + cls).addEventListener('input', recomputeAll);
@@ -194,9 +200,6 @@
                 <div class="code">${p.code} — ${p.price}</div>
             </div>`).join('');
         sug.classList.add('visible');
-        sug.querySelectorAll('.item').forEach(el => {
-            el.addEventListener('mousedown', () => pickProduct(row, el.dataset));
-        });
     }
 
     function pickProduct(row, data) {

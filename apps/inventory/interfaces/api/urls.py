@@ -1,7 +1,9 @@
-"""Inventory REST API URL configuration (Phase 5)."""
+"""Inventory REST API URL configuration (Phase 5 + I-16)."""
 from django.urls import path
 
 from apps.inventory.interfaces.api.views import (
+    InventoryValuationView,
+    ItemLedgerView,
     StockAdjustmentDetailView,
     StockAdjustmentListView,
     StockAdjustmentPostView,
@@ -46,4 +48,8 @@ urlpatterns = [
     path("counts/", StockCountListView.as_view(), name="count-list"),
     path("counts/<int:pk>/", StockCountDetailView.as_view(), name="count-detail"),
     path("counts/<int:pk>/finalise/", StockCountFinaliseView.as_view(), name="count-finalise"),
+
+    # Inventory reports (I-16)
+    path("reports/valuation/", InventoryValuationView.as_view(), name="report-valuation"),
+    path("reports/item-ledger/", ItemLedgerView.as_view(), name="report-item-ledger"),
 ]
