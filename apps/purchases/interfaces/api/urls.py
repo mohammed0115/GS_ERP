@@ -11,6 +11,7 @@ urlpatterns = [
     # PurchaseInvoice
     path("invoices/",                           views.PurchaseInvoiceListCreateView.as_view(), name="invoice_list"),
     path("invoices/<int:pk>/",                  views.PurchaseInvoiceDetailView.as_view(),     name="invoice_detail"),
+    path("invoices/<int:pk>/approve/",          views.PurchaseInvoiceApproveView.as_view(),   name="invoice_approve"),
     path("invoices/<int:pk>/issue/",            views.PurchaseInvoiceIssueView.as_view(),      name="invoice_issue"),
     path("invoices/<int:pk>/cancel/",           views.PurchaseInvoiceCancelView.as_view(),     name="invoice_cancel"),
 

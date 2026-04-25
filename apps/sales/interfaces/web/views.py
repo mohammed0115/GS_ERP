@@ -1090,9 +1090,17 @@ class SalesInvoiceDetailView(LoginRequiredMixin, OrgPermissionRequiredMixin, Det
     def get_queryset(self):
         return (
             super().get_queryset()
-            .select_related("customer", "journal_entry")
+            .select_related("customer", "journal_entry", "approved_by", "issued_by")
             .prefetch_related("lines__tax_code", "lines__revenue_account")
         )
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        inv: SalesInvoice = self.object  # type: ignore[assignment]
+        ctx["can_approve"] = inv.status == SalesInvoiceStatus.DRAFT
+        ctx["can_issue"] = inv.status in (SalesInvoiceStatus.DRAFT, SalesInvoiceStatus.APPROVED)
+        ctx["can_cancel"] = inv.status in (SalesInvoiceStatus.DRAFT, SalesInvoiceStatus.APPROVED, SalesInvoiceStatus.ISSUED)
+        return ctx
 
 
 class SalesInvoiceHeaderForm(BootstrapFormMixin, forms.Form):
@@ -1446,6 +1454,24 @@ class SalesInvoiceEditView(LoginRequiredMixin, OrgPermissionRequiredMixin, FormV
 
         messages.success(self.request, f"Invoice #{inv.pk} updated.")
         return HttpResponseRedirect(reverse("sales:invoice_detail", args=[inv.pk]))
+
+
+class SalesInvoiceApproveView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
+    """POST-only: approve a draft SalesInvoice (DRAFT → APPROVED)."""
+    permission_required = "sales.salesinvoice.approve"
+
+    def post(self, request, pk):
+        from apps.sales.application.use_cases.approve_sales_invoice import (
+            ApproveSalesInvoice, ApproveSalesInvoiceCommand,
+        )
+        try:
+            ApproveSalesInvoice().execute(
+                ApproveSalesInvoiceCommand(invoice_id=pk, actor_id=request.user.pk)
+            )
+            messages.success(request, f"Invoice #{pk} approved.")
+        except Exception as exc:
+            messages.error(request, f"Could not approve invoice: {exc}")
+        return HttpResponseRedirect(reverse("sales:invoice_detail", args=[pk]))
 
 
 class SalesInvoiceIssueView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):

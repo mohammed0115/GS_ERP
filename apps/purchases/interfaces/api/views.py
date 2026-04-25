@@ -57,6 +57,7 @@ from apps.purchases.infrastructure.payable_models import (
 )
 from apps.purchases.interfaces.api.serializers import (
     AllocateVendorPaymentSerializer,
+    ApprovePurchaseInvoiceSerializer,
     CancelPurchaseInvoiceSerializer,
     IssueVendorCreditNoteSerializer,
     IssueVendorDebitNoteSerializer,
@@ -193,6 +194,29 @@ class PurchaseInvoiceIssueView(APIView):
         try:
             IssuePurchaseInvoice().execute(
                 IssuePurchaseInvoiceCommand(invoice_id=pk, actor_id=request.user.pk)
+            )
+        except Exception as exc:
+            raise ValidationError(str(exc))
+        inv = PurchaseInvoice.objects.select_related("vendor").prefetch_related("lines").get(pk=pk)
+        return Response(PurchaseInvoiceSerializer(inv).data)
+
+
+class PurchaseInvoiceApproveView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["purchases"],
+        summary="Approve a draft purchase invoice (DRAFT → APPROVED)",
+        request=ApprovePurchaseInvoiceSerializer,
+        responses={200: PurchaseInvoiceSerializer},
+    )
+    def post(self, request, pk):
+        from apps.purchases.application.use_cases.approve_purchase_invoice import (
+            ApprovePurchaseInvoice, ApprovePurchaseInvoiceCommand,
+        )
+        try:
+            ApprovePurchaseInvoice().execute(
+                ApprovePurchaseInvoiceCommand(invoice_id=pk, actor_id=request.user.pk)
             )
         except Exception as exc:
             raise ValidationError(str(exc))

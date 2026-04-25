@@ -12,6 +12,32 @@
         <i class="fas fa-arrow-left"></i> {% trans "Back" %}
     </a>
     {% if object.status == "draft" %}
+        {% if request.user|can:"sales.salesinvoice.approve" %}
+        <form method="post" action="{% url 'sales:invoice_approve' object.pk %}" class="d-inline">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-info btn-sm">
+                <i class="fas fa-user-check"></i> {% trans "Approve" %}
+            </button>
+        </form>
+        {% endif %}
+        {% if request.user|can:"sales.salesinvoice.issue" %}
+        <form method="post" action="{% url 'sales:invoice_issue' object.pk %}" class="d-inline">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-primary btn-sm">
+                <i class="fas fa-check"></i> {% trans "Issue Invoice" %}
+            </button>
+        </form>
+        {% endif %}
+        {% if request.user|can:"sales.salesinvoice.cancel" %}
+        <form method="post" action="{% url 'sales:invoice_cancel' object.pk %}" class="d-inline"
+              onsubmit="return confirm('{% trans "Cancel this invoice?" %}')">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-danger btn-sm">
+                <i class="fas fa-times"></i> {% trans "Cancel" %}
+            </button>
+        </form>
+        {% endif %}
+    {% elif object.status == "approved" %}
         {% if request.user|can:"sales.salesinvoice.issue" %}
         <form method="post" action="{% url 'sales:invoice_issue' object.pk %}" class="d-inline">
             {% csrf_token %}
@@ -66,6 +92,7 @@
                     <dt class="col-sm-5">{% trans "Status" %}</dt>
                     <dd class="col-sm-7">
                         {% if object.status == "draft" %}<span class="badge badge-secondary">{% trans "Draft" %}</span>
+                        {% elif object.status == "approved" %}<span class="badge badge-info">{% trans "Approved" %}</span>
                         {% elif object.status == "issued" %}<span class="badge badge-primary">{% trans "Issued" %}</span>
                         {% elif object.status == "partially_paid" %}<span class="badge badge-warning">{% trans "Partially Paid" %}</span>
                         {% elif object.status == "paid" %}<span class="badge badge-success">{% trans "Paid" %}</span>
@@ -82,6 +109,11 @@
 
                     <dt class="col-sm-5">{% trans "Currency" %}</dt>
                     <dd class="col-sm-7">{{ object.currency_code }}</dd>
+
+                    {% if object.approved_by %}
+                    <dt class="col-sm-5">{% trans "Approved By" %}</dt>
+                    <dd class="col-sm-7">{{ object.approved_by.get_full_name|default:object.approved_by.username }} — {{ object.approved_at|date:"Y-m-d H:i" }}</dd>
+                    {% endif %}
 
                     {% if object.journal_entry %}
                     <dt class="col-sm-5">{% trans "Journal Entry" %}</dt>

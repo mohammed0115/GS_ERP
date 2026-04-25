@@ -10,6 +10,14 @@
     <a href="{% url 'purchases:invoice_list' %}" class="btn btn-outline-secondary btn-sm">
         <i class="fas fa-arrow-left"></i> {% trans "Back" %}
     </a>
+    {% if can_approve %}
+    <form method="post" action="{% url 'purchases:invoice_approve' object.pk %}" class="d-inline">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-info btn-sm">
+            <i class="fas fa-user-check"></i> {% trans "Approve" %}
+        </button>
+    </form>
+    {% endif %}
     {% if can_issue %}
     <form method="post" action="{% url 'purchases:invoice_issue' object.pk %}" class="d-inline">
         {% csrf_token %}
@@ -53,6 +61,7 @@
                     <dt class="col-sm-5">{% trans "Status" %}</dt>
                     <dd class="col-sm-7">
                         {% if object.status == "draft" %}<span class="badge badge-secondary">{% trans "Draft" %}</span>
+                        {% elif object.status == "approved" %}<span class="badge badge-info">{% trans "Approved" %}</span>
                         {% elif object.status == "issued" %}<span class="badge badge-primary">{% trans "Issued" %}</span>
                         {% elif object.status == "partially_paid" %}<span class="badge badge-warning">{% trans "Partially Paid" %}</span>
                         {% elif object.status == "paid" %}<span class="badge badge-success">{% trans "Paid" %}</span>
@@ -69,6 +78,11 @@
 
                     <dt class="col-sm-5">{% trans "Currency" %}</dt>
                     <dd class="col-sm-7">{{ object.currency_code }}</dd>
+
+                    {% if object.approved_by %}
+                    <dt class="col-sm-5">{% trans "Approved By" %}</dt>
+                    <dd class="col-sm-7">{{ object.approved_by.get_full_name|default:object.approved_by.username }} — {{ object.approved_at|date:"Y-m-d H:i" }}</dd>
+                    {% endif %}
 
                     {% if object.journal_entry %}
                     <dt class="col-sm-5">{% trans "Journal Entry" %}</dt>

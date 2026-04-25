@@ -108,6 +108,10 @@ class CancelPurchaseInvoiceSerializer(serializers.Serializer):
     pass
 
 
+class ApprovePurchaseInvoiceSerializer(serializers.Serializer):
+    pass
+
+
 # ---------------------------------------------------------------------------
 # VendorPayment
 # ---------------------------------------------------------------------------

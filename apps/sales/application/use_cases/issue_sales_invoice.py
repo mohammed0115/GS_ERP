@@ -66,12 +66,12 @@ class IssueSalesInvoice:
             from apps.finance.domain.exceptions import AccountNotFoundError
             raise AccountNotFoundError(f"SalesInvoice {command.invoice_id} not found.")
 
-        # Status guard
-        if invoice.status != SalesInvoiceStatus.DRAFT:
+        # Status guard — allow issue from DRAFT or APPROVED
+        if invoice.status not in (SalesInvoiceStatus.DRAFT, SalesInvoiceStatus.APPROVED):
             from apps.finance.domain.exceptions import JournalAlreadyPostedError
             raise JournalAlreadyPostedError(
-                f"Invoice {invoice.invoice_number or invoice.pk} is not in Draft status "
-                f"(current: {invoice.status})."
+                f"Invoice {invoice.invoice_number or invoice.pk} cannot be issued from "
+                f"status '{invoice.status}'. Must be draft or approved."
             )
 
         # Customer active

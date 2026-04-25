@@ -55,10 +55,11 @@ class IssuePurchaseInvoice:
             from apps.finance.domain.exceptions import AccountNotFoundError
             raise AccountNotFoundError(f"PurchaseInvoice {command.invoice_id} not found.")
 
-        if inv.status != PurchaseInvoiceStatus.DRAFT:
+        if inv.status not in (PurchaseInvoiceStatus.DRAFT, PurchaseInvoiceStatus.APPROVED):
             from apps.purchases.domain.exceptions import PurchaseInvoiceAlreadyIssuedError
             raise PurchaseInvoiceAlreadyIssuedError(
-                f"PurchaseInvoice {inv.invoice_number or inv.pk} is not in Draft status."
+                f"PurchaseInvoice {inv.invoice_number or inv.pk} cannot be issued from "
+                f"status '{inv.status}'. Must be draft or approved."
             )
 
         if not inv.vendor.is_active:

@@ -743,7 +743,7 @@ class PurchaseInvoiceDetailView(LoginRequiredMixin, OrgPermissionRequiredMixin, 
     def get_queryset(self):
         return (
             super().get_queryset()
-            .select_related("vendor", "journal_entry")
+            .select_related("vendor", "journal_entry", "approved_by", "issued_by")
             .prefetch_related(
                 "lines__expense_account", "lines__tax_code",
                 "lines__product", "lines__warehouse",
@@ -754,9 +754,10 @@ class PurchaseInvoiceDetailView(LoginRequiredMixin, OrgPermissionRequiredMixin, 
         ctx = super().get_context_data(**kwargs)
         inv: PurchaseInvoice = self.object  # type: ignore[assignment]
         ctx["open_amount"] = inv.open_amount
-        ctx["can_issue"] = inv.status == PurchaseInvoiceStatus.DRAFT
+        ctx["can_approve"] = inv.status == PurchaseInvoiceStatus.DRAFT
+        ctx["can_issue"] = inv.status in (PurchaseInvoiceStatus.DRAFT, PurchaseInvoiceStatus.APPROVED)
         ctx["can_cancel"] = inv.status in (
-            PurchaseInvoiceStatus.DRAFT, PurchaseInvoiceStatus.ISSUED
+            PurchaseInvoiceStatus.DRAFT, PurchaseInvoiceStatus.APPROVED, PurchaseInvoiceStatus.ISSUED
         )
         return ctx
 
@@ -1026,6 +1027,24 @@ class PurchaseInvoiceEditView(LoginRequiredMixin, OrgPermissionRequiredMixin, Fo
 
         messages.success(self.request, f"Purchase invoice #{inv.pk} updated.")
         return HttpResponseRedirect(reverse("purchases:invoice_detail", args=[inv.pk]))
+
+
+class PurchaseInvoiceApproveView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
+    """POST-only: approve a draft PurchaseInvoice (DRAFT → APPROVED)."""
+    permission_required = "purchases.purchase_invoices.approve"
+
+    def post(self, request, pk):
+        from apps.purchases.application.use_cases.approve_purchase_invoice import (
+            ApprovePurchaseInvoice, ApprovePurchaseInvoiceCommand,
+        )
+        try:
+            ApprovePurchaseInvoice().execute(
+                ApprovePurchaseInvoiceCommand(invoice_id=pk, actor_id=request.user.pk)
+            )
+            messages.success(request, f"Invoice #{pk} approved.")
+        except Exception as exc:
+            messages.error(request, str(exc))
+        return HttpResponseRedirect(reverse("purchases:invoice_detail", args=[pk]))
 
 
 class PurchaseInvoiceIssueView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):

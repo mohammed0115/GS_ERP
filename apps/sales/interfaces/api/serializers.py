@@ -122,6 +122,11 @@ class CancelInvoiceSerializer(serializers.Serializer):
     pass
 
 
+class ApproveInvoiceSerializer(serializers.Serializer):
+    """Body for POST /invoices/{id}/approve/. No extra fields needed."""
+    pass
+
+
 # ---------------------------------------------------------------------------
 # CustomerReceipt
 # ---------------------------------------------------------------------------

@@ -61,6 +61,7 @@ from apps.sales.infrastructure.invoice_models import (
 )
 from apps.sales.interfaces.api.serializers import (
     AllocateReceiptSerializer,
+    ApproveInvoiceSerializer,
     CancelInvoiceSerializer,
     CreditNoteCreateSerializer,
     CreditNoteSerializer,
@@ -210,6 +211,29 @@ class SalesInvoiceIssueView(APIView):
         try:
             IssueSalesInvoice().execute(
                 IssueSalesInvoiceCommand(invoice_id=pk, actor_id=request.user.pk)
+            )
+        except Exception as exc:
+            raise ValidationError({"detail": str(exc)})
+
+        inv = SalesInvoice.objects.prefetch_related("lines").get(pk=pk)
+        return Response(SalesInvoiceSerializer(inv).data)
+
+
+class SalesInvoiceApproveView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        summary="Approve a draft sales invoice (DRAFT → APPROVED)",
+        request=ApproveInvoiceSerializer,
+        responses={200: SalesInvoiceSerializer},
+    )
+    def post(self, request, pk):
+        from apps.sales.application.use_cases.approve_sales_invoice import (
+            ApproveSalesInvoice, ApproveSalesInvoiceCommand,
+        )
+        try:
+            ApproveSalesInvoice().execute(
+                ApproveSalesInvoiceCommand(invoice_id=pk, actor_id=request.user.pk)
             )
         except Exception as exc:
             raise ValidationError({"detail": str(exc)})

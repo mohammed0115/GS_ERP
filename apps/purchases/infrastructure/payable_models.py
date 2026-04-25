@@ -26,6 +26,7 @@ from apps.tenancy.infrastructure.models import TenantOwnedModel
 # ---------------------------------------------------------------------------
 class PurchaseInvoiceStatus(models.TextChoices):
     DRAFT = "draft", "Draft"
+    APPROVED = "approved", "Approved"
     ISSUED = "issued", "Issued"
     PARTIALLY_PAID = "partially_paid", "Partially Paid"
     PAID = "paid", "Paid"
@@ -125,6 +126,14 @@ class PurchaseInvoice(TenantOwnedModel, TimestampedModel, AuditMetaMixin):
         "finance.JournalEntry",
         on_delete=models.PROTECT,
         related_name="purchase_invoice",
+        null=True, blank=True,
+    )
+
+    approved_at = models.DateTimeField(null=True, blank=True)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="approved_purchase_invoices",
         null=True, blank=True,
     )
 
