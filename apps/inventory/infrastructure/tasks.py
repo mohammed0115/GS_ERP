@@ -2,7 +2,10 @@
 Celery background tasks for the inventory app — Gap 7.
 
   rebuild_stock_on_hand  — weekly: recompute StockOnHand from all posted movements
+  send_low_stock_alert   — daily: fire AlertEvent for each below-reorder-point item
 """
+# Re-export so Celery autodiscovery finds both tasks from the canonical tasks.py.
+from apps.inventory.infrastructure.low_stock_tasks import send_low_stock_alert  # noqa: F401
 from __future__ import annotations
 
 import logging

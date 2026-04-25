@@ -14,7 +14,7 @@ from datetime import date
 from decimal import Decimal
 
 from django.db import transaction
-from django.utils import uuidzone
+from django.utils import timezone
 
 from apps.sales.domain.delivery_note import DeliveryLineSpec, DeliveryNoteError, DeliveryStatus
 

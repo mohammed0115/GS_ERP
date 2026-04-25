@@ -240,6 +240,15 @@ class AdjustmentCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, FormV
                 )
                 for p in parsed
             )
+            from apps.tenancy.domain import context as _tc
+            from apps.tenancy.infrastructure.models import Organization as _Org
+            _tc_ctx = _tc.current()
+            _org = None
+            if _tc_ctx:
+                try:
+                    _org = _Org.objects.get(pk=_tc_ctx.organization_id)
+                except _Org.DoesNotExist:
+                    pass
             spec = AdjustmentSpec(
                 reference=reference,
                 adjustment_date=header["adjustment_date"],
@@ -247,6 +256,8 @@ class AdjustmentCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, FormV
                 reason=reason,
                 lines=line_specs,
                 memo=header.get("memo") or "",
+                currency_code=_org.default_currency_code if _org else "",
+                actor_id=self.request.user.pk if self.request.user.is_authenticated else None,
             )
         except Exception as exc:
             form.add_error(None, f"Invalid adjustment: {exc}")

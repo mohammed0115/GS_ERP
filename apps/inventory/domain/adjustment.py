@@ -75,6 +75,9 @@ class AdjustmentSpec:
     reason: AdjustmentReason
     lines: tuple[AdjustmentLineSpec, ...] = field(default_factory=tuple)
     memo: str = ""
+    # Optional: when set, PostInventoryGL is called after each movement.
+    currency_code: str = ""
+    actor_id: int | None = None
 
     def __post_init__(self) -> None:
         if not self.reference.strip():

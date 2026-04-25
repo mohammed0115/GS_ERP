@@ -9,6 +9,7 @@ Beat schedule (runs when `celery -A config.celery beat` is active):
   - rebuild_stock_on_hand    : weekly Sunday 02:00
   - reconcile_period         : weekly Sunday 02:30
   - send_low_stock_alert     : daily  07:00
+  - flag_overdue_invoices    : daily  08:00
 """
 from __future__ import annotations
 
@@ -43,6 +44,11 @@ app.conf.beat_schedule = {
     "send-low-stock-alerts-daily": {
         "task": "inventory.send_low_stock_alert",
         "schedule": crontab(hour=7, minute=0),
+    },
+    # Finance — flag overdue AR/AP invoices (daily)
+    "flag-overdue-invoices-daily": {
+        "task": "finance.flag_overdue_invoices",
+        "schedule": crontab(hour=8, minute=0),
     },
 }
 

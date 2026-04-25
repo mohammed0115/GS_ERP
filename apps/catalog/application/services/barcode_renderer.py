@@ -41,9 +41,12 @@ def render_barcode_sheet(
     """
     Render a PDF byte-string containing all labels laid out in a grid.
 
+    Raises ValueError if labels list is empty.
     Raises ImportError if reportlab or python-barcode is not installed.
     Raises ValueError if a label's barcode value is invalid for its symbology.
     """
+    if not labels:
+        raise ValueError("At least one label is required to render a barcode sheet.")
     try:
         import barcode as py_barcode
         from barcode.writer import ImageWriter

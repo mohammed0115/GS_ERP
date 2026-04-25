@@ -156,6 +156,12 @@ class IssuePurchaseInvoice:
                         f"got '{inv_acc.account_type}'."
                     )
                 unit_cost = line.unit_cost or line.unit_price
+                if not unit_cost or unit_cost <= Decimal("0"):
+                    from apps.purchases.domain.exceptions import InvalidPurchaseLineError
+                    raise InvalidPurchaseLineError(
+                        f"Inventory line for product {line.product.code} requires a "
+                        "positive unit cost for stock valuation."
+                    )
                 subtotal = (line.quantity * unit_cost) - line.discount_amount
                 inventory_by_acc[inv_acc.pk] = (
                     inventory_by_acc.get(inv_acc.pk, Decimal("0")) + subtotal
@@ -171,6 +177,7 @@ class IssuePurchaseInvoice:
                     quantity=line.quantity,
                     uom_code=uom_code,
                     unit_cost=unit_cost,
+                    line_id=line.pk,
                 ))
             else:
                 exp_acc = line.expense_account or inv.vendor.default_expense_account
@@ -229,6 +236,9 @@ class IssuePurchaseInvoice:
                 from apps.inventory.application.use_cases.receive_purchased_inventory import (
                     ReceivePurchasedInventory,
                 )
+                # Over-receipt guard: ensure we are not receiving more than invoiced.
+                _check_over_receipt(inventory_specs)
+
                 ReceivePurchasedInventory().execute(
                     source_type="purchase_invoice",
                     source_id=inv.pk,
@@ -236,6 +246,9 @@ class IssuePurchaseInvoice:
                     lines=inventory_specs,
                     occurred_at=datetime.now(timezone.utc),
                 )
+
+                # Stamp quantity_received on each invoice line for audit trail.
+                _stamp_quantity_received(inventory_specs)
 
             result = PostJournalEntry().execute(
                 PostJournalEntryCommand(
@@ -312,3 +325,60 @@ class IssuePurchaseInvoice:
             invoice_number=invoice_number,
             journal_entry_id=result.entry_id,
         )
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _check_over_receipt(
+    specs: list,
+) -> None:
+    """
+    Raise InvalidPurchaseLineError if any spec would cause quantity_received
+    to exceed the invoiced quantity.  Called before ReceivePurchasedInventory
+    inside the atomic block so the check and the receipt are serialised.
+    """
+    from apps.purchases.domain.exceptions import InvalidPurchaseLineError
+    from apps.purchases.infrastructure.payable_models import PurchaseInvoiceLine
+    from django.db.models import F
+
+    line_ids = [s.line_id for s in specs if s.line_id is not None]
+    if not line_ids:
+        return
+
+    lines_by_pk = {
+        l.pk: l
+        for l in PurchaseInvoiceLine.objects.filter(pk__in=line_ids)
+        .select_for_update()
+        .only("pk", "quantity", "quantity_received")
+    }
+    for spec in specs:
+        if spec.line_id is None:
+            continue
+        db_line = lines_by_pk.get(spec.line_id)
+        if db_line is None:
+            continue
+        if db_line.quantity_received + spec.quantity > db_line.quantity:
+            raise InvalidPurchaseLineError(
+                f"Over-receipt on line {spec.line_id}: invoiced={db_line.quantity}, "
+                f"already_received={db_line.quantity_received}, "
+                f"attempted={spec.quantity}."
+            )
+
+
+def _stamp_quantity_received(specs: list) -> None:
+    """
+    Increment PurchaseInvoiceLine.quantity_received for each received spec.
+    Uses F() to avoid race conditions. Bypasses the line's save() guard
+    intentionally — we are inside a transaction and the invoice is still
+    transitioning from DRAFT to ISSUED.
+    """
+    from apps.purchases.infrastructure.payable_models import PurchaseInvoiceLine
+    from django.db.models import F
+
+    for spec in specs:
+        if spec.line_id is not None:
+            PurchaseInvoiceLine.objects.filter(pk=spec.line_id).update(
+                quantity_received=F("quantity_received") + spec.quantity
+            )

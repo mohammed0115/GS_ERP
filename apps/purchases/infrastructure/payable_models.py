@@ -221,6 +221,10 @@ class PurchaseInvoiceLine(TenantOwnedModel, TimestampedModel):
         null=True, blank=True,
         help_text="Cost per unit for WAC calculation. Defaults to unit_price when null.",
     )
+    quantity_received = models.DecimalField(
+        max_digits=18, decimal_places=4, default=0,
+        help_text="Cumulative quantity physically received into stock. Incremented on invoice issue.",
+    )
 
     # USA capital-asset tracking (P3-3)
     is_capitalized = models.BooleanField(
@@ -271,6 +275,14 @@ class PurchaseInvoiceLine(TenantOwnedModel, TimestampedModel):
             models.CheckConstraint(
                 condition=models.Q(unit_price__gte=0),
                 name="purchases_pinv_line_unit_price_non_negative",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(quantity_received__gte=0),
+                name="purchases_pinv_line_quantity_received_non_negative",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(quantity_received__lte=models.F("quantity")),
+                name="purchases_pinv_line_quantity_received_not_exceeds_invoiced",
             ),
         ]
 

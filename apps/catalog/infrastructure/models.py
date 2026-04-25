@@ -194,10 +194,8 @@ class Product(TenantOwnedModel, TimestampedModel, AuditMetaMixin):
     )
 
     VALUATION_WEIGHTED_AVG = "weighted_avg"
-    VALUATION_FIFO = "fifo"
     VALUATION_CHOICES = [
         (VALUATION_WEIGHTED_AVG, "Weighted Average"),
-        (VALUATION_FIFO, "FIFO"),
     ]
     valuation_method = models.CharField(
         max_length=16, choices=VALUATION_CHOICES,

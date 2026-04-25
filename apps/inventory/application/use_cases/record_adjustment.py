@@ -23,6 +23,10 @@ from decimal import Decimal
 
 from django.db import transaction
 
+from apps.inventory.application.use_cases.post_inventory_gl import (
+    PostInventoryGL,
+    PostInventoryGLCommand,
+)
 from apps.inventory.application.use_cases.record_stock_movement import (
     RecordStockMovement,
 )
@@ -37,6 +41,8 @@ from apps.inventory.infrastructure.models import (
     StockAdjustment,
     StockAdjustmentLine,
 )
+
+_post_inventory_gl = PostInventoryGL()
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,6 +92,15 @@ class RecordAdjustment:
                 )
                 recorded = self._stock.execute(movement_spec)
 
+                if spec.currency_code:
+                    _post_inventory_gl.execute(PostInventoryGLCommand(
+                        movement_id=recorded.movement_id,
+                        entry_date=spec.adjustment_date,
+                        currency_code=spec.currency_code,
+                        actor_id=spec.actor_id,
+                        skip_if_transfer=False,
+                    ))
+
                 StockAdjustmentLine.objects.create(
                     adjustment=header,
                     product_id=line.product_id,
@@ -112,11 +127,15 @@ class RecordAdjustment:
         from apps.core.domain.value_objects import Quantity as DomainQty
 
         with transaction.atomic():
-            header = StockAdjustment.objects.select_for_update().get(pk=adjustment_id)
+            header = StockAdjustment.objects.select_for_update().select_related(
+                "organization"
+            ).get(pk=adjustment_id)
             if header.status != AdjustmentStatusChoices.DRAFT:
                 raise AdjustmentAlreadyPostedError(
                     f"Adjustment {header.reference!r} is not in Draft status."
                 )
+
+            currency_code = header.organization.default_currency_code or ""
 
             movement_ids: list[int] = []
             for line in header.lines.all():
@@ -132,6 +151,15 @@ class RecordAdjustment:
                     signed_for_adjustment=sign,
                 )
                 recorded = self._stock.execute(movement_spec)
+
+                if currency_code:
+                    _post_inventory_gl.execute(PostInventoryGLCommand(
+                        movement_id=recorded.movement_id,
+                        entry_date=header.adjustment_date,
+                        currency_code=currency_code,
+                        skip_if_transfer=False,
+                    ))
+
                 line.movement_id = recorded.movement_id
                 line.save(update_fields=["movement_id", "updated_at"])
                 movement_ids.append(recorded.movement_id)
