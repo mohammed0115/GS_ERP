@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% load i18n erp_permissions %}
+
+{% block title %}{% trans "Customer Wallet" %}{% endblock %}
+
+{% block content %}
+{% url 'crm:customer_wallet_create' customer.pk as create_wallet_url %}
+{% if request.user|can:"crm.wallets.adjust" %}
+    {% include "_partials/page_header.html" with title=_("Customer Wallet") subtitle=customer.name primary_action_url=create_wallet_url primary_action_label=_("Create Wallet") primary_action_icon="fa-plus" %}
+{% else %}
+    {% include "_partials/page_header.html" with title=_("Customer Wallet") subtitle=customer.name %}
+{% endif %}
+
+<div class="row">
+    <div class="col-lg-5 mb-3">
+        <div class="card shadow-sm">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <strong>{% trans "Wallets" %}</strong>
+                {% if request.user|can:"crm.wallets.deposit" and wallets %}
+                    <a href="{% url 'crm:customer_wallet_deposit' customer.pk %}" class="btn btn-sm btn-outline-primary">
+                        <i class="fas fa-plus-circle"></i> {% trans "Deposit" %}
+                    </a>
+                {% endif %}
+            </div>
+            <div class="card-body p-0">
+                {% if wallets %}
+                    <div class="table-responsive">
+                        <table class="table mb-0">
+                            <thead>
+                                <tr>
+                                    <th>{% trans "Currency" %}</th>
+                                    <th class="text-right">{% trans "Balance" %}</th>
+                                    <th>{% trans "Liability Account" %}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for w in wallets %}
+                                <tr>
+                                    <td><code>{{ w.currency_code }}</code></td>
+                                    <td class="text-right"><strong>{{ w.balance }}</strong></td>
+                                    <td><code>{{ w.liability_account.code }}</code> — {{ w.liability_account.name }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="p-4 text-center text-muted">
+                        <i class="fas fa-wallet fa-2x mb-2 opacity-50"></i>
+                        <p class="mb-0">{% trans "No wallets yet for this customer." %}</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-7 mb-3">
+        <div class="card shadow-sm">
+            <div class="card-header">
+                <strong>{% trans "Recent Transactions" %}</strong>
+            </div>
+            <div class="card-body p-0">
+                {% if transactions %}
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>{% trans "Date" %}</th>
+                                    <th>{% trans "Operation" %}</th>
+                                    <th class="text-right">{% trans "Delta" %}</th>
+                                    <th>{% trans "Reference" %}</th>
+                                    <th>{% trans "Note" %}</th>
+                                    <th class="text-right">{% trans "JE" %}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for tx in transactions %}
+                                <tr>
+                                    <td class="text-nowrap">{{ tx.created_at|date:"Y-m-d H:i" }}</td>
+                                    <td><span class="badge badge-light">{{ tx.operation }}</span></td>
+                                    <td class="text-right">
+                                        {% if tx.signed_delta >= 0 %}
+                                            <span class="text-success">+{{ tx.signed_delta }}</span>
+                                        {% else %}
+                                            <span class="text-danger">{{ tx.signed_delta }}</span>
+                                        {% endif %}
+                                        <small class="text-muted">{{ tx.currency_code }}</small>
+                                    </td>
+                                    <td><code>{{ tx.reference }}</code></td>
+                                    <td>{{ tx.memo|default:"—" }}</td>
+                                    <td class="text-right">{% if tx.journal_entry_id %}#{{ tx.journal_entry_id }}{% else %}—{% endif %}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="p-4 text-center text-muted">
+                        <i class="fas fa-inbox fa-2x mb-2 opacity-50"></i>
+                        <p class="mb-0">{% trans "No transactions yet." %}</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

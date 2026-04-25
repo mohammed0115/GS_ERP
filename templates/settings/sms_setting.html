@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "SMS Setting" %}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h4 class="mb-0">{% trans "SMS Setting" %}</h4>
+    </div>
+</div>
+
+<form method="post" novalidate>
+    {% csrf_token %}
+
+    {% if form.non_field_errors %}
+        <div class="alert alert-danger">
+            {% for err in form.non_field_errors %}{{ err }}<br>{% endfor %}
+        </div>
+    {% endif %}
+
+    <div class="card shadow-sm">
+        <div class="card-header d-flex align-items-center">
+            <strong>{% trans "SMS Setting" %}</strong>
+        </div>
+        <div class="card-body">
+            <p class="italic"><small>{% trans "The field labels marked with * are required input fields" %}.</small></p>
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label>{% trans "Gateway" %} <span class="text-danger">*</span></label>
+                        {{ form.gateway }}
+                        {% if form.gateway.errors %}<small class="text-danger">{{ form.gateway.errors|join:", " }}</small>{% endif %}
+                    </div>
+
+                    <div class="form-group twilio">
+                        <label>ACCOUNT SID <span class="text-danger">*</span></label>
+                        {{ form.account_sid }}
+                        {% if form.account_sid.errors %}<small class="text-danger">{{ form.account_sid.errors|join:", " }}</small>{% endif %}
+                    </div>
+                    <div class="form-group twilio">
+                        <label>AUTH TOKEN <span class="text-danger">*</span></label>
+                        {{ form.auth_token }}
+                        {% if form.auth_token.errors %}<small class="text-danger">{{ form.auth_token.errors|join:", " }}</small>{% endif %}
+                    </div>
+                    <div class="form-group twilio">
+                        <label>Twilio Number <span class="text-danger">*</span></label>
+                        {{ form.twilio_number }}
+                        {% if form.twilio_number.errors %}<small class="text-danger">{{ form.twilio_number.errors|join:", " }}</small>{% endif %}
+                    </div>
+
+                    <div class="form-group clickatell">
+                        <label>API Key <span class="text-danger">*</span></label>
+                        {{ form.api_key }}
+                        {% if form.api_key.errors %}<small class="text-danger">{{ form.api_key.errors|join:", " }}</small>{% endif %}
+                    </div>
+
+                    <div class="text-right">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save"></i> {% trans "Save" %}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script type="text/javascript">
+    (function () {
+        function toggleGateway() {
+            var gateway = $('select[name="gateway"]').val();
+            if (gateway === 'twilio') {
+                $('.twilio').show();
+                $('.clickatell').hide();
+            } else if (gateway === 'clickatell') {
+                $('.twilio').hide();
+                $('.clickatell').show();
+            } else {
+                $('.twilio').hide();
+                $('.clickatell').hide();
+            }
+        }
+
+        $(function () {
+            toggleGateway();
+            $('select[name="gateway"]').on('change', toggleGateway);
+        });
+    })();
+</script>
+{% endblock %}

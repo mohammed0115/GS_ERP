@@ -1,0 +1,16 @@
+{% extends "_generic/form.html" %}
+{% load i18n %}
+
+{% block page_title %}{% trans "Add Deposit" %}{% endblock %}
+{% block form_title %}{% trans "Add Deposit" %} — {{ customer.name }}{% endblock %}
+
+{% block form_fields %}
+    {% include "_partials/form_field.html" with field=form.entry_date cols=6 %}
+    {% include "_partials/form_field.html" with field=form.wallet cols=6 %}
+    {% include "_partials/form_field.html" with field=form.amount cols=6 %}
+    {% include "_partials/form_field.html" with field=form.counterparty_account cols=6 %}
+    {% include "_partials/form_field.html" with field=form.memo cols=12 %}
+{% endblock %}
+
+{% block cancel_url %}{% url 'crm:customer_wallet' customer.pk %}{% endblock %}
+

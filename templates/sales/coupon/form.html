@@ -1,0 +1,18 @@
+{% extends "_generic/form.html" %}
+{% load i18n %}
+
+{% block page_title %}{% trans "Coupon" %}{% endblock %}
+{% block form_title %}{% trans "Coupon" %}{% endblock %}
+
+{% block form_fields %}
+    {% include "_partials/form_field.html" with field=form.code cols=6 %}
+    {% include "_partials/form_field.html" with field=form.type cols=6 %}
+    {% include "_partials/form_field.html" with field=form.amount cols=6 %}
+    {% include "_partials/form_field.html" with field=form.minimum_amount cols=6 %}
+    {% include "_partials/form_field.html" with field=form.quantity cols=6 %}
+    {% include "_partials/form_field.html" with field=form.expired_date cols=6 %}
+    {% include "_partials/form_field.html" with field=form.is_active cols=12 %}
+{% endblock %}
+
+{% block cancel_url %}{% url 'sales:coupon_list' %}{% endblock %}
+

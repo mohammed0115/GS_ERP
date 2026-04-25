@@ -4,4 +4,7 @@ from apps.sales.infrastructure.models import (  # noqa: F401
     Sale,
     SaleLine,
     SaleStatusChoices,
+    Coupon,
+    GiftCard,
+    GiftCardRecharge,
 )

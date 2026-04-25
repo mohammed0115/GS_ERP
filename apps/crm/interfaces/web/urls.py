@@ -18,6 +18,9 @@ urlpatterns = [
     path("customers/create/",          views.CustomerCreateView.as_view(), name="customer_create"),
     path("customers/<int:pk>/edit/",   views.CustomerUpdateView.as_view(), name="customer_edit"),
     path("customers/<int:pk>/delete/", views.CustomerDeleteView.as_view(), name="customer_delete"),
+    path("customers/<int:pk>/wallet/", views.CustomerWalletView.as_view(), name="customer_wallet"),
+    path("customers/<int:pk>/wallet/create/", views.CustomerWalletCreateView.as_view(), name="customer_wallet_create"),
+    path("customers/<int:pk>/wallet/deposit/", views.CustomerWalletDepositView.as_view(), name="customer_wallet_deposit"),
 
     # -------- Suppliers --------
     path("suppliers/",                 views.SupplierListView.as_view(),   name="supplier_list"),

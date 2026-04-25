@@ -1,0 +1,13 @@
+{% extends "_generic/form.html" %}
+{% load i18n %}
+
+{% block page_title %}{% trans "Create Wallet" %}{% endblock %}
+{% block form_title %}{% trans "Create Wallet" %} — {{ customer.name }}{% endblock %}
+
+{% block form_fields %}
+    {% include "_partials/form_field.html" with field=form.currency_code cols=6 %}
+    {% include "_partials/form_field.html" with field=form.liability_account cols=6 %}
+{% endblock %}
+
+{% block cancel_url %}{% url 'crm:customer_wallet' customer.pk %}{% endblock %}
+

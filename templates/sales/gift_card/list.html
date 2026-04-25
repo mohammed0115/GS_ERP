@@ -1,0 +1,65 @@
+{% extends "_generic/list.html" %}
+{% load i18n erp_permissions %}
+
+{% block page_title %}{% trans "Gift Cards" %}{% endblock %}
+{% block header_title %}{% trans "Gift Cards" %}{% endblock %}
+{% block header_subtitle %}{% trans "Stored-value gift cards usable as a payment method" %}{% endblock %}
+
+{% block create_url %}{% url 'sales:gift_card_create' %}{% endblock %}
+{% block create_label %}{% trans "Add Gift Card" %}{% endblock %}
+
+{% block table_head %}
+    <th>{% trans "Card No" %}</th>
+    <th>{% trans "Customer/User" %}</th>
+    <th class="text-right">{% trans "Amount" %}</th>
+    <th class="text-right">{% trans "Expense" %}</th>
+    <th class="text-right">{% trans "Balance" %}</th>
+    <th>{% trans "Created By" %}</th>
+    <th class="text-center">{% trans "Expired Date" %}</th>
+    <th class="text-center">{% trans "Status" %}</th>
+    <th style="width: 220px;">&nbsp;</th>
+{% endblock %}
+
+{% block table_body %}
+    {% for obj in object_list %}
+    <tr>
+        <td><code>{{ obj.card_no }}</code></td>
+        <td>
+            {% if obj.customer %}{{ obj.customer.name }}
+            {% elif obj.user %}{{ obj.user.email|default:obj.user }}
+            {% else %}<span class="text-muted">—</span>{% endif %}
+        </td>
+        <td class="text-right">{{ obj.amount }}</td>
+        <td class="text-right">{{ obj.expense }}</td>
+        <td class="text-right"><strong>{{ obj.balance }}</strong></td>
+        <td>{% if obj.created_by %}{{ obj.created_by.email|default:obj.created_by }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+        <td class="text-center">
+            {% if obj.expired_date %}
+                {% if obj.is_expired %}
+                    <span class="badge badge-danger">{{ obj.expired_date }}</span>
+                {% else %}
+                    <span class="badge badge-success">{{ obj.expired_date }}</span>
+                {% endif %}
+            {% else %}
+                <span class="text-muted">—</span>
+            {% endif %}
+        </td>
+        <td class="text-center">
+            {% if obj.is_active %}<span class="badge badge-success">{% trans "Active" %}</span>
+            {% else %}<span class="badge badge-secondary">{% trans "Inactive" %}</span>{% endif %}
+        </td>
+        <td class="text-right">
+            {% if request.user|can:"sales.gift_cards.update" %}
+                <a href="{% url 'sales:gift_card_edit' obj.pk %}" class="btn btn-sm btn-outline-primary"><i class="fas fa-pen"></i></a>
+            {% endif %}
+            {% if request.user|can:"sales.gift_cards.recharge" %}
+                <a href="{% url 'sales:gift_card_recharge' obj.pk %}" class="btn btn-sm btn-outline-success"><i class="fas fa-plus-circle"></i></a>
+            {% endif %}
+            {% if request.user|can:"sales.gift_cards.delete" %}
+                <a href="{% url 'sales:gift_card_delete' obj.pk %}" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></a>
+            {% endif %}
+        </td>
+    </tr>
+    {% endfor %}
+{% endblock %}
+

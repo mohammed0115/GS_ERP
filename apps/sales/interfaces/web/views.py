@@ -25,12 +25,14 @@ from decimal import Decimal, InvalidOperation
 from django import forms
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
+from django.contrib.messages.views import SuccessMessageMixin
 from common.mixins import OrgPermissionRequiredMixin
+from django.db import transaction
 from django.db.models import Q
 from django.http import HttpResponseRedirect, JsonResponse
 from django.urls import reverse, reverse_lazy
 from django.views import View
-from django.views.generic import DetailView, FormView, ListView
+from django.views.generic import CreateView, DeleteView, DetailView, FormView, ListView, UpdateView
 
 from apps.catalog.infrastructure.models import Product
 from apps.core.domain.value_objects import Currency, Money, Quantity
@@ -40,6 +42,7 @@ from apps.inventory.infrastructure.models import Warehouse
 from apps.sales.application.use_cases.post_sale import PostSale, PostSaleCommand
 from apps.sales.domain.entities import SaleDraft, SaleLineSpec
 from apps.sales.infrastructure.models import Sale, SaleStatusChoices
+from apps.sales.infrastructure.promo_models import Coupon, GiftCard, GiftCardRecharge
 from common.forms import BootstrapFormMixin
 
 
@@ -2184,3 +2187,187 @@ class DebitNoteCancelView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
         except Exception as exc:
             messages.error(request, f"Could not cancel debit note: {exc}")
         return HttpResponseRedirect(reverse("sales:debit_note_detail", args=[pk]))
+
+
+# ---------------------------------------------------------------------------
+# Promotions (legacy parity): Coupons + Gift Cards
+# ---------------------------------------------------------------------------
+class CouponForm(BootstrapFormMixin, forms.ModelForm):
+    class Meta:
+        model = Coupon
+        fields = ["code", "type", "amount", "minimum_amount", "quantity", "expired_date", "is_active"]
+        widgets = {
+            "expired_date": forms.DateInput(attrs={"type": "date"}),
+        }
+
+    def clean_code(self) -> str:
+        return (self.cleaned_data.get("code") or "").strip().upper()
+
+
+class CouponListView(LoginRequiredMixin, OrgPermissionRequiredMixin, ListView):
+    permission_required = "sales.coupons.view"
+    model = Coupon
+    template_name = "sales/coupon/list.html"
+    context_object_name = "object_list"
+    paginate_by = 25
+    ordering = "-id"
+
+    def get_queryset(self):
+        qs = super().get_queryset().select_related("created_by").order_by("-id")
+        q = (self.request.GET.get("q") or "").strip()
+        if q:
+            qs = qs.filter(code__icontains=q)
+        return qs
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["q"] = (self.request.GET.get("q") or "").strip()
+        return ctx
+
+
+class CouponCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, SuccessMessageMixin, CreateView):
+    permission_required = "sales.coupons.create"
+    model = Coupon
+    form_class = CouponForm
+    template_name = "sales/coupon/form.html"
+    success_url = reverse_lazy("sales:coupon_list")
+    success_message = "Coupon created."
+
+    def form_valid(self, form):
+        form.instance.created_by = self.request.user
+        return super().form_valid(form)
+
+
+class CouponUpdateView(LoginRequiredMixin, OrgPermissionRequiredMixin, SuccessMessageMixin, UpdateView):
+    permission_required = "sales.coupons.update"
+    model = Coupon
+    form_class = CouponForm
+    template_name = "sales/coupon/form.html"
+    success_url = reverse_lazy("sales:coupon_list")
+    success_message = "Coupon updated."
+
+
+class CouponDeleteView(LoginRequiredMixin, OrgPermissionRequiredMixin, DeleteView):
+    permission_required = "sales.coupons.delete"
+    model = Coupon
+    template_name = "_partials/confirm_delete.html"
+    success_url = reverse_lazy("sales:coupon_list")
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["cancel_url"] = self.success_url
+        return ctx
+
+
+class GiftCardForm(BootstrapFormMixin, forms.ModelForm):
+    class Meta:
+        model = GiftCard
+        fields = ["card_no", "amount", "customer", "user", "expired_date", "is_active"]
+        widgets = {
+            "expired_date": forms.DateInput(attrs={"type": "date"}),
+        }
+
+    def clean_card_no(self) -> str:
+        return (self.cleaned_data.get("card_no") or "").strip().upper()
+
+    def clean(self):
+        cleaned = super().clean()
+        customer = cleaned.get("customer")
+        user = cleaned.get("user")
+        if not customer and not user:
+            self.add_error("customer", "Select a customer or a user.")
+        if customer and user:
+            self.add_error("user", "Gift card cannot be assigned to both customer and user.")
+        return cleaned
+
+
+class GiftCardRechargeForm(BootstrapFormMixin, forms.Form):
+    amount = forms.DecimalField(max_digits=18, decimal_places=4, min_value=Decimal("0.0001"))
+
+
+class GiftCardListView(LoginRequiredMixin, OrgPermissionRequiredMixin, ListView):
+    permission_required = "sales.gift_cards.view"
+    model = GiftCard
+    template_name = "sales/gift_card/list.html"
+    context_object_name = "object_list"
+    paginate_by = 25
+    ordering = "-id"
+
+    def get_queryset(self):
+        qs = (
+            super().get_queryset()
+            .select_related("customer", "user", "created_by")
+            .order_by("-id")
+        )
+        q = (self.request.GET.get("q") or "").strip()
+        if q:
+            qs = qs.filter(card_no__icontains=q)
+        return qs
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["q"] = (self.request.GET.get("q") or "").strip()
+        return ctx
+
+
+class GiftCardCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, SuccessMessageMixin, CreateView):
+    permission_required = "sales.gift_cards.create"
+    model = GiftCard
+    form_class = GiftCardForm
+    template_name = "sales/gift_card/form.html"
+    success_url = reverse_lazy("sales:gift_card_list")
+    success_message = "Gift card created."
+
+    def form_valid(self, form):
+        form.instance.created_by = self.request.user
+        return super().form_valid(form)
+
+
+class GiftCardUpdateView(LoginRequiredMixin, OrgPermissionRequiredMixin, SuccessMessageMixin, UpdateView):
+    permission_required = "sales.gift_cards.update"
+    model = GiftCard
+    form_class = GiftCardForm
+    template_name = "sales/gift_card/form.html"
+    success_url = reverse_lazy("sales:gift_card_list")
+    success_message = "Gift card updated."
+
+
+class GiftCardRechargeView(LoginRequiredMixin, OrgPermissionRequiredMixin, FormView):
+    permission_required = "sales.gift_cards.recharge"
+    template_name = "sales/gift_card/recharge.html"
+    form_class = GiftCardRechargeForm
+
+    def dispatch(self, request, *args, **kwargs):
+        from django.shortcuts import get_object_or_404
+        self.gift_card = get_object_or_404(GiftCard, pk=kwargs.get("pk"))
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["gift_card"] = self.gift_card
+        return ctx
+
+    def form_valid(self, form):
+        amount: Decimal = form.cleaned_data["amount"]
+        with transaction.atomic():
+            GiftCardRecharge.objects.create(
+                gift_card=self.gift_card,
+                amount=amount,
+                user=self.request.user,
+            )
+            self.gift_card.amount = (self.gift_card.amount or Decimal("0")) + amount
+            self.gift_card.save(update_fields=["amount", "updated_at"])
+        messages.success(self.request, "Gift card recharged.")
+        return HttpResponseRedirect(reverse("sales:gift_card_list"))
+
+
+class GiftCardDeleteView(LoginRequiredMixin, OrgPermissionRequiredMixin, DeleteView):
+    permission_required = "sales.gift_cards.delete"
+    model = GiftCard
+    template_name = "_partials/confirm_delete.html"
+    success_url = reverse_lazy("sales:gift_card_list")
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["cancel_url"] = self.success_url
+        return ctx

@@ -170,6 +170,13 @@ from apps.sales.infrastructure.invoice_models import (  # noqa: E402, F401
     DebitNoteLine,
 )
 
+# Promotions (legacy parity: coupons / gift cards)
+from apps.sales.infrastructure.promo_models import (  # noqa: E402, F401
+    Coupon,
+    GiftCard,
+    GiftCardRecharge,
+)
+
 # ---------------------------------------------------------------------------
 # Sale return (Sprint 7)
 # ---------------------------------------------------------------------------

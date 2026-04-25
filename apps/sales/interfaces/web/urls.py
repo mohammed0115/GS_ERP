@@ -32,6 +32,18 @@ urlpatterns = [
     path("deliveries/<int:pk>/dispatch/",            views.DeliveryDispatchView.as_view(),    name="delivery_dispatch"),
     path("deliveries/<int:pk>/confirm/",             views.DeliveryConfirmView.as_view(),     name="delivery_confirm"),
 
+    # ---- Promotions (legacy parity) ----
+    path("coupons/",                 views.CouponListView.as_view(),    name="coupon_list"),
+    path("coupons/create/",          views.CouponCreateView.as_view(),  name="coupon_create"),
+    path("coupons/<int:pk>/edit/",   views.CouponUpdateView.as_view(),  name="coupon_edit"),
+    path("coupons/<int:pk>/delete/", views.CouponDeleteView.as_view(),  name="coupon_delete"),
+
+    path("gift-cards/",                   views.GiftCardListView.as_view(),     name="gift_card_list"),
+    path("gift-cards/create/",            views.GiftCardCreateView.as_view(),   name="gift_card_create"),
+    path("gift-cards/<int:pk>/edit/",     views.GiftCardUpdateView.as_view(),   name="gift_card_edit"),
+    path("gift-cards/<int:pk>/recharge/", views.GiftCardRechargeView.as_view(), name="gift_card_recharge"),
+    path("gift-cards/<int:pk>/delete/",   views.GiftCardDeleteView.as_view(),   name="gift_card_delete"),
+
     # ---- Phase 2 — AR cycle ----
     # SalesInvoice
     path("invoices/",                         views.SalesInvoiceListView.as_view(),   name="invoice_list"),

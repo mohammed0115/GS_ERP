@@ -34,6 +34,11 @@
                 {% endif %}
             </td>
             <td class="text-right">
+                {% if request.user|can:"crm.wallets.view" %}
+                    <a href="{% url 'crm:customer_wallet' obj.pk %}" class="btn btn-sm btn-outline-secondary" title="{% trans 'Wallet' %}">
+                        <i class="fas fa-wallet"></i>
+                    </a>
+                {% endif %}
                 {% if request.user|can:"crm.customers.update" %}
                     <a href="{% url 'crm:customer_edit' obj.pk %}" class="btn btn-sm btn-outline-primary">
                         <i class="fas fa-pen"></i>

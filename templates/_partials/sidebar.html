@@ -89,7 +89,7 @@
             {% endif %}
 
             {# -------- Sales -------- #}
-            {% if request.user|can:"sales.sales.view" %}
+            {% if request.user|can:"sales.sales.view" or request.user|can:"sales.coupons.view" or request.user|can:"sales.gift_cards.view" %}
                 <li class="nav-item">
                     <a href="#nav-sales" data-toggle="collapse" class="nav-link text-white">
                         <i class="fas fa-file-invoice-dollar"></i> {% trans "Sales" %}
@@ -101,6 +101,8 @@
                         {% if request.user|can:"sales.quotations.view" %}<li><a class="nav-link pl-5" href="{% url 'sales:quotation_list' %}">{% trans "Quotations" %}</a></li>{% endif %}
                         {% if request.user|can:"sales.sale_returns.view" %}<li><a class="nav-link pl-5" href="{% url 'sales:return_list' %}">{% trans "Returns" %}</a></li>{% endif %}
                         {% if request.user|can:"sales.deliveries.view" %}<li><a class="nav-link pl-5" href="{% url 'sales:delivery_list' %}">{% trans "Deliveries" %}</a></li>{% endif %}
+                        {% if request.user|can:"sales.gift_cards.view" %}<li><a class="nav-link pl-5" href="{% url 'sales:gift_card_list' %}">{% trans "Gift Cards" %}</a></li>{% endif %}
+                        {% if request.user|can:"sales.coupons.view" %}<li><a class="nav-link pl-5" href="{% url 'sales:coupon_list' %}">{% trans "Coupons" %}</a></li>{% endif %}
                     </ul>
                 </li>
             {% endif %}
@@ -258,6 +260,12 @@
                     <ul id="nav-settings" class="collapse list-unstyled">
                         <li><a class="nav-link pl-5" href="{% url 'settings:company' %}">{% trans "Company Settings" %}</a></li>
                         <li><a class="nav-link pl-5" href="{% url 'settings:currency_list' %}">{% trans "Currencies" %}</a></li>
+                        <li><a class="nav-link pl-5" href="{% url 'settings:mail' %}">{% trans "Mail Setting" %}</a></li>
+                        <li><a class="nav-link pl-5" href="{% url 'settings:sms' %}">{% trans "SMS Setting" %}</a></li>
+                        <li><a class="nav-link pl-5" href="{% url 'settings:create_sms' %}">{% trans "Create SMS" %}</a></li>
+                        {% if request.user|can:"pos.pos.configure" %}
+                            <li><a class="nav-link pl-5" href="{% url 'pos:config' %}">{% trans "POS Configuration" %}</a></li>
+                        {% endif %}
                         <li><a class="nav-link pl-5" href="{% url 'users:user_list' %}">{% trans "Users" %}</a></li>
                         <li><a class="nav-link pl-5" href="{% url 'users:role_list' %}">{% trans "Roles" %}</a></li>
                     </ul>

@@ -79,6 +79,35 @@ class Organization(TimestampedModel):
         help_text="ISO-4217 code used as the functional currency for reports (e.g. SAR, EGP, USD).",
     )
 
+    # ------------------------------------------------------------------
+    # Communication settings (legacy parity: mail_setting / sms_setting)
+    # ------------------------------------------------------------------
+    email_host = models.CharField(max_length=255, blank=True, default="")
+    email_port = models.PositiveIntegerField(default=587)
+    email_encryption = models.CharField(
+        max_length=16,
+        blank=True,
+        default="tls",
+        choices=[("tls", "TLS"), ("ssl", "SSL"), ("none", "None")],
+        help_text="SMTP encryption mode used when sending email (TLS/SSL/None).",
+    )
+    email_host_user = models.CharField(max_length=255, blank=True, default="")
+    email_host_password = models.CharField(max_length=255, blank=True, default="")
+    email_from_address = models.EmailField(blank=True, default="")
+    email_from_name = models.CharField(max_length=255, blank=True, default="")
+
+    sms_gateway = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        choices=[("", "Disabled"), ("twilio", "Twilio"), ("clickatell", "Clickatell")],
+        help_text="SMS gateway used for outbound messages.",
+    )
+    twilio_account_sid = models.CharField(max_length=128, blank=True, default="")
+    twilio_auth_token = models.CharField(max_length=128, blank=True, default="")
+    twilio_number = models.CharField(max_length=64, blank=True, default="")
+    clickatell_api_key = models.CharField(max_length=255, blank=True, default="")
+
     # Accounting framework and tax regime
     accounting_standard = models.CharField(
         max_length=16, blank=True, default="",

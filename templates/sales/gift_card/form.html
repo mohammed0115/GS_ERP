@@ -1,0 +1,17 @@
+{% extends "_generic/form.html" %}
+{% load i18n %}
+
+{% block page_title %}{% trans "Gift Card" %}{% endblock %}
+{% block form_title %}{% trans "Gift Card" %}{% endblock %}
+
+{% block form_fields %}
+    {% include "_partials/form_field.html" with field=form.card_no cols=6 %}
+    {% include "_partials/form_field.html" with field=form.amount cols=6 %}
+    {% include "_partials/form_field.html" with field=form.customer cols=6 %}
+    {% include "_partials/form_field.html" with field=form.user cols=6 %}
+    {% include "_partials/form_field.html" with field=form.expired_date cols=6 %}
+    {% include "_partials/form_field.html" with field=form.is_active cols=6 %}
+{% endblock %}
+
+{% block cancel_url %}{% url 'sales:gift_card_list' %}{% endblock %}
+

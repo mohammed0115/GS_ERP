@@ -1,0 +1,15 @@
+{% extends "_generic/form.html" %}
+{% load i18n %}
+
+{% block page_title %}{% trans "Recharge Gift Card" %}{% endblock %}
+{% block form_title %}{% trans "Recharge Gift Card" %} — {{ gift_card.card_no }}{% endblock %}
+
+{% block form_fields %}
+    <div class="col-12 mb-2 text-muted small">
+        {% trans "Current balance" %}: <strong>{{ gift_card.balance }}</strong>
+    </div>
+    {% include "_partials/form_field.html" with field=form.amount cols=6 %}
+{% endblock %}
+
+{% block cancel_url %}{% url 'sales:gift_card_list' %}{% endblock %}
+
