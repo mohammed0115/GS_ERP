@@ -25,13 +25,19 @@ def tenant_context(request):
         if member:
             current_org = member.organization
 
-    # Unread notifications count
+    # Unread notifications count (tenant-scoped)
     unread_notifications = 0
     if current_org and hasattr(request, "user") and getattr(request.user, "is_authenticated", False):
         try:
             from apps.notifications.infrastructure.models import Notification
-            unread_notifications = Notification.objects.all_tenants().filter(
+            qs = Notification.objects
+            # Some pages (e.g. superuser tooling) may run without tenant context.
+            # In that case, fall back to an explicit organization filter.
+            if ctx is None:
+                qs = qs.all_tenants().filter(organization=current_org)
+            unread_notifications = qs.filter(
                 recipient=request.user,
+                channel="in_app",
                 status__in=["pending", "sent"],
             ).count()
         except Exception:

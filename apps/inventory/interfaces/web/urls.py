@@ -13,6 +13,8 @@ urlpatterns = [
     path("warehouses/create/",           views.WarehouseCreateView.as_view(), name="warehouse_create"),
     path("warehouses/<int:pk>/edit/",    views.WarehouseUpdateView.as_view(), name="warehouse_edit"),
     path("warehouses/<int:pk>/delete/",  views.WarehouseDeleteView.as_view(), name="warehouse_delete"),
+    path("warehouses/import/",           views.WarehouseCSVImportView.as_view(), name="warehouse_import"),
+    path("warehouses/export/",           views.WarehouseCSVExportView.as_view(), name="warehouse_export"),
 
     # -------- Adjustments --------
     path("adjustments/",                 views.AdjustmentListView.as_view(),   name="adjustment_list"),

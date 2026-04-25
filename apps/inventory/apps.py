@@ -9,5 +9,5 @@ class InventoryConfig(AppConfig):
 
     def ready(self) -> None:
         from apps.users.application.permissions import register_permissions
-        register_permissions("warehouses", ("view", "create", "update", "deactivate"))
+        register_permissions("warehouses", ("view", "create", "update", "deactivate", "import", "export"))
         register_permissions("stock", ("view", "adjust", "transfer", "count"))

@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{{ title|default:_("Import CSV") }}{% endblock %}
+
+{% block content %}
+{% include "_partials/page_header.html" with title=title subtitle=subtitle back_url=back_url %}
+
+<div class="card shadow-sm" style="max-width: 980px;">
+    <div class="card-body">
+        {% if help_text %}
+            <p class="text-muted small mb-3">{{ help_text }}</p>
+        {% endif %}
+
+        {% if expected_headers %}
+            <div class="alert alert-light border small">
+                <div class="font-weight-bold mb-1">{% trans "Expected columns" %}</div>
+                <code>{{ expected_headers|join:", " }}</code>
+                {% if header_notes %}
+                    <div class="text-muted mt-2">{{ header_notes }}</div>
+                {% endif %}
+            </div>
+        {% endif %}
+
+        {% if template_url %}
+            <a href="{{ template_url }}" class="btn btn-sm btn-outline-secondary mb-3">
+                <i class="fas fa-download"></i> {% trans "Download template" %}
+            </a>
+        {% endif %}
+
+        <form method="post" enctype="multipart/form-data" novalidate>
+            {% csrf_token %}
+
+            {% if form.non_field_errors %}
+                <div class="alert alert-danger">
+                    {% for err in form.non_field_errors %}{{ err }}<br>{% endfor %}
+                </div>
+            {% endif %}
+
+            <div class="form-group">
+                <label for="{{ form.file.id_for_label }}">{% trans "CSV file" %}</label>
+                {{ form.file }}
+                {% if form.file.help_text %}<small class="form-text text-muted">{{ form.file.help_text }}</small>{% endif %}
+                {% if form.file.errors %}
+                    <div class="text-danger small mt-1">
+                        {% for err in form.file.errors %}{{ err }}<br>{% endfor %}
+                    </div>
+                {% endif %}
+            </div>
+
+            {% if form.update_existing %}
+                <div class="form-group form-check">
+                    {{ form.update_existing }}
+                    <label class="form-check-label" for="{{ form.update_existing.id_for_label }}">
+                        {{ form.update_existing.label }}
+                    </label>
+                    {% if form.update_existing.help_text %}
+                        <small class="form-text text-muted">{{ form.update_existing.help_text }}</small>
+                    {% endif %}
+                </div>
+            {% endif %}
+
+            <div class="d-flex justify-content-end">
+                {% if back_url %}
+                    <a href="{{ back_url }}" class="btn btn-outline-secondary mr-2">{% trans "Cancel" %}</a>
+                {% endif %}
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-file-upload"></i> {% trans "Import" %}
+                </button>
+            </div>
+        </form>
+
+        {% if import_errors %}
+            <hr>
+            <h6 class="font-weight-bold mb-2">{% trans "Import errors" %}</h6>
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered mb-0">
+                    <thead class="thead-light">
+                        <tr>
+                            <th style="width:120px;">{% trans "Row" %}</th>
+                            <th>{% trans "Message" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for err in import_errors %}
+                            <tr>
+                                <td><code>{{ err.row_number }}</code></td>
+                                <td>{{ err.message }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+

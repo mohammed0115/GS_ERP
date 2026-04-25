@@ -233,6 +233,275 @@ class BillerUpdateView(LoginRequiredMixin, OrgPermissionRequiredMixin,
 
 
 # ---------------------------------------------------------------------------
+# CSV import/export (legacy parity)
+# ---------------------------------------------------------------------------
+class CSVImportForm(BootstrapFormMixin, forms.Form):
+    file = forms.FileField(
+        label="CSV file",
+        help_text="Upload a CSV file with a header row (UTF-8 recommended).",
+    )
+    update_existing = forms.BooleanField(
+        required=False,
+        initial=True,
+        label="Update existing records",
+        help_text="If unchecked, rows with an existing code will be skipped.",
+    )
+
+
+class _CSVExportBaseView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
+    filename_prefix: str = "export"
+
+    def _template_only(self, request) -> bool:
+        return request.GET.get("template") in {"1", "true", "yes"}
+
+    def _response(self, *, content: bytes, filename: str):
+        from django.http import HttpResponse
+
+        resp = HttpResponse(content, content_type="text/csv; charset=utf-8")
+        resp["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return resp
+
+
+class CustomerGroupCSVExportView(_CSVExportBaseView):
+    permission_required = "crm.customer_groups.export"
+    filename_prefix = "customer_groups"
+
+    def get(self, request, *args, **kwargs):
+        from apps.crm.application.services.csv_io import export_customer_groups_csv, export_filename
+
+        content = export_customer_groups_csv(template_only=self._template_only(request))
+        return self._response(content=content, filename=export_filename(self.filename_prefix))
+
+
+class CustomerGroupCSVImportView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
+    permission_required = "crm.customer_groups.import"
+    template_name = "_generic/import_csv.html"
+
+    def get(self, request, *args, **kwargs):
+        from django.urls import reverse
+
+        form = CSVImportForm()
+        return self._render(request, form=form, import_errors=None, template_url=reverse("crm:customer_group_export") + "?template=1")
+
+    def post(self, request, *args, **kwargs):
+        from django.contrib import messages as msg
+        from django.shortcuts import redirect
+        from apps.crm.application.services.csv_io import import_customer_groups_csv
+
+        form = CSVImportForm(request.POST, request.FILES)
+        if not form.is_valid():
+            return self._render(request, form=form, import_errors=None, template_url=None)
+
+        csv_data = form.cleaned_data["file"].read()
+        update_existing = bool(form.cleaned_data.get("update_existing"))
+        result = import_customer_groups_csv(csv_data=csv_data, update_existing=update_existing)
+
+        if result.errors:
+            msg.error(request, f"Imported with errors: created={result.created}, updated={result.updated}, skipped={result.skipped}.")
+            return self._render(request, form=form, import_errors=result.errors, template_url=None)
+
+        msg.success(request, f"Import complete: created={result.created}, updated={result.updated}, skipped={result.skipped}.")
+        return redirect("crm:customer_group_list")
+
+    def _render(self, request, *, form, import_errors, template_url):
+        from django.shortcuts import render
+        from django.urls import reverse
+
+        return render(request, self.template_name, {
+            "title": "Import Customer Groups",
+            "subtitle": "Upload a CSV file to create/update customer groups",
+            "back_url": reverse("crm:customer_group_list"),
+            "template_url": template_url,
+            "expected_headers": ["code", "name", "discount_percent", "is_active"],
+            "header_notes": "Legacy columns supported: percentage.",
+            "form": form,
+            "import_errors": import_errors,
+        })
+
+
+class CustomerCSVExportView(_CSVExportBaseView):
+    permission_required = "crm.customers.export"
+    filename_prefix = "customers"
+
+    def get(self, request, *args, **kwargs):
+        from apps.crm.application.services.csv_io import export_customers_csv, export_filename
+
+        content = export_customers_csv(template_only=self._template_only(request))
+        return self._response(content=content, filename=export_filename(self.filename_prefix))
+
+
+class CustomerCSVImportView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
+    permission_required = "crm.customers.import"
+    template_name = "_generic/import_csv.html"
+
+    def get(self, request, *args, **kwargs):
+        from django.urls import reverse
+
+        form = CSVImportForm()
+        return self._render(request, form=form, import_errors=None, template_url=reverse("crm:customer_export") + "?template=1")
+
+    def post(self, request, *args, **kwargs):
+        from django.contrib import messages as msg
+        from django.shortcuts import redirect
+        from apps.crm.application.services.csv_io import import_customers_csv
+
+        form = CSVImportForm(request.POST, request.FILES)
+        if not form.is_valid():
+            return self._render(request, form=form, import_errors=None, template_url=None)
+
+        csv_data = form.cleaned_data["file"].read()
+        update_existing = bool(form.cleaned_data.get("update_existing"))
+        result = import_customers_csv(csv_data=csv_data, update_existing=update_existing)
+
+        if result.errors:
+            msg.error(request, f"Imported with errors: created={result.created}, updated={result.updated}, skipped={result.skipped}.")
+            return self._render(request, form=form, import_errors=result.errors, template_url=None)
+
+        msg.success(request, f"Import complete: created={result.created}, updated={result.updated}, skipped={result.skipped}.")
+        return redirect("crm:customer_list")
+
+    def _render(self, request, *, form, import_errors, template_url):
+        from django.shortcuts import render
+        from django.urls import reverse
+
+        return render(request, self.template_name, {
+            "title": "Import Customers",
+            "subtitle": "Upload a CSV file to create/update customers",
+            "back_url": reverse("crm:customer_list"),
+            "template_url": template_url,
+            "expected_headers": [
+                "code", "name", "group_code", "email", "phone",
+                "address_line1", "address_line2", "city", "state", "postal_code", "country_code",
+                "tax_number", "note", "is_active",
+            ],
+            "header_notes": "Legacy columns supported: customergroup, companyname, phonenumber, postalcode, vatnumber.",
+            "form": form,
+            "import_errors": import_errors,
+        })
+
+
+class SupplierCSVExportView(_CSVExportBaseView):
+    permission_required = "crm.suppliers.export"
+    filename_prefix = "suppliers"
+
+    def get(self, request, *args, **kwargs):
+        from apps.crm.application.services.csv_io import export_filename, export_suppliers_csv
+
+        content = export_suppliers_csv(template_only=self._template_only(request))
+        return self._response(content=content, filename=export_filename(self.filename_prefix))
+
+
+class SupplierCSVImportView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
+    permission_required = "crm.suppliers.import"
+    template_name = "_generic/import_csv.html"
+
+    def get(self, request, *args, **kwargs):
+        from django.urls import reverse
+
+        form = CSVImportForm()
+        return self._render(request, form=form, import_errors=None, template_url=reverse("crm:supplier_export") + "?template=1")
+
+    def post(self, request, *args, **kwargs):
+        from django.contrib import messages as msg
+        from django.shortcuts import redirect
+        from apps.crm.application.services.csv_io import import_suppliers_csv
+
+        form = CSVImportForm(request.POST, request.FILES)
+        if not form.is_valid():
+            return self._render(request, form=form, import_errors=None, template_url=None)
+
+        csv_data = form.cleaned_data["file"].read()
+        update_existing = bool(form.cleaned_data.get("update_existing"))
+        result = import_suppliers_csv(csv_data=csv_data, update_existing=update_existing)
+
+        if result.errors:
+            msg.error(request, f"Imported with errors: created={result.created}, updated={result.updated}, skipped={result.skipped}.")
+            return self._render(request, form=form, import_errors=result.errors, template_url=None)
+
+        msg.success(request, f"Import complete: created={result.created}, updated={result.updated}, skipped={result.skipped}.")
+        return redirect("crm:supplier_list")
+
+    def _render(self, request, *, form, import_errors, template_url):
+        from django.shortcuts import render
+        from django.urls import reverse
+
+        return render(request, self.template_name, {
+            "title": "Import Suppliers",
+            "subtitle": "Upload a CSV file to create/update suppliers",
+            "back_url": reverse("crm:supplier_list"),
+            "template_url": template_url,
+            "expected_headers": [
+                "code", "name", "email", "phone",
+                "address_line1", "address_line2", "city", "state", "postal_code", "country_code",
+                "tax_number", "note", "is_active",
+            ],
+            "header_notes": "Legacy columns supported: companyname, phonenumber, postalcode, vatnumber.",
+            "form": form,
+            "import_errors": import_errors,
+        })
+
+
+class BillerCSVExportView(_CSVExportBaseView):
+    permission_required = "crm.billers.export"
+    filename_prefix = "billers"
+
+    def get(self, request, *args, **kwargs):
+        from apps.crm.application.services.csv_io import export_billers_csv, export_filename
+
+        content = export_billers_csv(template_only=self._template_only(request))
+        return self._response(content=content, filename=export_filename(self.filename_prefix))
+
+
+class BillerCSVImportView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
+    permission_required = "crm.billers.import"
+    template_name = "_generic/import_csv.html"
+
+    def get(self, request, *args, **kwargs):
+        from django.urls import reverse
+
+        form = CSVImportForm()
+        return self._render(request, form=form, import_errors=None, template_url=reverse("crm:biller_export") + "?template=1")
+
+    def post(self, request, *args, **kwargs):
+        from django.contrib import messages as msg
+        from django.shortcuts import redirect
+        from apps.crm.application.services.csv_io import import_billers_csv
+
+        form = CSVImportForm(request.POST, request.FILES)
+        if not form.is_valid():
+            return self._render(request, form=form, import_errors=None, template_url=None)
+
+        csv_data = form.cleaned_data["file"].read()
+        update_existing = bool(form.cleaned_data.get("update_existing"))
+        result = import_billers_csv(csv_data=csv_data, update_existing=update_existing)
+
+        if result.errors:
+            msg.error(request, f"Imported with errors: created={result.created}, updated={result.updated}, skipped={result.skipped}.")
+            return self._render(request, form=form, import_errors=result.errors, template_url=None)
+
+        msg.success(request, f"Import complete: created={result.created}, updated={result.updated}, skipped={result.skipped}.")
+        return redirect("crm:biller_list")
+
+    def _render(self, request, *, form, import_errors, template_url):
+        from django.shortcuts import render
+        from django.urls import reverse
+
+        return render(request, self.template_name, {
+            "title": "Import Billers",
+            "subtitle": "Upload a CSV file to create/update billers",
+            "back_url": reverse("crm:biller_list"),
+            "template_url": template_url,
+            "expected_headers": [
+                "code", "name", "email", "phone", "address_line1",
+                "city", "state", "postal_code", "country_code",
+                "tax_number", "logo", "is_active",
+            ],
+            "header_notes": "Legacy columns supported: companyname, phonenumber, postalcode, vatnumber, image.",
+            "form": form,
+            "import_errors": import_errors,
+        })
+
+# ---------------------------------------------------------------------------
 # Customer Wallet (legacy deposit replacement)
 # ---------------------------------------------------------------------------
 class CustomerWalletCreateForm(BootstrapFormMixin, forms.Form):

@@ -161,4 +161,3 @@ def flag_overdue_invoices(self) -> dict:
         sales_flagged, purchases_flagged,
     )
     return {"sales_flagged": sales_flagged, "purchases_flagged": purchases_flagged}
-        raise self.retry(exc=exc, countdown=300)

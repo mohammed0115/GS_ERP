@@ -13,6 +13,7 @@ from common.mixins import OrgPermissionRequiredMixin
 from django.contrib.messages.views import SuccessMessageMixin
 from django.urls import reverse_lazy
 from django.views.generic import CreateView, DeleteView, ListView, UpdateView
+from django.views import View as DjangoView
 
 from common.forms import BootstrapFormMixin
 from apps.inventory.infrastructure.models import Warehouse
@@ -74,6 +75,93 @@ class WarehouseDeleteView(LoginRequiredMixin, OrgPermissionRequiredMixin, Delete
         ctx = super().get_context_data(**kwargs)
         ctx["cancel_url"] = self.success_url
         return ctx
+
+
+# ---------------------------------------------------------------------------
+# CSV import/export (legacy parity)
+# ---------------------------------------------------------------------------
+class CSVImportForm(BootstrapFormMixin, forms.Form):
+    file = forms.FileField(
+        label="CSV file",
+        help_text="Upload a CSV file with a header row (UTF-8 recommended).",
+    )
+    update_existing = forms.BooleanField(
+        required=False,
+        initial=True,
+        label="Update existing records",
+        help_text="If unchecked, rows with an existing code will be skipped.",
+    )
+
+
+class _CSVExportBaseView(LoginRequiredMixin, OrgPermissionRequiredMixin, DjangoView):
+    filename_prefix: str = "export"
+
+    def _template_only(self, request) -> bool:
+        return request.GET.get("template") in {"1", "true", "yes"}
+
+    def _response(self, *, content: bytes, filename: str):
+        from django.http import HttpResponse
+
+        resp = HttpResponse(content, content_type="text/csv; charset=utf-8")
+        resp["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return resp
+
+
+class WarehouseCSVExportView(_CSVExportBaseView):
+    permission_required = "inventory.warehouses.export"
+    filename_prefix = "warehouses"
+
+    def get(self, request):
+        from apps.inventory.application.services.csv_io import export_filename, export_warehouses_csv
+
+        content = export_warehouses_csv(template_only=self._template_only(request))
+        return self._response(content=content, filename=export_filename(self.filename_prefix))
+
+
+class WarehouseCSVImportView(LoginRequiredMixin, OrgPermissionRequiredMixin, DjangoView):
+    permission_required = "inventory.warehouses.import"
+    template_name = "_generic/import_csv.html"
+
+    def get(self, request):
+        from django.urls import reverse
+
+        form = CSVImportForm()
+        return self._render(request, form=form, import_errors=None, template_url=reverse("inventory:warehouse_export") + "?template=1")
+
+    def post(self, request):
+        from django.contrib import messages
+        from django.shortcuts import redirect
+        from apps.inventory.application.services.csv_io import import_warehouses_csv
+
+        form = CSVImportForm(request.POST, request.FILES)
+        if not form.is_valid():
+            return self._render(request, form=form, import_errors=None, template_url=None)
+
+        csv_data = form.cleaned_data["file"].read()
+        update_existing = bool(form.cleaned_data.get("update_existing"))
+        result = import_warehouses_csv(csv_data=csv_data, update_existing=update_existing)
+
+        if result.errors:
+            messages.error(request, f"Imported with errors: created={result.created}, updated={result.updated}, skipped={result.skipped}.")
+            return self._render(request, form=form, import_errors=result.errors, template_url=None)
+
+        messages.success(request, f"Import complete: created={result.created}, updated={result.updated}, skipped={result.skipped}.")
+        return redirect("inventory:warehouse_list")
+
+    def _render(self, request, *, form, import_errors, template_url):
+        from django.shortcuts import render
+        from django.urls import reverse
+
+        return render(request, self.template_name, {
+            "title": "Import Warehouses",
+            "subtitle": "Upload a CSV file to create/update warehouses",
+            "back_url": reverse("inventory:warehouse_list"),
+            "template_url": template_url,
+            "expected_headers": ["code", "name", "branch_code", "is_active"],
+            "header_notes": "Legacy columns supported: branch.",
+            "form": form,
+            "import_errors": import_errors,
+        })
 
 
 # ---------------------------------------------------------------------------

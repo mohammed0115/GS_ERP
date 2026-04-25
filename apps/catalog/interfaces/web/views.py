@@ -376,3 +376,320 @@ class PrintBarcodeView(LoginRequiredMixin, OrgPermissionRequiredMixin, DjangoVie
         response = HttpResponse(pdf_bytes, content_type="application/pdf")
         response["Content-Disposition"] = 'attachment; filename="barcodes.pdf"'
         return response
+
+
+# ---------------------------------------------------------------------------
+# CSV import/export (legacy parity)
+# ---------------------------------------------------------------------------
+class CSVImportForm(BootstrapFormMixin, forms.Form):
+    file = forms.FileField(
+        label="CSV file",
+        help_text="Upload a CSV file with a header row (UTF-8 recommended).",
+    )
+    update_existing = forms.BooleanField(
+        required=False,
+        initial=True,
+        label="Update existing records",
+        help_text="If unchecked, rows with an existing code will be skipped.",
+    )
+
+
+class _CSVExportBaseView(LoginRequiredMixin, OrgPermissionRequiredMixin, DjangoView):
+    filename_prefix: str = "export"
+
+    def _template_only(self, request) -> bool:
+        return request.GET.get("template") in {"1", "true", "yes"}
+
+    def _response(self, *, content: bytes, filename: str):
+        from django.http import HttpResponse
+        resp = HttpResponse(content, content_type="text/csv; charset=utf-8")
+        resp["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return resp
+
+
+class ProductCSVExportView(_CSVExportBaseView):
+    permission_required = "catalog.products.export"
+    filename_prefix = "products"
+
+    def get(self, request):
+        from apps.catalog.application.services.csv_io import export_filename, export_products_csv
+
+        content = export_products_csv(template_only=self._template_only(request))
+        return self._response(content=content, filename=export_filename(self.filename_prefix))
+
+
+class ProductCSVImportView(LoginRequiredMixin, OrgPermissionRequiredMixin, DjangoView):
+    permission_required = "catalog.products.import"
+    template_name = "_generic/import_csv.html"
+
+    def get(self, request):
+        from django.urls import reverse
+
+        form = CSVImportForm()
+        return self._render(request, form=form, import_errors=None, template_url=reverse("catalog:product_export") + "?template=1")
+
+    def post(self, request):
+        from django.contrib import messages
+        from django.shortcuts import redirect
+        from apps.catalog.application.services.csv_io import import_products_csv
+
+        form = CSVImportForm(request.POST, request.FILES)
+        if not form.is_valid():
+            return self._render(request, form=form, import_errors=None, template_url=None)
+
+        csv_data = form.cleaned_data["file"].read()
+        update_existing = bool(form.cleaned_data.get("update_existing"))
+        result = import_products_csv(csv_data=csv_data, update_existing=update_existing)
+
+        if result.errors:
+            messages.error(request, f"Imported with errors: created={result.created}, updated={result.updated}, skipped={result.skipped}.")
+            return self._render(request, form=form, import_errors=result.errors, template_url=None)
+
+        messages.success(request, f"Import complete: created={result.created}, updated={result.updated}, skipped={result.skipped}.")
+        return redirect("catalog:product_list")
+
+    def _render(self, request, *, form, import_errors, template_url):
+        from django.shortcuts import render
+        from django.urls import reverse
+
+        return render(request, self.template_name, {
+            "title": "Import Products",
+            "subtitle": "Upload a CSV file to create/update products",
+            "back_url": reverse("catalog:product_list"),
+            "template_url": template_url,
+            "expected_headers": [
+                "code", "name", "type", "category_code", "brand_code", "unit_code", "tax_code",
+                "cost", "price", "currency_code", "alert_quantity", "description", "barcode_symbology", "is_active",
+            ],
+            "header_notes": "You may also use legacy columns like category, brand, unitcode, productdetails.",
+            "form": form,
+            "import_errors": import_errors,
+        })
+
+
+class CategoryCSVExportView(_CSVExportBaseView):
+    permission_required = "catalog.categories.export"
+    filename_prefix = "categories"
+
+    def get(self, request):
+        from apps.catalog.application.services.csv_io import export_categories_csv, export_filename
+
+        content = export_categories_csv(template_only=self._template_only(request))
+        return self._response(content=content, filename=export_filename(self.filename_prefix))
+
+
+class CategoryCSVImportView(LoginRequiredMixin, OrgPermissionRequiredMixin, DjangoView):
+    permission_required = "catalog.categories.import"
+    template_name = "_generic/import_csv.html"
+
+    def get(self, request):
+        from django.urls import reverse
+
+        form = CSVImportForm()
+        return self._render(request, form=form, import_errors=None, template_url=reverse("catalog:category_export") + "?template=1")
+
+    def post(self, request):
+        from django.contrib import messages
+        from django.shortcuts import redirect
+        from apps.catalog.application.services.csv_io import import_categories_csv
+
+        form = CSVImportForm(request.POST, request.FILES)
+        if not form.is_valid():
+            return self._render(request, form=form, import_errors=None, template_url=None)
+
+        csv_data = form.cleaned_data["file"].read()
+        update_existing = bool(form.cleaned_data.get("update_existing"))
+        result = import_categories_csv(csv_data=csv_data, update_existing=update_existing)
+
+        if result.errors:
+            messages.error(request, f"Imported with errors: created={result.created}, updated={result.updated}, skipped={result.skipped}.")
+            return self._render(request, form=form, import_errors=result.errors, template_url=None)
+
+        messages.success(request, f"Import complete: created={result.created}, updated={result.updated}, skipped={result.skipped}.")
+        return redirect("catalog:category_list")
+
+    def _render(self, request, *, form, import_errors, template_url):
+        from django.shortcuts import render
+        from django.urls import reverse
+
+        return render(request, self.template_name, {
+            "title": "Import Categories",
+            "subtitle": "Upload a CSV file to create/update categories",
+            "back_url": reverse("catalog:category_list"),
+            "template_url": template_url,
+            "expected_headers": ["code", "name", "parent_code", "is_active"],
+            "header_notes": "If code is blank, it will be generated from name. Legacy column: parentcategory.",
+            "form": form,
+            "import_errors": import_errors,
+        })
+
+
+class BrandCSVExportView(_CSVExportBaseView):
+    permission_required = "catalog.brands.export"
+    filename_prefix = "brands"
+
+    def get(self, request):
+        from apps.catalog.application.services.csv_io import export_brands_csv, export_filename
+
+        content = export_brands_csv(template_only=self._template_only(request))
+        return self._response(content=content, filename=export_filename(self.filename_prefix))
+
+
+class BrandCSVImportView(LoginRequiredMixin, OrgPermissionRequiredMixin, DjangoView):
+    permission_required = "catalog.brands.import"
+    template_name = "_generic/import_csv.html"
+
+    def get(self, request):
+        from django.urls import reverse
+
+        form = CSVImportForm()
+        return self._render(request, form=form, import_errors=None, template_url=reverse("catalog:brand_export") + "?template=1")
+
+    def post(self, request):
+        from django.contrib import messages
+        from django.shortcuts import redirect
+        from apps.catalog.application.services.csv_io import import_brands_csv
+
+        form = CSVImportForm(request.POST, request.FILES)
+        if not form.is_valid():
+            return self._render(request, form=form, import_errors=None, template_url=None)
+
+        csv_data = form.cleaned_data["file"].read()
+        update_existing = bool(form.cleaned_data.get("update_existing"))
+        result = import_brands_csv(csv_data=csv_data, update_existing=update_existing)
+
+        if result.errors:
+            messages.error(request, f"Imported with errors: created={result.created}, updated={result.updated}, skipped={result.skipped}.")
+            return self._render(request, form=form, import_errors=result.errors, template_url=None)
+
+        messages.success(request, f"Import complete: created={result.created}, updated={result.updated}, skipped={result.skipped}.")
+        return redirect("catalog:brand_list")
+
+    def _render(self, request, *, form, import_errors, template_url):
+        from django.shortcuts import render
+        from django.urls import reverse
+
+        return render(request, self.template_name, {
+            "title": "Import Brands",
+            "subtitle": "Upload a CSV file to create/update brands",
+            "back_url": reverse("catalog:brand_list"),
+            "template_url": template_url,
+            "expected_headers": ["code", "name", "is_active"],
+            "header_notes": "If code is blank, it will be generated from name. Legacy column: title.",
+            "form": form,
+            "import_errors": import_errors,
+        })
+
+
+class UnitCSVExportView(_CSVExportBaseView):
+    permission_required = "catalog.units.export"
+    filename_prefix = "units"
+
+    def get(self, request):
+        from apps.catalog.application.services.csv_io import export_filename, export_units_csv
+
+        content = export_units_csv(template_only=self._template_only(request))
+        return self._response(content=content, filename=export_filename(self.filename_prefix))
+
+
+class UnitCSVImportView(LoginRequiredMixin, OrgPermissionRequiredMixin, DjangoView):
+    permission_required = "catalog.units.import"
+    template_name = "_generic/import_csv.html"
+
+    def get(self, request):
+        from django.urls import reverse
+
+        form = CSVImportForm()
+        return self._render(request, form=form, import_errors=None, template_url=reverse("catalog:unit_export") + "?template=1")
+
+    def post(self, request):
+        from django.contrib import messages
+        from django.shortcuts import redirect
+        from apps.catalog.application.services.csv_io import import_units_csv
+
+        form = CSVImportForm(request.POST, request.FILES)
+        if not form.is_valid():
+            return self._render(request, form=form, import_errors=None, template_url=None)
+
+        csv_data = form.cleaned_data["file"].read()
+        update_existing = bool(form.cleaned_data.get("update_existing"))
+        result = import_units_csv(csv_data=csv_data, update_existing=update_existing)
+
+        if result.errors:
+            messages.error(request, f"Imported with errors: created={result.created}, updated={result.updated}, skipped={result.skipped}.")
+            return self._render(request, form=form, import_errors=result.errors, template_url=None)
+
+        messages.success(request, f"Import complete: created={result.created}, updated={result.updated}, skipped={result.skipped}.")
+        return redirect("catalog:unit_list")
+
+    def _render(self, request, *, form, import_errors, template_url):
+        from django.shortcuts import render
+        from django.urls import reverse
+
+        return render(request, self.template_name, {
+            "title": "Import Units",
+            "subtitle": "Upload a CSV file to create/update units of measure",
+            "back_url": reverse("catalog:unit_list"),
+            "template_url": template_url,
+            "expected_headers": ["code", "name", "base_unit_code", "conversion_factor", "is_active"],
+            "header_notes": "Legacy columns supported: baseunit, operator, operationvalue.",
+            "form": form,
+            "import_errors": import_errors,
+        })
+
+
+class TaxCSVExportView(_CSVExportBaseView):
+    permission_required = "catalog.taxes.export"
+    filename_prefix = "taxes"
+
+    def get(self, request):
+        from apps.catalog.application.services.csv_io import export_filename, export_taxes_csv
+
+        content = export_taxes_csv(template_only=self._template_only(request))
+        return self._response(content=content, filename=export_filename(self.filename_prefix))
+
+
+class TaxCSVImportView(LoginRequiredMixin, OrgPermissionRequiredMixin, DjangoView):
+    permission_required = "catalog.taxes.import"
+    template_name = "_generic/import_csv.html"
+
+    def get(self, request):
+        from django.urls import reverse
+
+        form = CSVImportForm()
+        return self._render(request, form=form, import_errors=None, template_url=reverse("catalog:tax_export") + "?template=1")
+
+    def post(self, request):
+        from django.contrib import messages
+        from django.shortcuts import redirect
+        from apps.catalog.application.services.csv_io import import_taxes_csv
+
+        form = CSVImportForm(request.POST, request.FILES)
+        if not form.is_valid():
+            return self._render(request, form=form, import_errors=None, template_url=None)
+
+        csv_data = form.cleaned_data["file"].read()
+        update_existing = bool(form.cleaned_data.get("update_existing"))
+        result = import_taxes_csv(csv_data=csv_data, update_existing=update_existing)
+
+        if result.errors:
+            messages.error(request, f"Imported with errors: created={result.created}, updated={result.updated}, skipped={result.skipped}.")
+            return self._render(request, form=form, import_errors=result.errors, template_url=None)
+
+        messages.success(request, f"Import complete: created={result.created}, updated={result.updated}, skipped={result.skipped}.")
+        return redirect("catalog:tax_list")
+
+    def _render(self, request, *, form, import_errors, template_url):
+        from django.shortcuts import render
+        from django.urls import reverse
+
+        return render(request, self.template_name, {
+            "title": "Import Taxes",
+            "subtitle": "Upload a CSV file to create/update tax codes",
+            "back_url": reverse("catalog:tax_list"),
+            "template_url": template_url,
+            "expected_headers": ["code", "name", "rate_percent", "is_active"],
+            "header_notes": "Legacy columns supported: rate.",
+            "form": form,
+            "import_errors": import_errors,
+        })

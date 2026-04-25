@@ -18,28 +18,38 @@ urlpatterns = [
     path("categories/create/",            views.CategoryCreateView.as_view(), name="category_create"),
     path("categories/<int:pk>/edit/",     views.CategoryUpdateView.as_view(), name="category_edit"),
     path("categories/<int:pk>/delete/",   views.CategoryDeleteView.as_view(), name="category_delete"),
+    path("categories/import/",            views.CategoryCSVImportView.as_view(), name="category_import"),
+    path("categories/export/",            views.CategoryCSVExportView.as_view(), name="category_export"),
 
     # -------- Brands --------
     path("brands/",                   views.BrandListView.as_view(),   name="brand_list"),
     path("brands/create/",            views.BrandCreateView.as_view(), name="brand_create"),
     path("brands/<int:pk>/edit/",     views.BrandUpdateView.as_view(), name="brand_edit"),
     path("brands/<int:pk>/delete/",   views.BrandDeleteView.as_view(), name="brand_delete"),
+    path("brands/import/",            views.BrandCSVImportView.as_view(), name="brand_import"),
+    path("brands/export/",            views.BrandCSVExportView.as_view(), name="brand_export"),
 
     # -------- Units --------
     path("units/",                views.UnitListView.as_view(),   name="unit_list"),
     path("units/create/",         views.UnitCreateView.as_view(), name="unit_create"),
     path("units/<int:pk>/edit/",  views.UnitUpdateView.as_view(), name="unit_edit"),
+    path("units/import/",         views.UnitCSVImportView.as_view(), name="unit_import"),
+    path("units/export/",         views.UnitCSVExportView.as_view(), name="unit_export"),
 
     # -------- Taxes --------
     path("taxes/",                views.TaxListView.as_view(),   name="tax_list"),
     path("taxes/create/",         views.TaxCreateView.as_view(), name="tax_create"),
     path("taxes/<int:pk>/edit/",  views.TaxUpdateView.as_view(), name="tax_edit"),
+    path("taxes/import/",         views.TaxCSVImportView.as_view(), name="tax_import"),
+    path("taxes/export/",         views.TaxCSVExportView.as_view(), name="tax_export"),
 
     # -------- Products --------
     path("products/",                  views.ProductListView.as_view(),   name="product_list"),
     path("products/create/",           views.ProductCreateView.as_view(), name="product_create"),
     path("products/<int:pk>/edit/",    views.ProductUpdateView.as_view(), name="product_edit"),
     path("products/<int:pk>/delete/",  views.ProductDeleteView.as_view(), name="product_delete"),
+    path("products/import/",           views.ProductCSVImportView.as_view(), name="product_import"),
+    path("products/export/",           views.ProductCSVExportView.as_view(), name="product_export"),
 
     path("products/print-barcode/", views.PrintBarcodeView.as_view(), name="print_barcode"),
 ]
