@@ -55,7 +55,11 @@ class IssueVendorDebitNote:
             from apps.purchases.domain.exceptions import VendorInactiveError
             raise VendorInactiveError(f"Vendor {note.vendor.code} is not active.")
 
-        lines = list(note.lines.select_related("expense_account", "tax_code__tax_account").all())
+        lines = list(note.lines.select_related(
+            "expense_account",
+            "tax_code__input_tax_account",
+            "tax_code__tax_account",
+        ).all())
         if not lines:
             from apps.purchases.domain.exceptions import PurchaseInvoiceHasNoLinesError
             raise PurchaseInvoiceHasNoLinesError("VendorDebitNote has no lines.")
@@ -118,11 +122,15 @@ class IssueVendorDebitNote:
             expense_by_acc[exp_acc.pk] = (
                 expense_by_acc.get(exp_acc.pk, Decimal("0")) + subtotal
             )
-            if line.tax_amount and line.tax_code and line.tax_code.tax_account_id:
-                tax_acc_id = line.tax_code.tax_account_id
-                tax_by_acc[tax_acc_id] = (
-                    tax_by_acc.get(tax_acc_id, Decimal("0")) + line.tax_amount
+            if line.tax_amount and line.tax_code:
+                tax_acc_id = (
+                    getattr(line.tax_code, "input_tax_account_id", None)
+                    or line.tax_code.tax_account_id
                 )
+                if tax_acc_id:
+                    tax_by_acc[tax_acc_id] = (
+                        tax_by_acc.get(tax_acc_id, Decimal("0")) + line.tax_amount
+                    )
 
         for acc_id, amount in expense_by_acc.items():
             if amount:

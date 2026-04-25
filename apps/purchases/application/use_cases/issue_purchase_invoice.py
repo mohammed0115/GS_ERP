@@ -2,10 +2,18 @@
 IssuePurchaseInvoice — transitions a PurchaseInvoice from Draft to Issued
 and posts the GL entry.
 
-GL pattern:
+GL pattern for service/expense lines:
   DR  expense_account(s)     (per line)
   DR  tax_account(s)         (input tax per tax code, if any)
   CR  vendor.payable_account (Accounts Payable)
+
+GL pattern for stockable inventory lines:
+  DR  product.inventory_account(s)  (per product, asset ↑)
+  DR  tax_account(s)                (input tax, if any)
+  CR  vendor.payable_account        (Accounts Payable)
+
+Inventory receipt: ReceivePurchasedInventory is called for each stockable
+line so SOH quantity and WAC are updated within the same atomic transaction.
 """
 from __future__ import annotations
 
@@ -41,6 +49,7 @@ class IssuePurchaseInvoice:
         try:
             inv = PurchaseInvoice.objects.select_related(
                 "vendor__payable_account",
+                "vendor__default_expense_account",
             ).get(pk=command.invoice_id)
         except PurchaseInvoice.DoesNotExist:
             from apps.finance.domain.exceptions import AccountNotFoundError
@@ -61,6 +70,9 @@ class IssuePurchaseInvoice:
                 "expense_account",
                 "tax_code__input_tax_account",
                 "tax_code__tax_account",
+                "product__inventory_account",
+                "product__unit",
+                "warehouse",
             ).all()
         )
         if not lines:
@@ -81,12 +93,20 @@ class IssuePurchaseInvoice:
                 f"got '{ap_account.account_type}'."
             )
 
+        if inv.grand_total <= Decimal("0"):
+            from apps.purchases.domain.exceptions import PurchaseInvoiceHasNoLinesError
+            raise PurchaseInvoiceHasNoLinesError(
+                f"Cannot issue purchase invoice with grand_total={inv.grand_total}. "
+                "Invoice amount must be greater than zero."
+            )
+
         from apps.finance.application.use_cases.post_journal_entry import (
             PostJournalEntry, PostJournalEntryCommand, _assert_period_open,
         )
         from apps.finance.domain.entities import JournalEntryDraft
         from apps.finance.domain.entities import JournalLine as DomainLine
         from apps.core.domain.value_objects import Currency, Money
+        from apps.catalog.domain.entities import ProductType as _ProductType
 
         _assert_period_open(inv.invoice_date)
 
@@ -103,30 +123,74 @@ class IssuePurchaseInvoice:
             memo=f"Purchase invoice {invoice_number}",
         ))
 
-        # DR: Expense accounts + DR: Input Tax
+        # Classify lines and accumulate GL amounts
+        from apps.purchases.domain.exceptions import (
+            ExpenseAccountMissingError, APAccountMissingError,
+        )
+        from apps.inventory.application.use_cases.receive_purchased_inventory import (
+            PurchaseLineSpec as InventoryLineSpec,
+        )
+
+        inventory_by_acc: dict[int, Decimal] = {}
         expense_by_acc: dict[int, Decimal] = {}
         tax_by_acc: dict[int, Decimal] = {}
+        inventory_specs: list[InventoryLineSpec] = []
+
         for line in lines:
-            exp_acc = line.expense_account or inv.vendor.default_expense_account
-            if exp_acc is None:
-                from apps.purchases.domain.exceptions import ExpenseAccountMissingError
-                raise ExpenseAccountMissingError(
-                    f"Purchase invoice line seq={line.sequence} has no expense account. "
-                    "Set an expense_account on the line or a default_expense_account on "
-                    f"vendor {inv.vendor.code}."
-                )
-            if exp_acc.account_type != AccountTypeChoices.EXPENSE:
-                from apps.purchases.domain.exceptions import ExpenseAccountMissingError
-                raise ExpenseAccountMissingError(
-                    f"Expense account {exp_acc.code} must be type 'expense', "
-                    f"got '{exp_acc.account_type}'."
-                )
-            subtotal = (line.quantity * line.unit_price) - line.discount_amount
-            expense_by_acc[exp_acc.pk] = (
-                expense_by_acc.get(exp_acc.pk, Decimal("0")) + subtotal
+            is_inventory_line = (
+                line.product_id is not None
+                and getattr(line.product, "type", None) == _ProductType.STANDARD.value
+                and line.warehouse_id is not None
             )
+
+            if is_inventory_line:
+                inv_acc = line.product.inventory_account
+                if inv_acc is None:
+                    raise ExpenseAccountMissingError(
+                        f"Product {line.product.code} has no inventory_account. "
+                        "Set inventory_account on the product."
+                    )
+                if inv_acc.account_type != AccountTypeChoices.ASSET:
+                    raise ExpenseAccountMissingError(
+                        f"Inventory account {inv_acc.code} must be type 'asset', "
+                        f"got '{inv_acc.account_type}'."
+                    )
+                unit_cost = line.unit_cost or line.unit_price
+                subtotal = (line.quantity * unit_cost) - line.discount_amount
+                inventory_by_acc[inv_acc.pk] = (
+                    inventory_by_acc.get(inv_acc.pk, Decimal("0")) + subtotal
+                )
+                uom_code = (
+                    line.product.unit.code
+                    if getattr(line.product, "unit_id", None)
+                    else "ea"
+                )
+                inventory_specs.append(InventoryLineSpec(
+                    product_id=line.product_id,
+                    warehouse_id=line.warehouse_id,
+                    quantity=line.quantity,
+                    uom_code=uom_code,
+                    unit_cost=unit_cost,
+                ))
+            else:
+                exp_acc = line.expense_account or inv.vendor.default_expense_account
+                if exp_acc is None:
+                    raise ExpenseAccountMissingError(
+                        f"Purchase invoice line seq={line.sequence} has no expense account. "
+                        "Set an expense_account on the line or a default_expense_account on "
+                        f"vendor {inv.vendor.code}."
+                    )
+                if exp_acc.account_type != AccountTypeChoices.EXPENSE:
+                    raise ExpenseAccountMissingError(
+                        f"Expense account {exp_acc.code} must be type 'expense', "
+                        f"got '{exp_acc.account_type}'."
+                    )
+                subtotal = (line.quantity * line.unit_price) - line.discount_amount
+                expense_by_acc[exp_acc.pk] = (
+                    expense_by_acc.get(exp_acc.pk, Decimal("0")) + subtotal
+                )
+
             if line.tax_amount and line.tax_code:
-                # Prefer the Phase-6 input_tax_account; fall back to legacy tax_account.
                 tax_acc_id = (
                     getattr(line.tax_code, "input_tax_account_id", None)
                     or line.tax_code.tax_account_id
@@ -136,6 +200,11 @@ class IssuePurchaseInvoice:
                         tax_by_acc.get(tax_acc_id, Decimal("0")) + line.tax_amount
                     )
 
+        for acc_id, amount in inventory_by_acc.items():
+            if amount:
+                domain_lines.append(DomainLine.debit_only(
+                    acc_id, Money(amount, currency), memo="Inventory receipt"
+                ))
         for acc_id, amount in expense_by_acc.items():
             if amount:
                 domain_lines.append(DomainLine.debit_only(
@@ -155,6 +224,19 @@ class IssuePurchaseInvoice:
         )
 
         with transaction.atomic():
+            # Receive inventory before posting GL (mirrors PostPurchase order)
+            if inventory_specs:
+                from apps.inventory.application.use_cases.receive_purchased_inventory import (
+                    ReceivePurchasedInventory,
+                )
+                ReceivePurchasedInventory().execute(
+                    source_type="purchase_invoice",
+                    source_id=inv.pk,
+                    reference=invoice_number,
+                    lines=inventory_specs,
+                    occurred_at=datetime.now(timezone.utc),
+                )
+
             result = PostJournalEntry().execute(
                 PostJournalEntryCommand(
                     draft=draft,
@@ -170,7 +252,12 @@ class IssuePurchaseInvoice:
             _tax_engine = CalculateTax()
             for line in lines:
                 if line.tax_code_id and line.tax_amount:
-                    subtotal = (line.quantity * line.unit_price) - line.discount_amount
+                    unit_cost_or_price = (
+                        (line.unit_cost or line.unit_price)
+                        if line.product_id
+                        else line.unit_price
+                    )
+                    subtotal = (line.quantity * unit_cost_or_price) - line.discount_amount
                     if subtotal > Decimal("0"):
                         _tax_engine.execute(CalculateTaxCommand(
                             net_amount=subtotal,
@@ -185,10 +272,21 @@ class IssuePurchaseInvoice:
                         ))
 
             now = datetime.now(timezone.utc)
+            from apps.finance.infrastructure.fiscal_year_models import (
+                AccountingPeriod, AccountingPeriodStatus,
+            )
+            fiscal_period = AccountingPeriod.objects.filter(
+                organization_id=inv.organization_id,
+                start_date__lte=inv.invoice_date,
+                end_date__gte=inv.invoice_date,
+                status=AccountingPeriodStatus.OPEN,
+            ).first()
+
             PurchaseInvoice.objects.filter(pk=inv.pk).update(
                 status=PurchaseInvoiceStatus.ISSUED,
                 invoice_number=invoice_number,
                 journal_entry_id=result.entry_id,
+                fiscal_period=fiscal_period,
                 issued_at=now,
                 issued_by_id=command.actor_id,
             )
@@ -205,6 +303,7 @@ class IssuePurchaseInvoice:
                 "vendor_code": inv.vendor.code,
                 "grand_total": str(inv.grand_total),
                 "journal_entry_id": result.entry_id,
+                "inventory_lines": len(inventory_specs),
             },
         )
 

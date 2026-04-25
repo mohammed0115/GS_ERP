@@ -201,6 +201,27 @@ class PurchaseInvoiceLine(TenantOwnedModel, TimestampedModel):
         help_text="Expense/purchases GL account for this line.",
     )
 
+    # Inventory fields — populated for stockable product lines only
+    product = models.ForeignKey(
+        "catalog.Product",
+        on_delete=models.PROTECT,
+        related_name="purchase_invoice_lines",
+        null=True, blank=True,
+        help_text="Stockable product being received. Null for service/expense lines.",
+    )
+    warehouse = models.ForeignKey(
+        "inventory.Warehouse",
+        on_delete=models.PROTECT,
+        related_name="purchase_invoice_lines",
+        null=True, blank=True,
+        help_text="Destination warehouse. Required when product is a stockable item.",
+    )
+    unit_cost = models.DecimalField(
+        max_digits=18, decimal_places=4,
+        null=True, blank=True,
+        help_text="Cost per unit for WAC calculation. Defaults to unit_price when null.",
+    )
+
     # USA capital-asset tracking (P3-3)
     is_capitalized = models.BooleanField(
         default=False,
@@ -219,6 +240,21 @@ class PurchaseInvoiceLine(TenantOwnedModel, TimestampedModel):
         ],
         help_text="Depreciation method. Required when is_capitalized=True.",
     )
+
+    def save(self, *args, **kwargs):
+        if self.invoice_id:
+            inv_status = (
+                PurchaseInvoice.objects
+                .filter(pk=self.invoice_id)
+                .values_list("status", flat=True)
+                .first()
+            )
+            if inv_status and inv_status != PurchaseInvoiceStatus.DRAFT:
+                from apps.purchases.domain.exceptions import PurchaseInvoiceAlreadyIssuedError
+                raise PurchaseInvoiceAlreadyIssuedError(
+                    f"Cannot modify lines on a {inv_status} purchase invoice."
+                )
+        super().save(*args, **kwargs)
 
     class Meta:
         db_table = "purchases_purchase_invoice_line"
@@ -307,6 +343,14 @@ class VendorPayment(TenantOwnedModel, TimestampedModel, AuditMetaMixin):
         on_delete=models.PROTECT,
         related_name="vendor_payments",
         help_text="Cash/Bank GL account debited on payment.",
+    )
+    # Treasury entity whose current_balance mirrors this payment.
+    treasury_bank_account = models.ForeignKey(
+        "treasury.BankAccount",
+        on_delete=models.PROTECT,
+        related_name="vendor_payments",
+        null=True, blank=True,
+        help_text="Treasury bank account for balance tracking.",
     )
     fiscal_period = models.ForeignKey(
         "finance.AccountingPeriod",
@@ -507,6 +551,10 @@ class VendorDebitNote(TenantOwnedModel, TimestampedModel, AuditMetaMixin):
     subtotal = models.DecimalField(max_digits=18, decimal_places=4, default=0)
     tax_total = models.DecimalField(max_digits=18, decimal_places=4, default=0)
     grand_total = models.DecimalField(max_digits=18, decimal_places=4, default=0)
+    allocated_amount = models.DecimalField(
+        max_digits=18, decimal_places=4, default=0,
+        help_text="Total vendor payments applied against this debit note.",
+    )
 
     fiscal_period = models.ForeignKey(
         "finance.AccountingPeriod",
@@ -528,9 +576,20 @@ class VendorDebitNote(TenantOwnedModel, TimestampedModel, AuditMetaMixin):
         null=True, blank=True,
     )
 
+    @property
+    def open_amount(self):
+        from decimal import Decimal
+        return max(self.grand_total - self.allocated_amount, Decimal("0"))
+
     class Meta:
         db_table = "purchases_vendor_debit_note"
         ordering = ("-note_date", "-id")
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(allocated_amount__gte=0),
+                name="purchases_vdn_allocated_non_negative",
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"{self.note_number or self.pk} {self.vendor_id}"
@@ -568,3 +627,34 @@ class VendorDebitNoteLine(TenantOwnedModel, TimestampedModel):
                 name="purchases_vdn_line_unique_sequence",
             ),
         ]
+
+
+# ---------------------------------------------------------------------------
+# VendorDebitNoteAllocation
+# ---------------------------------------------------------------------------
+class VendorDebitNoteAllocation(TenantOwnedModel, TimestampedModel):
+    """Links a VendorPayment to a VendorDebitNote (settles the additional AP charge)."""
+
+    payment = models.ForeignKey(
+        VendorPayment, on_delete=models.PROTECT, related_name="debit_note_allocations"
+    )
+    debit_note = models.ForeignKey(
+        VendorDebitNote, on_delete=models.PROTECT, related_name="allocations"
+    )
+    allocated_amount = models.DecimalField(max_digits=18, decimal_places=4)
+
+    class Meta:
+        db_table = "purchases_vendor_debit_note_allocation"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("payment", "debit_note"),
+                name="purchases_vdn_alloc_unique_payment_debit_note",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(allocated_amount__gt=0),
+                name="purchases_vdn_alloc_amount_positive",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"Payment {self.payment_id} → VDN {self.debit_note_id}: {self.allocated_amount}"

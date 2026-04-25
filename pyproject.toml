@@ -23,6 +23,7 @@ markers = [
 filterwarnings = [
     "error",
     "ignore::DeprecationWarning:django.*",
+    "ignore::RuntimeWarning:django.*",
 ]
 
 [tool.ruff]

@@ -44,6 +44,8 @@
                         <tr>
                             <th>{% trans "Description" %}</th>
                             <th>{% trans "Item Code" %}</th>
+                            <th style="width:130px">{% trans "Product" %}</th>
+                            <th style="width:110px">{% trans "Warehouse" %}</th>
                             <th class="text-right" style="width:80px">{% trans "Qty" %}</th>
                             <th class="text-right" style="width:100px">{% trans "Unit Price" %}</th>
                             <th class="text-right" style="width:90px">{% trans "Discount" %}</th>
@@ -75,6 +77,22 @@
     <tr class="line-row">
         <td><input class="form-control form-control-sm line-desc" type="text" placeholder="{% trans 'Description' %}"></td>
         <td><input class="form-control form-control-sm line-item-code" type="text" placeholder="SKU"></td>
+        <td>
+            <select class="form-control form-control-sm line-product">
+                <option value="">—</option>
+                {% for p in products %}
+                <option value="{{ p.pk }}" data-uom="{{ p.uom_code }}">{{ p.code }}</option>
+                {% endfor %}
+            </select>
+        </td>
+        <td>
+            <select class="form-control form-control-sm line-warehouse">
+                <option value="">—</option>
+                {% for wh in warehouses %}
+                <option value="{{ wh.pk }}">{{ wh.code }}</option>
+                {% endfor %}
+            </select>
+        </td>
         <td><input class="form-control form-control-sm text-right line-qty" type="number" step="0.0001" value="1" min="0.0001"></td>
         <td><input class="form-control form-control-sm text-right line-price" type="number" step="0.0001" value="0" min="0"></td>
         <td><input class="form-control form-control-sm text-right line-disc" type="number" step="0.0001" value="0" min="0"></td>
@@ -130,6 +148,8 @@
             rows.push({
                 description: row.querySelector('.line-desc').value,
                 item_code: row.querySelector('.line-item-code').value,
+                product_id: row.querySelector('.line-product').value || null,
+                warehouse_id: row.querySelector('.line-warehouse').value || null,
                 quantity: row.querySelector('.line-qty').value,
                 unit_price: row.querySelector('.line-price').value,
                 discount_amount: row.querySelector('.line-disc').value,

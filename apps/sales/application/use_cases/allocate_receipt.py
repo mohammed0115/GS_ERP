@@ -1,11 +1,11 @@
 """
 AllocateReceiptService — allocates a posted CustomerReceipt to one or more
-SalesInvoices and updates balances + invoice statuses.
+SalesInvoices and/or DebitNotes and updates balances + statuses.
 
 Rules:
   - Receipt must be POSTED.
   - Total allocation must not exceed receipt.unallocated_amount.
-  - Each allocation must not exceed the invoice's open_amount.
+  - Each allocation must not exceed the document's open_amount.
   - Cannot allocate to a Paid, Cancelled, or Credited invoice.
   - If a previous allocation exists for (receipt, invoice), increase it.
   - Invoice status updates automatically:
@@ -14,7 +14,7 @@ Rules:
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 
 from django.db import transaction
@@ -22,6 +22,9 @@ from django.db import transaction
 from apps.sales.infrastructure.invoice_models import (
     CustomerReceipt,
     CustomerReceiptAllocation,
+    DebitNote,
+    DebitNoteAllocation,
+    NoteStatus,
     SalesInvoice,
     SalesInvoiceStatus,
     ReceiptStatus,
@@ -35,9 +38,16 @@ class AllocationSpec:
 
 
 @dataclass(frozen=True, slots=True)
+class DebitNoteAllocationSpec:
+    debit_note_id: int
+    amount: Decimal
+
+
+@dataclass(frozen=True, slots=True)
 class AllocateReceiptCommand:
     receipt_id: int
     allocations: tuple[AllocationSpec, ...]
+    debit_note_allocations: tuple[DebitNoteAllocationSpec, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,7 +71,10 @@ class AllocateReceiptService:
                 "Duplicate invoice_id in allocations tuple — each invoice must appear at most once."
             )
 
-        total_requested = sum(a.amount for a in command.allocations)
+        total_requested = (
+            sum(a.amount for a in command.allocations)
+            + sum(a.amount for a in command.debit_note_allocations)
+        )
 
         invoices_updated: list[int] = []
         total_actually_allocated = Decimal("0")
@@ -161,6 +174,56 @@ class AllocateReceiptService:
                 )
                 total_actually_allocated += actual_amount
                 invoices_updated.append(invoice.pk)
+
+            # Allocate to debit notes (FLAW-8 fix).
+            for dn_spec in command.debit_note_allocations:
+                if dn_spec.amount <= _ZERO:
+                    continue
+                try:
+                    dn = DebitNote.objects.select_for_update().get(pk=dn_spec.debit_note_id)
+                except DebitNote.DoesNotExist:
+                    from apps.finance.domain.exceptions import AccountNotFoundError
+                    raise AccountNotFoundError(
+                        f"DebitNote {dn_spec.debit_note_id} not found."
+                    )
+                if dn.status not in (NoteStatus.ISSUED,):
+                    from apps.sales.domain.exceptions import AllocationExceedsReceiptError
+                    raise AllocationExceedsReceiptError(
+                        f"Cannot allocate to DebitNote {dn.note_number} "
+                        f"with status '{dn.status}'."
+                    )
+                dn_open = dn.grand_total - dn.allocated_amount
+                _PENNY = Decimal("0.01")
+                if dn_spec.amount > dn_open + _PENNY:
+                    from apps.sales.domain.exceptions import AllocationExceedsReceiptError
+                    raise AllocationExceedsReceiptError(
+                        f"Allocation {dn_spec.amount} exceeds open balance {dn_open} "
+                        f"for debit note {dn.note_number}."
+                    )
+                actual_dn = min(dn_spec.amount, dn_open)
+                existing_dn = DebitNoteAllocation.objects.filter(
+                    receipt_id=receipt.pk, debit_note_id=dn.pk,
+                ).first()
+                if existing_dn:
+                    DebitNoteAllocation.objects.filter(pk=existing_dn.pk).update(
+                        allocated_amount=existing_dn.allocated_amount + actual_dn
+                    )
+                else:
+                    DebitNoteAllocation(
+                        receipt=receipt,
+                        debit_note=dn,
+                        allocated_amount=actual_dn,
+                    ).save()
+                new_dn_alloc = dn.allocated_amount + actual_dn
+                new_dn_status = (
+                    NoteStatus.APPLIED if new_dn_alloc >= dn.grand_total
+                    else NoteStatus.ISSUED
+                )
+                DebitNote.objects.filter(pk=dn.pk).update(
+                    allocated_amount=new_dn_alloc,
+                    status=new_dn_status,
+                )
+                total_actually_allocated += actual_dn
 
             # Update receipt allocated total
             new_receipt_alloc = receipt.allocated_amount + total_actually_allocated

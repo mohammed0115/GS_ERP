@@ -22,6 +22,7 @@ urlpatterns = [
     path("invoices/",                           views.PurchaseInvoiceListView.as_view(),   name="invoice_list"),
     path("invoices/create/",                    views.PurchaseInvoiceCreateView.as_view(), name="invoice_create"),
     path("invoices/<int:pk>/",                  views.PurchaseInvoiceDetailView.as_view(), name="invoice_detail"),
+    path("invoices/<int:pk>/edit/",             views.PurchaseInvoiceEditView.as_view(),   name="invoice_edit"),
     path("invoices/<int:pk>/issue/",            views.PurchaseInvoiceIssueView.as_view(),  name="invoice_issue"),
     path("invoices/<int:pk>/cancel/",           views.PurchaseInvoiceCancelView.as_view(), name="invoice_cancel"),
 
@@ -32,17 +33,20 @@ urlpatterns = [
     path("vendor-payments/<int:pk>/post/",        views.VendorPaymentPostView.as_view(),       name="vendor_payment_post"),
     path("vendor-payments/<int:pk>/allocate/",   views.VendorPaymentAllocateView.as_view(),   name="vendor_payment_allocate"),
     path("vendor-payments/<int:pk>/reverse/",    views.VendorPaymentReverseView.as_view(),    name="vendor_payment_reverse"),
+    path("vendor-payments/<int:pk>/cancel/",     views.VendorPaymentCancelView.as_view(),     name="vendor_payment_cancel"),
     path("vendor-payments/<int:pk>/unallocate/", views.VendorPaymentUnallocateView.as_view(), name="vendor_payment_unallocate"),
 
     # Phase 3 — Vendor Credit Notes
-    path("vendor-credit-notes/",                views.VendorCreditNoteListView.as_view(),   name="vendor_credit_note_list"),
-    path("vendor-credit-notes/create/",         views.VendorCreditNoteCreateView.as_view(), name="vendor_credit_note_create"),
-    path("vendor-credit-notes/<int:pk>/",       views.VendorCreditNoteDetailView.as_view(), name="vendor_credit_note_detail"),
-    path("vendor-credit-notes/<int:pk>/issue/", views.VendorCreditNoteIssueView.as_view(),  name="vendor_credit_note_issue"),
+    path("vendor-credit-notes/",                 views.VendorCreditNoteListView.as_view(),   name="vendor_credit_note_list"),
+    path("vendor-credit-notes/create/",          views.VendorCreditNoteCreateView.as_view(), name="vendor_credit_note_create"),
+    path("vendor-credit-notes/<int:pk>/",        views.VendorCreditNoteDetailView.as_view(), name="vendor_credit_note_detail"),
+    path("vendor-credit-notes/<int:pk>/issue/",  views.VendorCreditNoteIssueView.as_view(),  name="vendor_credit_note_issue"),
+    path("vendor-credit-notes/<int:pk>/cancel/", views.VendorCreditNoteCancelView.as_view(), name="vendor_credit_note_cancel"),
 
     # Phase 3 — Vendor Debit Notes
-    path("vendor-debit-notes/",                 views.VendorDebitNoteListView.as_view(),   name="vendor_debit_note_list"),
-    path("vendor-debit-notes/create/",          views.VendorDebitNoteCreateView.as_view(), name="vendor_debit_note_create"),
-    path("vendor-debit-notes/<int:pk>/",        views.VendorDebitNoteDetailView.as_view(), name="vendor_debit_note_detail"),
-    path("vendor-debit-notes/<int:pk>/issue/",  views.VendorDebitNoteIssueView.as_view(),  name="vendor_debit_note_issue"),
+    path("vendor-debit-notes/",                  views.VendorDebitNoteListView.as_view(),   name="vendor_debit_note_list"),
+    path("vendor-debit-notes/create/",           views.VendorDebitNoteCreateView.as_view(), name="vendor_debit_note_create"),
+    path("vendor-debit-notes/<int:pk>/",         views.VendorDebitNoteDetailView.as_view(), name="vendor_debit_note_detail"),
+    path("vendor-debit-notes/<int:pk>/issue/",   views.VendorDebitNoteIssueView.as_view(),  name="vendor_debit_note_issue"),
+    path("vendor-debit-notes/<int:pk>/cancel/",  views.VendorDebitNoteCancelView.as_view(), name="vendor_debit_note_cancel"),
 ]

@@ -40,6 +40,12 @@ def home(request):
     due_rows = selectors.due_receivables(as_of=today)
     outstanding = sum((r.total_due for r in due_rows), start=Decimal("0"))
 
+    # Liquidity summary
+    try:
+        liquidity = selectors.liquidity_summary()
+    except Exception:
+        liquidity = []
+
     # Low stock
     low_stock = selectors.low_stock_alert()
 
@@ -60,6 +66,7 @@ def home(request):
             "outstanding": outstanding,
             "low_stock_count": len(low_stock),
         },
+        "liquidity": liquidity,
         "low_stock": low_stock,
         "best_sellers": best_sellers,
         "best_sellers_labels": json.dumps([r.product_code for r in best_sellers]),

@@ -190,6 +190,24 @@ class SalesInvoice(TenantOwnedModel, TimestampedModel, AuditMetaMixin):
         from decimal import Decimal
         return max(self.grand_total - self.allocated_amount, Decimal("0"))
 
+    def recalculate_totals(self) -> None:
+        from decimal import Decimal
+        from django.db.models import Sum, F
+        agg = self.lines.aggregate(
+            sub=Sum(F("line_subtotal")),
+            disc=Sum("discount_amount"),
+            tax=Sum("tax_amount"),
+        )
+        sub = agg["sub"] or Decimal("0")
+        disc = agg["disc"] or Decimal("0")
+        tax = agg["tax"] or Decimal("0")
+        SalesInvoice.objects.filter(pk=self.pk).update(
+            subtotal=sub,
+            discount_total=disc,
+            tax_total=tax,
+            grand_total=sub + tax,
+        )
+
     def __str__(self) -> str:
         return f"{self.invoice_number or 'DRAFT'} {self.customer_id} {self.grand_total} {self.currency_code}"
 
@@ -208,6 +226,21 @@ class SalesInvoiceLine(TenantOwnedModel, TimestampedModel):
     # Item identification (free-text or linked to catalog).
     item_code = models.CharField(max_length=64, blank=True, default="")
     description = models.CharField(max_length=255, blank=True, default="")
+
+    # Inventory integration — set when line maps to a stocked product.
+    # When product is set, IssueSalesInvoice will decrement stock and post COGS.
+    product = models.ForeignKey(
+        "catalog.Product",
+        on_delete=models.PROTECT,
+        related_name="invoice_lines",
+        null=True, blank=True,
+    )
+    warehouse = models.ForeignKey(
+        "inventory.Warehouse",
+        on_delete=models.PROTECT,
+        related_name="invoice_lines",
+        null=True, blank=True,
+    )
 
     quantity = models.DecimalField(max_digits=18, decimal_places=4)
     unit_price = models.DecimalField(max_digits=18, decimal_places=4)
@@ -231,6 +264,21 @@ class SalesInvoiceLine(TenantOwnedModel, TimestampedModel):
         null=True, blank=True,
         help_text="Revenue GL account for this line. Falls back to customer.revenue_account.",
     )
+
+    def save(self, *args, **kwargs):
+        if self.invoice_id:
+            inv_status = (
+                SalesInvoice.objects
+                .filter(pk=self.invoice_id)
+                .values_list("status", flat=True)
+                .first()
+            )
+            if inv_status and inv_status != SalesInvoiceStatus.DRAFT:
+                from apps.sales.domain.exceptions import SaleAlreadyPostedError
+                raise SaleAlreadyPostedError(
+                    f"Cannot modify lines on a {inv_status} invoice."
+                )
+        super().save(*args, **kwargs)
 
     class Meta:
         db_table = "sales_invoice_line"
@@ -321,6 +369,14 @@ class CustomerReceipt(TenantOwnedModel, TimestampedModel, AuditMetaMixin):
         on_delete=models.PROTECT,
         related_name="receipt_bank_side",
         null=True, blank=True,
+    )
+    # Treasury entity whose current_balance mirrors this receipt.
+    treasury_bank_account = models.ForeignKey(
+        "treasury.BankAccount",
+        on_delete=models.PROTECT,
+        related_name="customer_receipts",
+        null=True, blank=True,
+        help_text="Treasury bank account for balance tracking.",
     )
 
     class Meta:
@@ -550,6 +606,8 @@ class DebitNote(TenantOwnedModel, TimestampedModel, AuditMetaMixin):
     subtotal = models.DecimalField(max_digits=18, decimal_places=4, default=0)
     tax_total = models.DecimalField(max_digits=18, decimal_places=4, default=0)
     grand_total = models.DecimalField(max_digits=18, decimal_places=4, default=0)
+    allocated_amount = models.DecimalField(max_digits=18, decimal_places=4, default=0,
+        help_text="Amount settled via CustomerReceipt allocations.")
     currency_code = models.CharField(max_length=3, blank=True, default="")
 
     fiscal_period = models.ForeignKey(
@@ -587,6 +645,11 @@ class DebitNote(TenantOwnedModel, TimestampedModel, AuditMetaMixin):
             models.Index(fields=("organization", "status")),
         ]
 
+    @property
+    def open_amount(self):
+        from decimal import Decimal
+        return max(self.grand_total - self.allocated_amount, Decimal("0"))
+
     def __str__(self) -> str:
         return f"DN {self.note_number or 'DRAFT'} {self.customer_id} {self.grand_total}"
 
@@ -621,3 +684,44 @@ class DebitNoteLine(TenantOwnedModel, TimestampedModel):
                 name="sales_debit_note_line_qty_positive",
             ),
         ]
+
+
+# ---------------------------------------------------------------------------
+# DebitNoteAllocation
+# ---------------------------------------------------------------------------
+class DebitNoteAllocation(TenantOwnedModel, TimestampedModel):
+    """
+    Links a CustomerReceipt to a DebitNote, recording how much of the receipt
+    was applied against the debit note's open balance.
+
+    This allows the AR increase created by IssueDebitNote to be cleared when
+    the customer pays the additional amount.
+    """
+
+    receipt = models.ForeignKey(
+        CustomerReceipt,
+        on_delete=models.PROTECT,
+        related_name="debit_note_allocations",
+    )
+    debit_note = models.ForeignKey(
+        DebitNote,
+        on_delete=models.PROTECT,
+        related_name="allocations",
+    )
+    allocated_amount = models.DecimalField(max_digits=18, decimal_places=4)
+
+    class Meta:
+        db_table = "sales_debit_note_allocation"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("receipt", "debit_note"),
+                name="sales_dna_unique_receipt_debit_note",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(allocated_amount__gt=0),
+                name="sales_dna_allocated_positive",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"Receipt {self.receipt_id} → DN {self.debit_note_id}: {self.allocated_amount}"

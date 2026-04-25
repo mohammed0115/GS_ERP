@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timezone
 
 from django.db import transaction
+from django.db.models import F
 
 from apps.sales.infrastructure.invoice_models import CustomerReceipt, ReceiptStatus
 
@@ -119,6 +120,11 @@ class PostCustomerReceipt:
                 receipt_number=receipt_number,
                 journal_entry_id=result.entry_id,
             )
+            if receipt.treasury_bank_account_id:
+                from apps.treasury.infrastructure.models import BankAccount
+                BankAccount.objects.filter(pk=receipt.treasury_bank_account_id).update(
+                    current_balance=F("current_balance") + receipt.amount
+                )
 
         from apps.audit.infrastructure.models import record_audit_event
         record_audit_event(

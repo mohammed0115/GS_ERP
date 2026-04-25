@@ -84,7 +84,10 @@ class PostPurchase:
         with transaction.atomic():
             # Refuse combo products up front.
             product_ids = [l.product_id for l in draft.lines]
-            products = {p.pk: p for p in Product.objects.filter(pk__in=product_ids)}
+            products = {
+                p.pk: p for p in
+                Product.objects.filter(pk__in=product_ids).select_related("inventory_account")
+            }
             for line in draft.lines:
                 product = products.get(line.product_id)
                 if product is None:
@@ -117,7 +120,7 @@ class PostPurchase:
             purchase.save()
 
             # 2. Persist lines; collect stockable specs for inventory receipt.
-            stockable_net = Money.zero(totals.currency)
+            inventory_by_acc: dict[int, Money] = {}  # per-product inventory account → amount
             non_stockable_net = Money.zero(totals.currency)
             inventory_specs: list[InventoryLineSpec] = []
 
@@ -150,7 +153,12 @@ class PostPurchase:
                         unit_cost=line.unit_cost.amount,
                         line_id=pl.pk,
                     ))
-                    stockable_net = stockable_net + line.line_after_discount
+                    # Use per-product inventory account; fall back to form-supplied account
+                    acc_id = product.inventory_account_id or command.inventory_account_id
+                    inventory_by_acc[acc_id] = (
+                        inventory_by_acc.get(acc_id, Money.zero(totals.currency))
+                        + line.line_after_discount
+                    )
                 else:
                     non_stockable_net = non_stockable_net + line.line_after_discount
 
@@ -166,11 +174,11 @@ class PostPurchase:
             # 4. Post the ledger entry.
             je_id = self._post_ledger(
                 totals=totals,
-                stockable_net=stockable_net,
+                inventory_by_acc=inventory_by_acc,
+                fallback_inventory_account_id=command.inventory_account_id,
                 non_stockable_net=non_stockable_net,
                 reference=command.reference,
                 purchase_date=command.purchase_date,
-                inventory_account_id=command.inventory_account_id,
                 expense_account_id=command.expense_account_id,
                 tax_recoverable_account_id=command.tax_recoverable_account_id,
                 credit_account_id=command.credit_account_id,
@@ -246,11 +254,11 @@ class PostPurchase:
         self,
         *,
         totals: PurchaseTotals,
-        stockable_net: Money,
+        inventory_by_acc: dict[int, Money],
+        fallback_inventory_account_id: int,
         non_stockable_net: Money,
         reference: str,
         purchase_date: date,
-        inventory_account_id: int,
         expense_account_id: int | None,
         tax_recoverable_account_id: int | None,
         credit_account_id: int,
@@ -260,15 +268,19 @@ class PostPurchase:
     ) -> int:
         lines: list[JournalLine] = []
 
-        # Inventory side — shipping is added here proportional-free: we fold
-        # shipping entirely onto the stockable side when present. A finer
-        # cost-allocation policy can land later.
-        inventory_amount = stockable_net + totals.shipping
-        if not inventory_amount.is_zero():
-            lines.append(JournalLine.debit_only(
-                account_id=inventory_account_id,
-                amount=inventory_amount,
-            ))
+        # Distribute shipping entirely onto the fallback inventory account.
+        # A proportional cost-allocation policy can land later.
+        working_inv = dict(inventory_by_acc)
+        if not totals.shipping.is_zero():
+            cur = working_inv.get(fallback_inventory_account_id, Money.zero(totals.currency))
+            working_inv[fallback_inventory_account_id] = cur + totals.shipping
+
+        for acc_id, amount in working_inv.items():
+            if not amount.is_zero():
+                lines.append(JournalLine.debit_only(
+                    account_id=acc_id,
+                    amount=amount,
+                ))
 
         if not non_stockable_net.is_zero():
             if expense_account_id is None:

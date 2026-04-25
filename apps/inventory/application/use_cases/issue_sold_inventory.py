@@ -102,6 +102,18 @@ class IssueSoldInventory:
             if product is None or product.type not in _STOCKABLE_TYPES:
                 continue
 
+            # FIX-4: GL accounts must be configured before inventory can be issued.
+            if not product.inventory_account_id:
+                raise ValueError(
+                    f"Product '{product.code}' has no inventory_account configured. "
+                    "Set it in Product GL settings before issuing."
+                )
+            if not product.cogs_account_id:
+                raise ValueError(
+                    f"Product '{product.code}' has no cogs_account configured. "
+                    "Set it in Product GL settings before issuing."
+                )
+
             # Lock the SOH row
             try:
                 soh = (

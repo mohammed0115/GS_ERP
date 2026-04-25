@@ -84,13 +84,25 @@ class PostTreasuryTransaction:
         _assert_period_open(txn.transaction_date)
         fiscal_period_id = _find_open_period_id(txn.transaction_date)
 
-        # Overdraft guard for outflow/adjustment
-        if txn.transaction_type != TransactionType.INFLOW and party.current_balance < txn.amount:
-            from apps.treasury.domain.exceptions import BalanceInsufficientError
-            raise BalanceInsufficientError(
-                f"Insufficient balance: {party.current_balance} available, "
-                f"{txn.amount} required."
+        # Overdraft guard for outflow/adjustment — use GL balance (authoritative).
+        if txn.transaction_type != TransactionType.INFLOW:
+            from decimal import Decimal as _Dec
+            from django.db.models import Sum
+            from apps.finance.infrastructure.models import JournalLine
+            _agg = JournalLine.objects.filter(
+                account_id=party.gl_account_id, entry__is_posted=True
+            ).aggregate(total_dr=Sum("debit"), total_cr=Sum("credit"))
+            _gl_bal = (
+                _Dec(str(party.opening_balance))
+                + (_agg["total_dr"] or _Dec("0"))
+                - (_agg["total_cr"] or _Dec("0"))
             )
+            if _gl_bal < txn.amount:
+                from apps.treasury.domain.exceptions import BalanceInsufficientError
+                raise BalanceInsufficientError(
+                    f"Insufficient balance: {_gl_bal} available, "
+                    f"{txn.amount} required."
+                )
 
         currency = Currency(code=txn.currency_code)
         amount = Money(txn.amount, currency)

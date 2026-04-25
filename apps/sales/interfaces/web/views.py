@@ -1102,15 +1102,21 @@ class SalesInvoiceHeaderForm(BootstrapFormMixin, forms.Form):
     )
     due_date = forms.DateField(
         widget=forms.DateInput(attrs={"type": "date"}),
-        initial=date.today,
+        required=False,
+        help_text="Leave blank to auto-compute from customer payment terms.",
     )
     currency_code = forms.CharField(max_length=3, min_length=3, initial="SAR")
     notes = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 2}))
 
     def clean(self):
+        from datetime import timedelta
         cleaned = super().clean()
         inv_date = cleaned.get("invoice_date")
         due = cleaned.get("due_date")
+        customer = cleaned.get("customer")
+        if inv_date and not due and customer:
+            due = inv_date + timedelta(days=customer.payment_terms_days)
+            cleaned["due_date"] = due
         if inv_date and due and due < inv_date:
             self.add_error("due_date", "Due date must be on or after invoice date.")
         return cleaned
@@ -1122,12 +1128,29 @@ class SalesInvoiceCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, For
     form_class = SalesInvoiceHeaderForm
 
     def get_context_data(self, **kwargs):
+        from apps.inventory.infrastructure.models import Warehouse
+        from apps.catalog.infrastructure.models import Product
         ctx = super().get_context_data(**kwargs)
         ctx["tax_codes"] = TaxCode.objects.filter(is_active=True).order_by("code")
         ctx["revenue_accounts"] = (
             Account.objects.filter(is_active=True, account_type=AccountTypeChoices.INCOME)
             .order_by("code")
         )
+        from apps.catalog.infrastructure.models import ProductTypeChoices
+        ctx["warehouses"] = Warehouse.objects.filter(is_active=True).order_by("code")
+        # FIX-8: expose product type so the template can show/hide the warehouse
+        # field per line — STANDARD needs a warehouse, SERVICE/DIGITAL do not.
+        ctx["stockable_products"] = (
+            Product.objects.filter(is_active=True, type=ProductTypeChoices.STANDARD)
+            .order_by("code")
+        )
+        ctx["service_products"] = (
+            Product.objects.filter(
+                is_active=True,
+                type__in=[ProductTypeChoices.SERVICE, ProductTypeChoices.DIGITAL],
+            ).order_by("code")
+        )
+        ctx["products"] = Product.objects.filter(is_active=True).order_by("code")
         return ctx
 
     def form_valid(self, form):
@@ -1141,6 +1164,51 @@ class SalesInvoiceCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, For
         if not lines_data:
             form.add_error(None, "At least one line is required.")
             return self.form_invalid(form)
+
+        # FIX-F: validate line quantities and discounts before touching the DB
+        for idx, row in enumerate(lines_data, start=1):
+            try:
+                qty = Decimal(str(row.get("quantity") or "0"))
+                price = Decimal(str(row.get("unit_price") or "0"))
+                disc = Decimal(str(row.get("discount_amount") or "0"))
+            except InvalidOperation:
+                form.add_error(None, f"Line {idx}: invalid numeric value.")
+                return self.form_invalid(form)
+            if qty <= Decimal("0"):
+                form.add_error(None, f"Line {idx}: quantity must be greater than zero.")
+                return self.form_invalid(form)
+            if disc < Decimal("0"):
+                form.add_error(None, f"Line {idx}: discount cannot be negative.")
+                return self.form_invalid(form)
+            if disc > qty * price:
+                form.add_error(None, f"Line {idx}: discount exceeds line gross amount.")
+                return self.form_invalid(form)
+
+        # FIX-6: stock availability check before any DB write
+        from apps.catalog.infrastructure.models import ProductTypeChoices
+        from apps.inventory.infrastructure.models import StockOnHand as _SOH
+        for idx, row in enumerate(lines_data, start=1):
+            pid = row.get("product_id") or None
+            wid = row.get("warehouse_id") or None
+            if pid and wid:
+                try:
+                    prod_check = Product.objects.get(pk=pid)
+                except Product.DoesNotExist:
+                    form.add_error(None, f"Line {idx}: product #{pid} not found.")
+                    return self.form_invalid(form)
+                if prod_check.type == ProductTypeChoices.STANDARD:
+                    qty_req = Decimal(str(row.get("quantity") or "0"))
+                    soh_row = _SOH.objects.filter(
+                        product_id=pid, warehouse_id=wid
+                    ).first()
+                    available = soh_row.quantity if soh_row else Decimal("0")
+                    if qty_req > available:
+                        form.add_error(
+                            None,
+                            f"Line {idx} ({prod_check.code}): insufficient stock — "
+                            f"requested {qty_req}, available {available}.",
+                        )
+                        return self.form_invalid(form)
 
         cd = form.cleaned_data
         from django.db import transaction as db_transaction
@@ -1174,6 +1242,8 @@ class SalesInvoiceCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, For
                     tax_code_id = row.get("tax_code_id") or None
                     revenue_acc_id = row.get("revenue_account_id") or None
 
+                    product_id = row.get("product_id") or None
+                    warehouse_id = row.get("warehouse_id") or None
                     SalesInvoiceLine(
                         invoice=inv,
                         sequence=seq,
@@ -1187,6 +1257,8 @@ class SalesInvoiceCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, For
                         line_subtotal=line_subtotal,
                         line_total=line_total,
                         revenue_account_id=revenue_acc_id,
+                        product_id=product_id,
+                        warehouse_id=warehouse_id,
                     ).save()
                     subtotal += line_subtotal
                     tax_total += tax_amount
@@ -1201,6 +1273,175 @@ class SalesInvoiceCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, For
             return self.form_invalid(form)
 
         messages.success(self.request, f"Invoice #{inv.pk} created as draft.")
+        return HttpResponseRedirect(reverse("sales:invoice_detail", args=[inv.pk]))
+
+
+class SalesInvoiceEditView(LoginRequiredMixin, OrgPermissionRequiredMixin, FormView):
+    """Edit a DRAFT SalesInvoice header and replace its lines."""
+    permission_required = "sales.salesinvoice.create"
+    template_name = "sales/invoice/form.html"
+    form_class = SalesInvoiceHeaderForm
+
+    def _get_invoice(self):
+        pk = self.kwargs["pk"]
+        try:
+            inv = SalesInvoice.objects.select_related("customer").get(pk=pk)
+        except SalesInvoice.DoesNotExist:
+            from django.http import Http404
+            raise Http404
+        if inv.status != SalesInvoiceStatus.DRAFT:
+            from apps.sales.domain.exceptions import SaleAlreadyPostedError
+            raise SaleAlreadyPostedError(
+                f"Invoice #{pk} is not in Draft and cannot be edited."
+            )
+        return inv
+
+    def get_initial(self):
+        inv = self._get_invoice()
+        return {
+            "customer": inv.customer_id,
+            "invoice_date": inv.invoice_date,
+            "due_date": inv.due_date,
+            "currency_code": inv.currency_code,
+            "notes": inv.notes,
+        }
+
+    def get_context_data(self, **kwargs):
+        from apps.inventory.infrastructure.models import Warehouse
+        from apps.catalog.infrastructure.models import Product, ProductTypeChoices
+        ctx = super().get_context_data(**kwargs)
+        ctx["invoice"] = self._get_invoice()
+        ctx["tax_codes"] = TaxCode.objects.filter(is_active=True).order_by("code")
+        ctx["revenue_accounts"] = (
+            Account.objects.filter(is_active=True, account_type=AccountTypeChoices.INCOME)
+            .order_by("code")
+        )
+        ctx["warehouses"] = Warehouse.objects.filter(is_active=True).order_by("code")
+        ctx["stockable_products"] = (
+            Product.objects.filter(is_active=True, type=ProductTypeChoices.STANDARD)
+            .order_by("code")
+        )
+        ctx["service_products"] = (
+            Product.objects.filter(
+                is_active=True,
+                type__in=[ProductTypeChoices.SERVICE, ProductTypeChoices.DIGITAL],
+            ).order_by("code")
+        )
+        ctx["products"] = Product.objects.filter(is_active=True).order_by("code")
+        return ctx
+
+    def form_valid(self, form):
+        from django.db import transaction as db_transaction
+        try:
+            inv = self._get_invoice()
+        except Exception as exc:
+            form.add_error(None, str(exc))
+            return self.form_invalid(form)
+
+        raw_lines = self.request.POST.get("lines_json", "[]")
+        try:
+            lines_data = json.loads(raw_lines)
+        except json.JSONDecodeError:
+            form.add_error(None, "Invalid lines payload.")
+            return self.form_invalid(form)
+
+        if not lines_data:
+            form.add_error(None, "At least one line is required.")
+            return self.form_invalid(form)
+
+        # Same line validation as CreateView (FIX-F + BUG-7)
+        for idx, row in enumerate(lines_data, start=1):
+            try:
+                qty = Decimal(str(row.get("quantity") or "0"))
+                price = Decimal(str(row.get("unit_price") or "0"))
+                disc = Decimal(str(row.get("discount_amount") or "0"))
+            except InvalidOperation:
+                form.add_error(None, f"Line {idx}: invalid numeric value.")
+                return self.form_invalid(form)
+            if qty <= Decimal("0"):
+                form.add_error(None, f"Line {idx}: quantity must be greater than zero.")
+                return self.form_invalid(form)
+            if disc < Decimal("0"):
+                form.add_error(None, f"Line {idx}: discount cannot be negative.")
+                return self.form_invalid(form)
+            if disc > qty * price:
+                form.add_error(None, f"Line {idx}: discount exceeds line gross amount.")
+                return self.form_invalid(form)
+
+        from apps.catalog.infrastructure.models import ProductTypeChoices
+        from apps.inventory.infrastructure.models import StockOnHand as _SOH
+        for idx, row in enumerate(lines_data, start=1):
+            pid = row.get("product_id") or None
+            wid = row.get("warehouse_id") or None
+            if pid and wid:
+                try:
+                    prod_check = Product.objects.get(pk=pid)
+                except Product.DoesNotExist:
+                    form.add_error(None, f"Line {idx}: product #{pid} not found.")
+                    return self.form_invalid(form)
+                if prod_check.type == ProductTypeChoices.STANDARD:
+                    qty_req = Decimal(str(row.get("quantity") or "0"))
+                    soh_row = _SOH.objects.filter(
+                        product_id=pid, warehouse_id=wid
+                    ).first()
+                    available = soh_row.quantity if soh_row else Decimal("0")
+                    if qty_req > available:
+                        form.add_error(
+                            None,
+                            f"Line {idx} ({prod_check.code}): insufficient stock — "
+                            f"requested {qty_req}, available {available}.",
+                        )
+                        return self.form_invalid(form)
+
+        cd = form.cleaned_data
+        try:
+            with db_transaction.atomic():
+                inv.lines.all().delete()
+
+                subtotal = Decimal("0")
+                tax_total = Decimal("0")
+                for seq, row in enumerate(lines_data, start=1):
+                    qty = Decimal(str(row.get("quantity") or "0"))
+                    price = Decimal(str(row.get("unit_price") or "0"))
+                    disc = Decimal(str(row.get("discount_amount") or "0"))
+                    tax_amount = Decimal(str(row.get("tax_amount") or "0"))
+                    line_subtotal = (qty * price) - disc
+                    line_total = line_subtotal + tax_amount
+
+                    SalesInvoiceLine(
+                        invoice=inv,
+                        sequence=seq,
+                        item_code=row.get("item_code") or "",
+                        description=row.get("description") or "",
+                        quantity=qty,
+                        unit_price=price,
+                        discount_amount=disc,
+                        tax_code_id=row.get("tax_code_id") or None,
+                        tax_amount=tax_amount,
+                        line_subtotal=line_subtotal,
+                        line_total=line_total,
+                        revenue_account_id=row.get("revenue_account_id") or None,
+                        product_id=row.get("product_id") or None,
+                        warehouse_id=row.get("warehouse_id") or None,
+                    ).save()
+                    subtotal += line_subtotal
+                    tax_total += tax_amount
+
+                SalesInvoice.objects.filter(pk=inv.pk).update(
+                    customer=cd["customer"],
+                    invoice_date=cd["invoice_date"],
+                    due_date=cd["due_date"],
+                    currency_code=cd["currency_code"],
+                    notes=cd.get("notes") or "",
+                    subtotal=subtotal,
+                    tax_total=tax_total,
+                    grand_total=subtotal + tax_total,
+                )
+        except Exception as exc:
+            form.add_error(None, f"Could not update invoice: {exc}")
+            return self.form_invalid(form)
+
+        messages.success(self.request, f"Invoice #{inv.pk} updated.")
         return HttpResponseRedirect(reverse("sales:invoice_detail", args=[inv.pk]))
 
 
@@ -1323,6 +1564,7 @@ class CustomerReceiptCreateForm(BootstrapFormMixin, forms.Form):
         label="Bank / Cash account",
     )
     invoice_id = forms.IntegerField(required=False, widget=forms.HiddenInput())
+    debit_note_id = forms.IntegerField(required=False, widget=forms.HiddenInput())
 
 
 class CustomerReceiptCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, FormView):
@@ -1331,8 +1573,10 @@ class CustomerReceiptCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, 
     form_class = CustomerReceiptCreateForm
 
     def get_initial(self):
+        from apps.sales.infrastructure.invoice_models import DebitNote
         initial = super().get_initial()
         invoice_id = self.request.GET.get("invoice_id")
+        debit_note_id = self.request.GET.get("debit_note_id")
         if invoice_id:
             try:
                 inv = SalesInvoice.objects.get(pk=invoice_id)
@@ -1342,15 +1586,31 @@ class CustomerReceiptCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, 
                 initial["invoice_id"] = inv.pk
             except SalesInvoice.DoesNotExist:
                 pass
+        elif debit_note_id:
+            try:
+                dn = DebitNote.objects.get(pk=debit_note_id)
+                initial["customer"] = dn.customer_id
+                initial["amount"] = dn.open_amount
+                initial["currency_code"] = dn.currency_code
+                initial["debit_note_id"] = dn.pk
+            except DebitNote.DoesNotExist:
+                pass
         return initial
 
     def get_context_data(self, **kwargs):
+        from apps.sales.infrastructure.invoice_models import DebitNote
         ctx = super().get_context_data(**kwargs)
         invoice_id = self.request.GET.get("invoice_id") or self.request.POST.get("invoice_id")
+        debit_note_id = self.request.GET.get("debit_note_id") or self.request.POST.get("debit_note_id")
         if invoice_id:
             try:
                 ctx["source_invoice"] = SalesInvoice.objects.get(pk=invoice_id)
             except SalesInvoice.DoesNotExist:
+                pass
+        if debit_note_id:
+            try:
+                ctx["source_debit_note"] = DebitNote.objects.get(pk=debit_note_id)
+            except DebitNote.DoesNotExist:
                 pass
         return ctx
 
@@ -1369,8 +1629,10 @@ class CustomerReceiptCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, 
         )
         receipt.save()
 
-        # Auto-post and auto-allocate when created directly from an invoice.
         invoice_id = cd.get("invoice_id")
+        debit_note_id = cd.get("debit_note_id")
+
+        # Auto-post and auto-allocate when created directly from an invoice.
         if invoice_id:
             from apps.sales.application.use_cases.post_customer_receipt import (
                 PostCustomerReceipt, PostCustomerReceiptCommand,
@@ -1393,6 +1655,35 @@ class CustomerReceiptCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, 
                     f"Payment {receipt.pk} posted and applied to invoice.",
                 )
                 return HttpResponseRedirect(reverse("sales:invoice_detail", args=[invoice_id]))
+            except Exception as exc:
+                messages.warning(self.request, f"Receipt saved but auto-post failed: {exc}")
+
+        # Auto-post and auto-allocate against a debit note.
+        elif debit_note_id:
+            from apps.sales.application.use_cases.post_customer_receipt import (
+                PostCustomerReceipt, PostCustomerReceiptCommand,
+            )
+            from apps.sales.application.use_cases.allocate_receipt import (
+                AllocateReceiptService, AllocateReceiptCommand, DebitNoteAllocationSpec,
+            )
+            try:
+                PostCustomerReceipt().execute(
+                    PostCustomerReceiptCommand(receipt_id=receipt.pk, actor_id=self.request.user.pk)
+                )
+                AllocateReceiptService().execute(
+                    AllocateReceiptCommand(
+                        receipt_id=receipt.pk,
+                        allocations=(),
+                        debit_note_allocations=(
+                            DebitNoteAllocationSpec(debit_note_id=debit_note_id, amount=cd["amount"]),
+                        ),
+                    )
+                )
+                messages.success(
+                    self.request,
+                    f"Payment {receipt.pk} posted and applied to debit note.",
+                )
+                return HttpResponseRedirect(reverse("sales:debit_note_detail", args=[debit_note_id]))
             except Exception as exc:
                 messages.warning(self.request, f"Receipt saved but auto-post failed: {exc}")
 
@@ -1470,6 +1761,24 @@ class CustomerReceiptReverseView(LoginRequiredMixin, OrgPermissionRequiredMixin,
         return HttpResponseRedirect(reverse("sales:receipt_detail", args=[pk]))
 
 
+class CustomerReceiptCancelView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
+    """POST-only: cancel a DRAFT CustomerReceipt (no GL entry exists yet)."""
+    permission_required = "sales.customerreceipt.post"
+
+    def post(self, request, pk):
+        from apps.sales.application.use_cases.cancel_customer_receipt import (
+            CancelCustomerReceipt, CancelCustomerReceiptCommand,
+        )
+        try:
+            CancelCustomerReceipt().execute(
+                CancelCustomerReceiptCommand(receipt_id=pk, actor_id=request.user.pk)
+            )
+            messages.success(request, "Draft receipt cancelled.")
+        except Exception as exc:
+            messages.error(request, f"Could not cancel receipt: {exc}")
+        return HttpResponseRedirect(reverse("sales:receipt_detail", args=[pk]))
+
+
 class CustomerReceiptUnallocateView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
     """POST-only: remove specific allocations from a posted receipt (no GL impact)."""
     permission_required = "sales.customerreceipt.allocate"
@@ -1535,6 +1844,20 @@ class CreditNoteDetailView(LoginRequiredMixin, OrgPermissionRequiredMixin, Detai
             .select_related("customer", "related_invoice", "journal_entry")
             .prefetch_related("lines__tax_code", "lines__revenue_account")
         )
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        note: CreditNote = self.object  # type: ignore[assignment]
+        # Standalone ISSUED CN can be applied to any open invoice of the same customer.
+        if note.status == NoteStatus.ISSUED and not note.related_invoice_id:
+            ctx["open_invoices"] = list(
+                SalesInvoice.objects.filter(
+                    customer_id=note.customer_id,
+                    currency_code=note.currency_code,
+                    status__in=[SalesInvoiceStatus.ISSUED, SalesInvoiceStatus.PARTIALLY_PAID],
+                ).order_by("invoice_date")
+            )
+        return ctx
 
 
 class CreditNoteCreateForm(BootstrapFormMixin, forms.Form):
@@ -1651,6 +1974,54 @@ class CreditNoteIssueView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
             )
         except Exception as exc:
             messages.error(request, f"Could not issue credit note: {exc}")
+        return HttpResponseRedirect(reverse("sales:credit_note_detail", args=[pk]))
+
+
+class CreditNoteApplyView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
+    """Apply a standalone ISSUED CreditNote to a specific SalesInvoice."""
+    permission_required = "sales.creditnote.issue"
+
+    def post(self, request, pk):
+        from apps.sales.application.use_cases.apply_credit_note import (
+            ApplyCreditNoteToInvoice, ApplyCreditNoteCommand,
+        )
+        invoice_id = request.POST.get("invoice_id")
+        if not invoice_id:
+            messages.error(request, "No invoice selected.")
+            return HttpResponseRedirect(reverse("sales:credit_note_detail", args=[pk]))
+        try:
+            result = ApplyCreditNoteToInvoice().execute(
+                ApplyCreditNoteCommand(
+                    credit_note_id=pk,
+                    invoice_id=int(invoice_id),
+                    actor_id=request.user.pk,
+                )
+            )
+            messages.success(
+                request,
+                f"Applied {result.amount_applied} from credit note to invoice "
+                f"#{result.invoice_id}.",
+            )
+        except Exception as exc:
+            messages.error(request, f"Could not apply credit note: {exc}")
+        return HttpResponseRedirect(reverse("sales:credit_note_detail", args=[pk]))
+
+
+class CreditNoteCancelView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
+    """POST-only: cancel a DRAFT or standalone ISSUED credit note."""
+    permission_required = "sales.creditnote.issue"
+
+    def post(self, request, pk):
+        from apps.sales.application.use_cases.cancel_credit_note import (
+            CancelCreditNote, CancelCreditNoteCommand,
+        )
+        try:
+            CancelCreditNote().execute(
+                CancelCreditNoteCommand(credit_note_id=pk, actor_id=request.user.pk)
+            )
+            messages.success(request, "Credit note cancelled.")
+        except Exception as exc:
+            messages.error(request, f"Could not cancel credit note: {exc}")
         return HttpResponseRedirect(reverse("sales:credit_note_detail", args=[pk]))
 
 
@@ -1794,4 +2165,22 @@ class DebitNoteIssueView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
             )
         except Exception as exc:
             messages.error(request, f"Could not issue debit note: {exc}")
+        return HttpResponseRedirect(reverse("sales:debit_note_detail", args=[pk]))
+
+
+class DebitNoteCancelView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
+    """POST-only: cancel a DRAFT or ISSUED debit note."""
+    permission_required = "sales.debitnote.issue"
+
+    def post(self, request, pk):
+        from apps.sales.application.use_cases.cancel_debit_note import (
+            CancelDebitNote, CancelDebitNoteCommand,
+        )
+        try:
+            CancelDebitNote().execute(
+                CancelDebitNoteCommand(debit_note_id=pk, actor_id=request.user.pk)
+            )
+            messages.success(request, "Debit note cancelled.")
+        except Exception as exc:
+            messages.error(request, f"Could not cancel debit note: {exc}")
         return HttpResponseRedirect(reverse("sales:debit_note_detail", args=[pk]))

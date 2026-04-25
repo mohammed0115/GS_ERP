@@ -130,8 +130,36 @@
     </div>
 </div>
 
-{# ---- Allocate modal (only when posted and open invoices exist) ---- #}
-{% if can_allocate and open_invoices %}
+{% if dn_allocations %}
+<div class="card shadow-sm mb-3">
+    <div class="card-header">{% trans "Debit Note Settlements" %}</div>
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+            <thead class="thead-light">
+                <tr>
+                    <th>{% trans "Debit Note #" %}</th>
+                    <th>{% trans "Note Date" %}</th>
+                    <th class="text-right">{% trans "Note Total" %}</th>
+                    <th class="text-right">{% trans "Settled Here" %}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for alloc in dn_allocations %}
+                <tr>
+                    <td><a href="{% url 'purchases:vendor_debit_note_detail' alloc.debit_note.pk %}"><code>{{ alloc.debit_note.note_number|default:alloc.debit_note.pk }}</code></a></td>
+                    <td>{{ alloc.debit_note.note_date }}</td>
+                    <td class="text-right">{{ alloc.debit_note.grand_total|money:object.currency_code }}</td>
+                    <td class="text-right font-weight-bold">{{ alloc.allocated_amount|money:object.currency_code }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{# ---- Allocate modal (only when posted and open invoices or debit notes exist) ---- #}
+{% if can_allocate and open_invoices or can_allocate and open_debit_notes %}
 <div class="modal fade" id="allocate-modal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
@@ -142,10 +170,14 @@
             <form method="post" action="{% url 'purchases:vendor_payment_allocate' object.pk %}" id="alloc-form">
                 {% csrf_token %}
                 <input type="hidden" name="allocations_json" id="allocations_json">
+                <input type="hidden" name="dn_allocations_json" id="dn_allocations_json">
                 <div class="modal-body">
                     <p class="text-muted">
                         {% trans "Available:" %} <strong>{{ unallocated|money:object.currency_code }}</strong>
                     </p>
+
+                    {% if open_invoices %}
+                    <h6>{% trans "Invoices" %}</h6>
                     <table class="table table-sm" id="alloc-table">
                         <thead class="thead-light">
                             <tr>
@@ -171,6 +203,36 @@
                             {% endfor %}
                         </tbody>
                     </table>
+                    {% endif %}
+
+                    {% if open_debit_notes %}
+                    <h6 class="mt-3">{% trans "Debit Notes (Additional Charges)" %}</h6>
+                    <table class="table table-sm" id="dn-alloc-table">
+                        <thead class="thead-light">
+                            <tr>
+                                <th>{% trans "Debit Note #" %}</th>
+                                <th>{% trans "Date" %}</th>
+                                <th class="text-right">{% trans "Open Balance" %}</th>
+                                <th class="text-right" style="width:150px">{% trans "Settle Amount" %}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for dn in open_debit_notes %}
+                            <tr>
+                                <td><code>{{ dn.note_number|default:dn.pk }}</code></td>
+                                <td>{{ dn.note_date }}</td>
+                                <td class="text-right">{{ dn.open_amount|money:object.currency_code }}</td>
+                                <td>
+                                    <input type="number" class="form-control form-control-sm text-right dn-alloc-amt"
+                                           step="0.0001" min="0" value="0"
+                                           data-debit-note-id="{{ dn.pk }}"
+                                           data-max="{{ dn.open_amount }}">
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% endif %}
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-dismiss="modal">{% trans "Close" %}</button>
@@ -192,6 +254,15 @@ document.getElementById('alloc-form').addEventListener('submit', function () {
         }
     });
     document.getElementById('allocations_json').value = JSON.stringify(rows);
+
+    const dnRows = [];
+    document.querySelectorAll('.dn-alloc-amt').forEach(function (inp) {
+        const amt = parseFloat(inp.value) || 0;
+        if (amt > 0) {
+            dnRows.push({ debit_note_id: parseInt(inp.dataset.debitNoteId), amount: amt });
+        }
+    });
+    document.getElementById('dn_allocations_json').value = JSON.stringify(dnRows);
 });
 </script>
 {% endif %}

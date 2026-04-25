@@ -18,6 +18,14 @@
         </button>
     </form>
     {% endif %}
+    {% if object.status == "issued" and object.open_amount > 0 %}
+        {% if request.user|can:"sales.customerreceipt.create" %}
+        <a href="{% url 'sales:receipt_create' %}?debit_note_id={{ object.pk }}"
+           class="btn btn-success btn-sm">
+            <i class="fas fa-dollar-sign"></i> {% trans "Receive Payment" %}
+        </a>
+        {% endif %}
+    {% endif %}
 </div>
 
 <div class="row">
@@ -59,11 +67,43 @@
                     <dd class="col-sm-7">{{ object.tax_total|money:object.currency_code }}</dd>
                     <dt class="col-sm-5 font-weight-bold">{% trans "Grand Total" %}</dt>
                     <dd class="col-sm-7 font-weight-bold">{{ object.grand_total|money:object.currency_code }}</dd>
+                    <dt class="col-sm-5">{% trans "Allocated" %}</dt>
+                    <dd class="col-sm-7">{{ object.allocated_amount|money:object.currency_code }}</dd>
+                    <dt class="col-sm-5 text-danger font-weight-bold">{% trans "Open Balance" %}</dt>
+                    <dd class="col-sm-7 text-danger font-weight-bold">{{ object.open_amount|money:object.currency_code }}</dd>
                 </dl>
             </div>
         </div>
     </div>
 </div>
+
+{% with allocs=object.allocations.all %}
+{% if allocs %}
+<div class="card shadow-sm mb-3">
+    <div class="card-header">{% trans "Payments Received" %}</div>
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+            <thead class="thead-light">
+                <tr>
+                    <th>{% trans "Receipt #" %}</th>
+                    <th>{% trans "Date" %}</th>
+                    <th class="text-right">{% trans "Amount Applied" %}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for alloc in allocs %}
+                <tr>
+                    <td><a href="{% url 'sales:receipt_detail' alloc.receipt.pk %}">{{ alloc.receipt.receipt_number|default:alloc.receipt.pk }}</a></td>
+                    <td>{{ alloc.receipt.receipt_date }}</td>
+                    <td class="text-right font-weight-bold text-success">{{ alloc.allocated_amount|money:object.currency_code }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+{% endwith %}
 
 <div class="card shadow-sm">
     <div class="card-header">{% trans "Lines" %}</div>

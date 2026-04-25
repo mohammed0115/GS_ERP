@@ -428,6 +428,18 @@ class BankStatementLine(TimestampedModel):
         related_name="statement_matches",
         null=True, blank=True,
     )
+    matched_receipt = models.ForeignKey(
+        "sales.CustomerReceipt",
+        on_delete=models.SET_NULL,
+        related_name="statement_matches",
+        null=True, blank=True,
+    )
+    matched_vendor_payment = models.ForeignKey(
+        "purchases.VendorPayment",
+        on_delete=models.SET_NULL,
+        related_name="statement_matches",
+        null=True, blank=True,
+    )
     match_status = models.CharField(
         max_length=16, choices=MatchStatus.choices,
         default=MatchStatus.UNMATCHED, db_index=True,

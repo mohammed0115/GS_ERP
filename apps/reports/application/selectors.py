@@ -442,9 +442,13 @@ def profit_and_loss(*, date_from: date, date_to: date) -> ProfitLossRow:
         .aggregate(v=Sum(F("functional_debit") - F("functional_credit")))["v"]
     ) or Decimal("0")
 
-    # C-8: identify COGS accounts via AccountReportMapping first (section name
-    # contains "cost"), then fall back to account-code prefix convention.
+    # FIX-5: Identify COGS via AccountReportMapping (income_statement / cost
+    # section) → fall back to cogs_account FK on Product → last resort: code
+    # prefix "COGS".  This three-tier strategy avoids silent zero-COGS when
+    # mappings aren't configured but Product GL links are.
     from apps.finance.infrastructure.report_models import AccountReportMapping
+    from apps.catalog.infrastructure.models import Product as _Product
+
     cogs_acct_ids = list(
         AccountReportMapping.objects
         .filter(
@@ -453,6 +457,14 @@ def profit_and_loss(*, date_from: date, date_to: date) -> ProfitLossRow:
         )
         .values_list("account_id", flat=True)
     )
+    if not cogs_acct_ids:
+        # Derive from products that have a cogs_account configured.
+        cogs_acct_ids = list(
+            _Product.objects
+            .filter(cogs_account_id__isnull=False)
+            .values_list("cogs_account_id", flat=True)
+            .distinct()
+        )
     if cogs_acct_ids:
         cogs = (
             base.filter(account_id__in=cogs_acct_ids)
@@ -886,12 +898,25 @@ def customer_statement(
         customer_id=customer_id,
         receipt_date__gte=date_from,
         receipt_date__lte=date_to,
-        status=ReceiptStatus.POSTED,
+        status__in=[ReceiptStatus.POSTED, ReceiptStatus.REVERSED],
     ).order_by("receipt_date", "id"):
-        events.append((
-            rcp.receipt_date, "receipt", rcp.receipt_number or f"RCP-{rcp.pk}",
-            f"Payment received ({rcp.payment_method})", _ZERO, rcp.amount,
-        ))
+        if rcp.status == ReceiptStatus.POSTED:
+            events.append((
+                rcp.receipt_date, "receipt", rcp.receipt_number or f"RCP-{rcp.pk}",
+                f"Payment received ({rcp.payment_method})", _ZERO, rcp.amount,
+            ))
+        else:
+            # REVERSED: show original payment then immediately cancel it out so
+            # the running balance reflects the actual GL (net zero effect).
+            ref = rcp.receipt_number or f"RCP-{rcp.pk}"
+            events.append((
+                rcp.receipt_date, "receipt", ref,
+                f"Payment received ({rcp.payment_method})", _ZERO, rcp.amount,
+            ))
+            events.append((
+                rcp.receipt_date, "receipt_reversal", f"REV-{ref}",
+                f"Payment reversed", rcp.amount, _ZERO,
+            ))
 
     for cn in CreditNote.objects.filter(
         customer_id=customer_id,
@@ -1150,6 +1175,8 @@ def vendor_statement(
             status=VendorPaymentStatus.POSTED,
         ):
             bal -= pmt.amount
+        # REVERSED payments were posted (reduced AP) then reversed (restored AP) → net zero.
+        # They cancel out and don't affect the opening balance.
 
         for cn in VendorCreditNote.objects.filter(
             vendor_id=vendor_id,
@@ -1197,14 +1224,20 @@ def vendor_statement(
         vendor_id=vendor_id,
         payment_date__gte=date_from,
         payment_date__lte=date_to,
-        status=VendorPaymentStatus.POSTED,
+        status__in=[VendorPaymentStatus.POSTED, VendorPaymentStatus.REVERSED],
     ).order_by("payment_date", "id"):
-        raw.append((
-            pmt.payment_date, "payment",
-            pmt.payment_number or f"VPAY-{pmt.pk}",
-            f"Payment to {vendor.name}",
-            _ZERO, pmt.amount,
-        ))
+        ref = pmt.payment_number or f"VPAY-{pmt.pk}"
+        if pmt.status == VendorPaymentStatus.POSTED:
+            raw.append((
+                pmt.payment_date, "payment",
+                ref, f"Payment to {vendor.name}",
+                _ZERO, pmt.amount,
+            ))
+        else:
+            # REVERSED: show original payment credit then its reversal debit so
+            # the running balance stays in sync with the GL.
+            raw.append((pmt.payment_date, "payment", ref, f"Payment to {vendor.name}", _ZERO, pmt.amount))
+            raw.append((pmt.payment_date, "payment_reversal", f"REV-{ref}", f"Payment reversed", pmt.amount, _ZERO))
 
     for cn in VendorCreditNote.objects.filter(
         vendor_id=vendor_id,
@@ -1415,48 +1448,121 @@ def bank_account_ledger(
     date_from: date,
     date_to: date,
 ) -> BankAccountLedger:
-    """All posted transactions for a bank account with running balance."""
+    """All posted movements for a bank account with running balance.
+
+    Includes TreasuryTransactions, CustomerReceipts, and VendorPayments that
+    hit the same GL account, merged in chronological order.
+    """
     from apps.treasury.infrastructure.models import BankAccount, TreasuryTransaction, TreasuryStatus, TransactionType
+    from apps.sales.infrastructure.invoice_models import CustomerReceipt, ReceiptStatus
+    from apps.purchases.infrastructure.payable_models import VendorPayment, VendorPaymentStatus
 
     bank = BankAccount.objects.get(pk=bank_account_id)
+    gl_acc_id = bank.gl_account_id
 
-    pre_inflows = TreasuryTransaction.objects.filter(
+    # ---- Opening balance: treasury txns + receipts + vendor payments before period ----
+    pre_txn_inflows = TreasuryTransaction.objects.filter(
         bank_account_id=bank_account_id,
         status=TreasuryStatus.POSTED,
         transaction_date__lt=date_from,
         transaction_type=TransactionType.INFLOW,
     ).aggregate(total=Sum("amount"))["total"] or Decimal("0")
 
-    pre_outflows = TreasuryTransaction.objects.filter(
+    pre_txn_outflows = TreasuryTransaction.objects.filter(
         bank_account_id=bank_account_id,
         status=TreasuryStatus.POSTED,
         transaction_date__lt=date_from,
         transaction_type__in=[TransactionType.OUTFLOW, TransactionType.ADJUSTMENT],
     ).aggregate(total=Sum("amount"))["total"] or Decimal("0")
 
-    opening = bank.opening_balance + pre_inflows - pre_outflows
+    pre_receipt_inflows = CustomerReceipt.objects.filter(
+        bank_account_id=gl_acc_id,
+        status=ReceiptStatus.POSTED,
+        receipt_date__lt=date_from,
+    ).aggregate(total=Sum("amount"))["total"] or Decimal("0")
+
+    pre_vpay_outflows = VendorPayment.objects.filter(
+        bank_account_id=gl_acc_id,
+        status=VendorPaymentStatus.POSTED,
+        payment_date__lt=date_from,
+    ).aggregate(total=Sum("amount"))["total"] or Decimal("0")
+
+    opening = (
+        bank.opening_balance
+        + pre_txn_inflows - pre_txn_outflows
+        + pre_receipt_inflows - pre_vpay_outflows
+    )
+
+    # ---- Period rows: collect all three types then sort by date, pk ----
+    period_entries: list[tuple] = []  # (date, pk_tiebreak, BankLedgerRow-partial)
 
     txns = TreasuryTransaction.objects.filter(
         bank_account_id=bank_account_id,
         status=TreasuryStatus.POSTED,
         transaction_date__gte=date_from,
         transaction_date__lte=date_to,
-    ).order_by("transaction_date", "id")
-
-    running = opening
-    rows: list[BankLedgerRow] = []
+    )
     for t in txns:
         inflow = t.amount if t.transaction_type == TransactionType.INFLOW else Decimal("0")
         outflow = t.amount if t.transaction_type != TransactionType.INFLOW else Decimal("0")
-        running = running + inflow - outflow
+        period_entries.append((t.transaction_date, f"TXN-{t.pk:012d}", {
+            "txn_date": t.transaction_date,
+            "transaction_number": t.transaction_number or f"TXN-{t.pk}",
+            "transaction_type": t.transaction_type,
+            "reference": t.reference,
+            "notes": t.notes,
+            "inflow": inflow,
+            "outflow": outflow,
+        }))
+
+    receipts = CustomerReceipt.objects.filter(
+        bank_account_id=gl_acc_id,
+        status=ReceiptStatus.POSTED,
+        receipt_date__gte=date_from,
+        receipt_date__lte=date_to,
+    )
+    for r in receipts:
+        period_entries.append((r.receipt_date, f"RCP-{r.pk:012d}", {
+            "txn_date": r.receipt_date,
+            "transaction_number": r.receipt_number or f"RCP-{r.pk}",
+            "transaction_type": "inflow",
+            "reference": r.reference,
+            "notes": r.notes,
+            "inflow": r.amount,
+            "outflow": Decimal("0"),
+        }))
+
+    vpays = VendorPayment.objects.filter(
+        bank_account_id=gl_acc_id,
+        status=VendorPaymentStatus.POSTED,
+        payment_date__gte=date_from,
+        payment_date__lte=date_to,
+    )
+    for p in vpays:
+        period_entries.append((p.payment_date, f"VPAY-{p.pk:012d}", {
+            "txn_date": p.payment_date,
+            "transaction_number": p.payment_number or f"VPAY-{p.pk}",
+            "transaction_type": "outflow",
+            "reference": p.reference,
+            "notes": p.notes,
+            "inflow": Decimal("0"),
+            "outflow": p.amount,
+        }))
+
+    period_entries.sort(key=lambda x: (x[0], x[1]))
+
+    running = opening
+    rows: list[BankLedgerRow] = []
+    for _, _, data in period_entries:
+        running = running + data["inflow"] - data["outflow"]
         rows.append(BankLedgerRow(
-            txn_date=t.transaction_date,
-            transaction_number=t.transaction_number or f"TXN-{t.pk}",
-            transaction_type=t.transaction_type,
-            reference=t.reference,
-            notes=t.notes,
-            inflow=inflow,
-            outflow=outflow,
+            txn_date=data["txn_date"],
+            transaction_number=data["transaction_number"],
+            transaction_type=data["transaction_type"],
+            reference=data["reference"],
+            notes=data["notes"],
+            inflow=data["inflow"],
+            outflow=data["outflow"],
             running_balance=running,
         ))
 
@@ -1484,8 +1590,23 @@ class LiquidityRow:
     is_active: bool
 
 
+def _gl_account_balance(gl_account_id: int, opening_balance) -> Decimal:
+    """GL-authoritative balance: opening + Σdebits − Σcredits on posted entries."""
+    from apps.finance.infrastructure.models import JournalLine
+    agg = (
+        JournalLine.objects
+        .filter(account_id=gl_account_id, entry__is_posted=True)
+        .aggregate(total_dr=Sum("debit"), total_cr=Sum("credit"))
+    )
+    return (
+        Decimal(str(opening_balance))
+        + (agg["total_dr"] or Decimal("0"))
+        - (agg["total_cr"] or Decimal("0"))
+    )
+
+
 def liquidity_summary() -> list[LiquidityRow]:
-    """All active cashboxes and bank accounts with their current balances."""
+    """All active cashboxes and bank accounts with GL-authoritative balances."""
     from apps.treasury.infrastructure.models import Cashbox, BankAccount
 
     rows: list[LiquidityRow] = []
@@ -1497,7 +1618,7 @@ def liquidity_summary() -> list[LiquidityRow]:
             code=cb.code,
             name=cb.name,
             currency_code=cb.currency_code,
-            current_balance=cb.current_balance,
+            current_balance=_gl_account_balance(cb.gl_account_id, cb.opening_balance),
             is_active=True,
         ))
 
@@ -1508,7 +1629,7 @@ def liquidity_summary() -> list[LiquidityRow]:
             code=ba.code,
             name=ba.bank_name,
             currency_code=ba.currency_code,
-            current_balance=ba.current_balance,
+            current_balance=_gl_account_balance(ba.gl_account_id, ba.opening_balance),
             is_active=True,
         ))
 

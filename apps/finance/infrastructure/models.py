@@ -224,6 +224,11 @@ class JournalEntry(TenantOwnedModel, TimestampedModel):
             models.Index(fields=("organization", "status")),
         ]
 
+    def save(self, *args, **kwargs):
+        # Keep is_posted in sync with status — single source of truth.
+        self.is_posted = (self.status == JournalEntryStatus.POSTED)
+        super().save(*args, **kwargs)
+
     def __str__(self) -> str:
         return f"{self.reference} ({self.entry_date}) [{self.status}]"
 
@@ -341,7 +346,7 @@ class Payment(TenantOwnedModel, TimestampedModel):
     status = models.CharField(
         max_length=16,
         choices=PaymentStatusChoices.choices,
-        default=PaymentStatusChoices.COMPLETED,
+        default=PaymentStatusChoices.PENDING,
     )
 
     # Method-specific attributes (cheque_number, card_last4, paypal_tx_id, etc.).

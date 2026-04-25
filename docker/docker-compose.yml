@@ -1,21 +1,16 @@
 services:
-  mysql:
-    image: mysql:8.0
+  postgres:
+    image: postgres:16-alpine
     environment:
-      MYSQL_DATABASE: ${MYSQL_DB:-gs_erp}
-      MYSQL_USER: ${MYSQL_USER:-gs_erp}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-gs_erp}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      POSTGRES_DB: ${POSTGRES_DB:-gs_erp}
+      POSTGRES_USER: ${POSTGRES_USER:-gs_erp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gs_erp}
     ports:
-      - "3306:3306"
+      - "5432:5432"
     volumes:
-      - mysql_data:/var/lib/mysql
-    command: >
-      --character-set-server=utf8mb4
-      --collation-server=utf8mb4_unicode_ci
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost",
-             "-u", "${MYSQL_USER:-gs_erp}", "-p${MYSQL_PASSWORD:-gs_erp}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gs_erp} -d ${POSTGRES_DB:-gs_erp}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -41,7 +36,7 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      mysql:
+      postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -56,7 +51,7 @@ services:
       - ..:/app
     command: celery -A config worker -l INFO
     depends_on:
-      mysql:
+      postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -71,10 +66,10 @@ services:
       - ..:/app
     command: celery -A config beat -l INFO --scheduler django_celery_beat.schedulers:DatabaseScheduler
     depends_on:
-      mysql:
+      postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
 
 volumes:
-  mysql_data:
+  postgres_data:

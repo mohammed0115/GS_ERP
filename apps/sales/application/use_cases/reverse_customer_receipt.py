@@ -24,6 +24,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from django.db import transaction
+from django.db.models import F
 
 from apps.sales.infrastructure.invoice_models import (
     CustomerReceipt,
@@ -130,13 +131,21 @@ class ReverseCustomerReceipt:
                 .filter(receipt_id=receipt.pk)
                 .select_for_update()
             )
+            from apps.sales.infrastructure.invoice_models import CreditNote, NoteStatus as _NS
             for alloc in allocations:
                 inv = SalesInvoice.objects.select_for_update().get(pk=alloc.invoice_id)
                 new_alloc = max(inv.allocated_amount - alloc.allocated_amount, self._ZERO)
                 new_open = inv.grand_total - new_alloc
                 if new_open <= self._ZERO:
-                    # Fully covered by other allocations/credit notes — keep status.
-                    new_status = inv.status
+                    # Check whether remaining allocation came from a credit note or cash.
+                    has_applied_cn = CreditNote.objects.filter(
+                        related_invoice_id=inv.pk,
+                        status=_NS.APPLIED,
+                    ).exists()
+                    new_status = (
+                        SalesInvoiceStatus.CREDITED if has_applied_cn
+                        else SalesInvoiceStatus.PAID
+                    )
                 elif new_alloc <= self._ZERO:
                     new_status = SalesInvoiceStatus.ISSUED
                 else:
@@ -163,6 +172,11 @@ class ReverseCustomerReceipt:
                 status=ReceiptStatus.REVERSED,
                 allocated_amount=self._ZERO,
             )
+            if receipt.treasury_bank_account_id:
+                from apps.treasury.infrastructure.models import BankAccount
+                BankAccount.objects.filter(pk=receipt.treasury_bank_account_id).update(
+                    current_balance=F("current_balance") - receipt.amount
+                )
 
         from apps.audit.infrastructure.models import record_audit_event
         record_audit_event(

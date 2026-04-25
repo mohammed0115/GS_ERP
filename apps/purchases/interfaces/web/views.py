@@ -691,6 +691,7 @@ from apps.purchases.infrastructure.payable_models import (
     VendorCreditNote,
     VendorCreditNoteLine,
     VendorDebitNote,
+    VendorDebitNoteAllocation,
     VendorDebitNoteLine,
     VendorNoteStatus,
 )
@@ -743,7 +744,10 @@ class PurchaseInvoiceDetailView(LoginRequiredMixin, OrgPermissionRequiredMixin, 
         return (
             super().get_queryset()
             .select_related("vendor", "journal_entry")
-            .prefetch_related("lines__expense_account", "lines__tax_code")
+            .prefetch_related(
+                "lines__expense_account", "lines__tax_code",
+                "lines__product", "lines__warehouse",
+            )
         )
 
     def get_context_data(self, **kwargs):
@@ -768,11 +772,24 @@ class PurchaseInvoiceHeaderForm(BootstrapFormMixin, forms.Form):
     )
     due_date = forms.DateField(
         widget=forms.DateInput(attrs={"type": "date"}),
-        initial=date.today,
+        required=False,
     )
     vendor_invoice_number = forms.CharField(max_length=64, required=False, label="Vendor invoice #")
     currency_code = forms.CharField(max_length=3, min_length=3, initial="SAR")
     notes = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 2}))
+
+    def clean(self):
+        from datetime import timedelta
+        cleaned = super().clean()
+        inv_date = cleaned.get("invoice_date")
+        due = cleaned.get("due_date")
+        vendor = cleaned.get("vendor")
+        if inv_date and not due and vendor:
+            due = inv_date + timedelta(days=vendor.payment_terms_days)
+            cleaned["due_date"] = due
+        if inv_date and due and due < inv_date:
+            self.add_error("due_date", "Due date must be on or after invoice date.")
+        return cleaned
 
 
 def _parse_invoice_lines(raw: str) -> list[dict]:
@@ -786,6 +803,7 @@ def _parse_invoice_lines(raw: str) -> list[dict]:
     out = []
     for i, row in enumerate(data, start=1):
         try:
+            raw_uc = row.get("unit_cost")
             out.append({
                 "sequence": i,
                 "description": str(row["description"]).strip(),
@@ -797,6 +815,9 @@ def _parse_invoice_lines(raw: str) -> list[dict]:
                 "line_subtotal": Decimal(str(row.get("line_subtotal") or "0")),
                 "line_total": Decimal(str(row.get("line_total") or "0")),
                 "expense_account_id": int(row["expense_account_id"]) if row.get("expense_account_id") else None,
+                "product_id": int(row["product_id"]) if row.get("product_id") else None,
+                "warehouse_id": int(row["warehouse_id"]) if row.get("warehouse_id") else None,
+                "unit_cost": Decimal(str(raw_uc)) if raw_uc not in (None, "", "null") else None,
             })
         except (KeyError, ValueError, InvalidOperation) as exc:
             raise ValueError(f"Line {i} invalid: {exc}")
@@ -819,6 +840,19 @@ class PurchaseInvoiceCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, 
             .filter(is_active=True, account_type=AccountTypeChoices.EXPENSE)
             .values("id", "code", "name")
         )
+        ctx["inventory_accounts"] = list(
+            Account.objects.all_tenants()
+            .filter(is_active=True, account_type=AccountTypeChoices.ASSET)
+            .values("id", "code", "name")
+        )
+        ctx["warehouses"] = list(
+            Warehouse.objects.filter(is_active=True).order_by("code").values("id", "code", "name")
+        )
+        ctx["products"] = list(
+            Product.objects.filter(is_active=True, type="standard")
+            .select_related("unit")
+            .values("id", "code", "name", "unit__code")
+        )
         return ctx
 
     def form_valid(self, form):
@@ -830,10 +864,6 @@ class PurchaseInvoiceCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, 
             return self.form_invalid(form)
 
         header = form.cleaned_data
-        if header["due_date"] < header["invoice_date"]:
-            form.add_error("due_date", "Due date must be on or after invoice date.")
-            return self.form_invalid(form)
-
         subtotal = sum(l["quantity"] * l["unit_price"] - l["discount_amount"] for l in parsed_lines)
         tax_total = sum(l["tax_amount"] for l in parsed_lines)
         grand_total = subtotal + tax_total
@@ -864,9 +894,137 @@ class PurchaseInvoiceCreateView(LoginRequiredMixin, OrgPermissionRequiredMixin, 
                 line_subtotal=l["line_subtotal"] or (l["quantity"] * l["unit_price"] - l["discount_amount"]),
                 line_total=l["line_total"] or (l["quantity"] * l["unit_price"] - l["discount_amount"] + l["tax_amount"]),
                 expense_account_id=l["expense_account_id"],
+                product_id=l["product_id"],
+                warehouse_id=l["warehouse_id"],
+                unit_cost=l["unit_cost"],
             ).save()
 
         messages.success(self.request, f"Purchase invoice #{inv.pk} created as Draft.")
+        return HttpResponseRedirect(reverse("purchases:invoice_detail", args=[inv.pk]))
+
+
+class PurchaseInvoiceEditView(LoginRequiredMixin, OrgPermissionRequiredMixin, FormView):
+    """Edit a DRAFT PurchaseInvoice header and replace its lines."""
+    permission_required = "purchases.purchase_invoices.create"
+    template_name = "purchases/invoice/form.html"
+    form_class = PurchaseInvoiceHeaderForm
+
+    def _get_invoice(self):
+        pk = self.kwargs["pk"]
+        try:
+            inv = PurchaseInvoice.objects.select_related("vendor").get(pk=pk)
+        except PurchaseInvoice.DoesNotExist:
+            from django.http import Http404
+            raise Http404
+        if inv.status != PurchaseInvoiceStatus.DRAFT:
+            from apps.purchases.domain.exceptions import PurchaseInvoiceAlreadyIssuedError
+            raise PurchaseInvoiceAlreadyIssuedError(
+                f"Invoice #{pk} is not in Draft and cannot be edited."
+            )
+        return inv
+
+    def get_initial(self):
+        inv = self._get_invoice()
+        return {
+            "vendor": inv.vendor_id,
+            "invoice_date": inv.invoice_date,
+            "due_date": inv.due_date,
+            "vendor_invoice_number": inv.vendor_invoice_number,
+            "currency_code": inv.currency_code,
+            "notes": inv.notes,
+        }
+
+    def get_context_data(self, **kwargs):
+        from apps.finance.infrastructure.models import TaxCode
+        ctx = super().get_context_data(**kwargs)
+        ctx["invoice"] = self._get_invoice()
+        ctx["tax_codes"] = list(
+            TaxCode.objects.filter(is_active=True).values("id", "code", "rate", "name")
+        )
+        ctx["expense_accounts"] = list(
+            Account.objects.all_tenants()
+            .filter(is_active=True, account_type=AccountTypeChoices.EXPENSE)
+            .values("id", "code", "name")
+        )
+        ctx["inventory_accounts"] = list(
+            Account.objects.all_tenants()
+            .filter(is_active=True, account_type=AccountTypeChoices.ASSET)
+            .values("id", "code", "name")
+        )
+        ctx["warehouses"] = list(
+            Warehouse.objects.filter(is_active=True).order_by("code").values("id", "code", "name")
+        )
+        ctx["products"] = list(
+            Product.objects.filter(is_active=True, type="standard")
+            .select_related("unit")
+            .values("id", "code", "name", "unit__code")
+        )
+        ctx["existing_lines"] = list(
+            ctx["invoice"].lines.values(
+                "sequence", "description", "quantity", "unit_price",
+                "discount_amount", "tax_code_id", "tax_amount",
+                "line_subtotal", "line_total", "expense_account_id",
+                "product_id", "warehouse_id", "unit_cost",
+            )
+        )
+        return ctx
+
+    def form_valid(self, form):
+        from django.db import transaction as db_transaction
+        try:
+            inv = self._get_invoice()
+        except Exception as exc:
+            form.add_error(None, str(exc))
+            return self.form_invalid(form)
+
+        raw_lines = self.request.POST.get("lines_json", "[]")
+        try:
+            parsed_lines = _parse_invoice_lines(raw_lines)
+        except ValueError as exc:
+            form.add_error(None, str(exc))
+            return self.form_invalid(form)
+
+        header = form.cleaned_data
+        subtotal = sum(l["quantity"] * l["unit_price"] - l["discount_amount"] for l in parsed_lines)
+        tax_total = sum(l["tax_amount"] for l in parsed_lines)
+        grand_total = subtotal + tax_total
+
+        try:
+            with db_transaction.atomic():
+                inv.lines.all().delete()
+                for l in parsed_lines:
+                    PurchaseInvoiceLine(
+                        invoice=inv,
+                        sequence=l["sequence"],
+                        description=l["description"],
+                        quantity=l["quantity"],
+                        unit_price=l["unit_price"],
+                        discount_amount=l["discount_amount"],
+                        tax_code_id=l["tax_code_id"],
+                        tax_amount=l["tax_amount"],
+                        line_subtotal=l["line_subtotal"] or (l["quantity"] * l["unit_price"] - l["discount_amount"]),
+                        line_total=l["line_total"] or (l["quantity"] * l["unit_price"] - l["discount_amount"] + l["tax_amount"]),
+                        expense_account_id=l["expense_account_id"],
+                        product_id=l["product_id"],
+                        warehouse_id=l["warehouse_id"],
+                        unit_cost=l["unit_cost"],
+                    ).save()
+                PurchaseInvoice.objects.filter(pk=inv.pk).update(
+                    vendor=header["vendor"],
+                    invoice_date=header["invoice_date"],
+                    due_date=header["due_date"],
+                    vendor_invoice_number=header.get("vendor_invoice_number") or "",
+                    currency_code=header["currency_code"],
+                    notes=header.get("notes") or "",
+                    subtotal=subtotal,
+                    tax_total=tax_total,
+                    grand_total=grand_total,
+                )
+        except Exception as exc:
+            form.add_error(None, f"Could not update invoice: {exc}")
+            return self.form_invalid(form)
+
+        messages.success(self.request, f"Purchase invoice #{inv.pk} updated.")
         return HttpResponseRedirect(reverse("purchases:invoice_detail", args=[inv.pk]))
 
 
@@ -954,7 +1112,7 @@ class VendorPaymentDetailView(LoginRequiredMixin, OrgPermissionRequiredMixin, De
         return (
             super().get_queryset()
             .select_related("vendor", "bank_account", "journal_entry")
-            .prefetch_related("allocations__invoice")
+            .prefetch_related("allocations__invoice", "debit_note_allocations__debit_note")
         )
 
     def get_context_data(self, **kwargs):
@@ -976,6 +1134,14 @@ class VendorPaymentDetailView(LoginRequiredMixin, OrgPermissionRequiredMixin, De
                 ).order_by("due_date")
             )
             ctx["open_invoices"] = open_invoices
+            ctx["open_debit_notes"] = list(
+                VendorDebitNote.objects.filter(
+                    vendor=pmt.vendor,
+                    currency_code=pmt.currency_code,
+                    status=VendorNoteStatus.ISSUED,
+                ).order_by("note_date")
+            )
+        ctx["dn_allocations"] = list(pmt.debit_note_allocations.all())
         return ctx
 
 
@@ -1106,13 +1272,15 @@ class VendorPaymentAllocateView(LoginRequiredMixin, OrgPermissionRequiredMixin, 
     def post(self, request, pk):
         from apps.purchases.application.use_cases.allocate_vendor_payment import (
             AllocateVendorPaymentService, AllocateVendorPaymentCommand,
-            VendorAllocationSpec,
+            VendorAllocationSpec, VendorDebitNoteAllocationSpec,
         )
         import json as _json
 
         raw = request.POST.get("allocations_json", "[]")
+        raw_dn = request.POST.get("dn_allocations_json", "[]")
         try:
             data = _json.loads(raw)
+            dn_data = _json.loads(raw_dn)
         except Exception:
             messages.error(request, "Invalid allocations payload.")
             return HttpResponseRedirect(reverse("purchases:vendor_payment_detail", args=[pk]))
@@ -1128,11 +1296,23 @@ class VendorPaymentAllocateView(LoginRequiredMixin, OrgPermissionRequiredMixin, 
                 messages.error(request, f"Invalid allocation row: {exc}")
                 return HttpResponseRedirect(reverse("purchases:vendor_payment_detail", args=[pk]))
 
+        dn_specs = []
+        for row in dn_data:
+            try:
+                dn_specs.append(VendorDebitNoteAllocationSpec(
+                    debit_note_id=int(row["debit_note_id"]),
+                    amount=Decimal(str(row["amount"])),
+                ))
+            except (KeyError, ValueError) as exc:
+                messages.error(request, f"Invalid debit note allocation row: {exc}")
+                return HttpResponseRedirect(reverse("purchases:vendor_payment_detail", args=[pk]))
+
         try:
             result = AllocateVendorPaymentService().execute(
                 AllocateVendorPaymentCommand(
                     payment_id=pk,
                     allocations=tuple(specs),
+                    debit_note_allocations=tuple(dn_specs),
                 )
             )
             messages.success(
@@ -1160,6 +1340,24 @@ class VendorPaymentReverseView(LoginRequiredMixin, OrgPermissionRequiredMixin, V
                 request,
                 f"Payment reversed (reversing JE #{result.reversal_entry_id}).",
             )
+        except Exception as exc:
+            messages.error(request, str(exc))
+        return HttpResponseRedirect(reverse("purchases:vendor_payment_detail", args=[pk]))
+
+
+class VendorPaymentCancelView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
+    """POST-only: cancel a DRAFT vendor payment (no GL entry exists yet)."""
+    permission_required = "purchases.vendor_payments.post"
+
+    def post(self, request, pk):
+        from apps.purchases.application.use_cases.cancel_vendor_payment import (
+            CancelVendorPayment, CancelVendorPaymentCommand,
+        )
+        try:
+            CancelVendorPayment().execute(
+                CancelVendorPaymentCommand(payment_id=pk, actor_id=request.user.pk)
+            )
+            messages.success(request, "Draft payment cancelled.")
         except Exception as exc:
             messages.error(request, str(exc))
         return HttpResponseRedirect(reverse("purchases:vendor_payment_detail", args=[pk]))
@@ -1352,6 +1550,24 @@ class VendorCreditNoteIssueView(LoginRequiredMixin, OrgPermissionRequiredMixin, 
         return HttpResponseRedirect(reverse("purchases:vendor_credit_note_detail", args=[pk]))
 
 
+class VendorCreditNoteCancelView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
+    """POST-only: cancel a DRAFT or standalone ISSUED vendor credit note."""
+    permission_required = "purchases.vendor_credit_notes.issue"
+
+    def post(self, request, pk):
+        from apps.purchases.application.use_cases.cancel_vendor_credit_note import (
+            CancelVendorCreditNote, CancelVendorCreditNoteCommand,
+        )
+        try:
+            CancelVendorCreditNote().execute(
+                CancelVendorCreditNoteCommand(credit_note_id=pk, actor_id=request.user.pk)
+            )
+            messages.success(request, "Vendor credit note cancelled.")
+        except Exception as exc:
+            messages.error(request, str(exc))
+        return HttpResponseRedirect(reverse("purchases:vendor_credit_note_detail", args=[pk]))
+
+
 # ---------------------------------------------------------------------------
 # VendorDebitNote
 # ---------------------------------------------------------------------------
@@ -1393,13 +1609,20 @@ class VendorDebitNoteDetailView(LoginRequiredMixin, OrgPermissionRequiredMixin, 
         return (
             super().get_queryset()
             .select_related("vendor", "related_invoice", "journal_entry")
-            .prefetch_related("lines__expense_account", "lines__tax_code")
+            .prefetch_related("lines__expense_account", "lines__tax_code",
+                              "allocations__payment")
         )
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         note: VendorDebitNote = self.object  # type: ignore[assignment]
         ctx["can_issue"] = note.status == VendorNoteStatus.DRAFT
+        ctx["allocations"] = list(note.allocations.select_related("payment").all()) if note.status != VendorNoteStatus.DRAFT else []
+        ctx["make_payment_url"] = (
+            reverse("purchases:vendor_payment_create") + f"?debit_note_id={note.pk}"
+            if note.status == VendorNoteStatus.ISSUED and note.open_amount > 0
+            else None
+        )
         return ctx
 
 
@@ -1497,6 +1720,24 @@ class VendorDebitNoteIssueView(LoginRequiredMixin, OrgPermissionRequiredMixin, V
                 request,
                 f"Debit note {result.note_number} issued (JE #{result.journal_entry_id}).",
             )
+        except Exception as exc:
+            messages.error(request, str(exc))
+        return HttpResponseRedirect(reverse("purchases:vendor_debit_note_detail", args=[pk]))
+
+
+class VendorDebitNoteCancelView(LoginRequiredMixin, OrgPermissionRequiredMixin, View):
+    """POST-only: cancel a DRAFT or ISSUED vendor debit note (no outstanding allocations)."""
+    permission_required = "purchases.vendor_debit_notes.issue"
+
+    def post(self, request, pk):
+        from apps.purchases.application.use_cases.cancel_vendor_debit_note import (
+            CancelVendorDebitNote, CancelVendorDebitNoteCommand,
+        )
+        try:
+            CancelVendorDebitNote().execute(
+                CancelVendorDebitNoteCommand(debit_note_id=pk, actor_id=request.user.pk)
+            )
+            messages.success(request, "Vendor debit note cancelled.")
         except Exception as exc:
             messages.error(request, str(exc))
         return HttpResponseRedirect(reverse("purchases:vendor_debit_note_detail", args=[pk]))

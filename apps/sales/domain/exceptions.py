@@ -107,3 +107,8 @@ class RevenueAccountMissingError(PreconditionFailedError):
 class AllocationExceedsReceiptError(ValidationError):
     default_code = "allocation_exceeds_receipt"
     default_message = "Allocation amount exceeds available receipt balance or invoice open balance."
+
+
+class CreditLimitExceededError(PreconditionFailedError):
+    default_code = "credit_limit_exceeded"
+    default_message = "Issuing this invoice would exceed the customer's credit limit."

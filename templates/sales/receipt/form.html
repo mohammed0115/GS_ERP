@@ -13,6 +13,14 @@
     — {% trans "Open balance:" %} <strong>{{ source_invoice.open_amount|money:source_invoice.currency_code }}</strong>
 </div>
 {% endif %}
+{% if source_debit_note %}
+<div class="alert alert-warning mb-3">
+    <i class="fas fa-file-alt mr-1"></i>
+    {% trans "Settling debit note" %} <strong>{{ source_debit_note.note_number|default:source_debit_note.pk }}</strong>
+    — {{ source_debit_note.customer.name }}
+    — {% trans "Open balance:" %} <strong>{{ source_debit_note.open_amount|money:source_debit_note.currency_code }}</strong>
+</div>
+{% endif %}
 
 <div class="row">
     <div class="col-md-6">
@@ -42,6 +50,11 @@
                 <i class="fas fa-check"></i> {% trans "Post & Apply Payment" %}
             </button>
             <a href="{% url 'sales:invoice_detail' source_invoice.pk %}" class="btn btn-outline-secondary ml-2">{% trans "Cancel" %}</a>
+            {% elif source_debit_note %}
+            <button type="submit" class="btn btn-success">
+                <i class="fas fa-check"></i> {% trans "Post & Settle Debit Note" %}
+            </button>
+            <a href="{% url 'sales:debit_note_detail' source_debit_note.pk %}" class="btn btn-outline-secondary ml-2">{% trans "Cancel" %}</a>
             {% else %}
             <button type="submit" class="btn btn-primary">
                 <i class="fas fa-save"></i> {% trans "Save Draft" %}

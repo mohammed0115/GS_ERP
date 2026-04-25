@@ -66,8 +66,21 @@ class FinalizeBankReconciliation:
                 f"Cannot finalize: {unmatched_count} statement line(s) are still unmatched."
             )
 
-        # difference = what the bank statement says − what our system shows
-        difference = recon.statement.closing_balance - recon.bank_account.current_balance
+        # difference = what the bank statement says − what our GL shows
+        # Use GL-computed balance (authoritative) instead of stale current_balance.
+        from decimal import Decimal as _Dec
+        from django.db.models import Sum
+        from apps.finance.infrastructure.models import JournalLine
+        _agg = JournalLine.objects.filter(
+            account_id=recon.bank_account.gl_account_id,
+            entry__is_posted=True,
+        ).aggregate(total_dr=Sum("debit"), total_cr=Sum("credit"))
+        _gl_bal = (
+            _Dec(str(recon.bank_account.opening_balance))
+            + (_agg["total_dr"] or _Dec("0"))
+            - (_agg["total_cr"] or _Dec("0"))
+        )
+        difference = recon.statement.closing_balance - _gl_bal
 
         now = datetime.now(timezone.utc)
 
@@ -99,7 +112,7 @@ class FinalizeBankReconciliation:
                 "bank_account_id": recon.bank_account_id,
                 "statement_id": recon.statement_id,
                 "closing_balance": str(recon.statement.closing_balance),
-                "system_balance": str(recon.bank_account.current_balance),
+                "system_balance": str(_gl_bal),
                 "difference_amount": str(difference),
             },
         )

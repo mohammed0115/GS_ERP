@@ -13,3 +13,4 @@ class SalesConfig(AppConfig):
         register_permissions("quotations", ("view", "create", "update", "convert"))
         register_permissions("sale_returns", ("view", "create", "post"))
         register_permissions("deliveries", ("view", "create", "update"))
+        import apps.sales.infrastructure.signals  # noqa: F401  register invoice-line signals

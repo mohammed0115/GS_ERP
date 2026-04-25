@@ -93,6 +93,14 @@ class StockMovement(TenantOwnedModel, TimestampedModel):
     # +1 or -1 for ADJUSTMENT, else 0.
     adjustment_sign = models.SmallIntegerField(default=0)
 
+    # Points from the original movement to its counter-movement (cancellation / reversal).
+    reversed_by = models.OneToOneField(
+        "self",
+        on_delete=models.SET_NULL,
+        related_name="reverses",
+        null=True, blank=True,
+    )
+
     # Phase 5 — cost tracking
     unit_cost = models.DecimalField(
         max_digits=18, decimal_places=4, null=True, blank=True,

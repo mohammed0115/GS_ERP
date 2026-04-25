@@ -4,9 +4,10 @@ Test settings.
 Goal: fast, deterministic, zero external IO. Uses an in-memory password hasher,
 a local memory cache, and the eager Celery executor so Celery tasks run inline.
 
-Database: MySQL (matches production). The test DB is named 'test_gs_erp'.
-Run `pytest --reuse-db` / `pytest --keepdb` when the test user lacks CREATE
-DATABASE permissions — this reuses the existing schema without recreating it.
+Database: PostgreSQL (matches production). The test DB is named 'test_gs_erp'.
+Run `pytest --reuse-db` / `pytest --keepdb` to skip DROP/CREATE when the role
+lacks CREATE DATABASE privileges — each test is wrapped in a transaction that
+rolls back so no real data is touched.
 """
 from __future__ import annotations
 
@@ -50,7 +51,5 @@ EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 # Run integration tests with:
 #   pytest apps/finance/tests/infrastructure/ --reuse-db
 DATABASES["default"]["TEST"] = {  # type: ignore[name-defined]
-    "NAME": os.environ.get("MYSQL_TEST_DB", DATABASES["default"]["NAME"]),  # type: ignore[name-defined]
-    "CHARSET": "utf8mb4",
-    "COLLATION": "utf8mb4_unicode_ci",
+    "NAME": os.environ.get("POSTGRES_TEST_DB", DATABASES["default"]["NAME"]),  # type: ignore[name-defined]
 }

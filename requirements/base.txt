@@ -7,7 +7,7 @@ django-filter==24.*
 django-cors-headers==4.*
 
 # Persistence / infrastructure
-mysqlclient==2.2.*
+psycopg[binary]==3.*
 redis==5.*
 
 # Background work

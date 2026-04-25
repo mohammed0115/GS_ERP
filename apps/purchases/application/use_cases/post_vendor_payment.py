@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from django.db import transaction
+from django.db.models import F
 
 from apps.purchases.infrastructure.payable_models import VendorPayment, VendorPaymentStatus
 
@@ -149,6 +150,11 @@ class PostVendorPayment:
                 journal_entry_id=result.entry_id,
                 withholding_tax_amount=wht_amount,
             )
+            if payment.treasury_bank_account_id:
+                from apps.treasury.infrastructure.models import BankAccount
+                BankAccount.objects.filter(pk=payment.treasury_bank_account_id).update(
+                    current_balance=F("current_balance") - net_to_bank
+                )
 
         from apps.audit.infrastructure.models import record_audit_event
         record_audit_event(

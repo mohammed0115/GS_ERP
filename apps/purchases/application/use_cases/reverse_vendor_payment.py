@@ -24,10 +24,14 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from django.db import transaction
+from django.db.models import F
 
 from apps.purchases.infrastructure.payable_models import (
     PurchaseInvoice,
     PurchaseInvoiceStatus,
+    VendorDebitNote,
+    VendorDebitNoteAllocation,
+    VendorNoteStatus,
     VendorPayment,
     VendorPaymentAllocation,
     VendorPaymentStatus,
@@ -47,6 +51,7 @@ class ReversedVendorPayment:
     payment_id: int
     reversal_entry_id: int
     deallocated_invoices: tuple[int, ...]
+    deallocated_debit_notes: tuple[int, ...]
 
 
 class ReverseVendorPayment:
@@ -162,6 +167,24 @@ class ReverseVendorPayment:
 
             VendorPaymentAllocation.objects.filter(payment_id=payment.pk).delete()
 
+            # 1b. Deallocate VendorDebitNote allocations (restore open balance + status).
+            deallocated_vdn_ids: list[int] = []
+            dn_allocations = list(
+                VendorDebitNoteAllocation.objects
+                .select_related("debit_note")
+                .filter(payment_id=payment.pk)
+                .select_for_update()
+            )
+            for dn_alloc in dn_allocations:
+                vdn = VendorDebitNote.objects.select_for_update().get(pk=dn_alloc.debit_note_id)
+                new_alloc = max(vdn.allocated_amount - dn_alloc.allocated_amount, self._ZERO)
+                VendorDebitNote.objects.filter(pk=vdn.pk).update(
+                    allocated_amount=new_alloc,
+                    status=VendorNoteStatus.ISSUED,
+                )
+                deallocated_vdn_ids.append(vdn.pk)
+            VendorDebitNoteAllocation.objects.filter(payment_id=payment.pk).delete()
+
             # 2. Post the reversing GL entry.
             result = PostJournalEntry().execute(
                 PostJournalEntryCommand(
@@ -176,6 +199,12 @@ class ReverseVendorPayment:
                 status=VendorPaymentStatus.REVERSED,
                 allocated_amount=self._ZERO,
             )
+            if payment.treasury_bank_account_id:
+                net_paid = payment.amount - payment.withholding_tax_amount
+                from apps.treasury.infrastructure.models import BankAccount
+                BankAccount.objects.filter(pk=payment.treasury_bank_account_id).update(
+                    current_balance=F("current_balance") + net_paid
+                )
 
         from apps.audit.infrastructure.models import record_audit_event
         record_audit_event(
@@ -192,6 +221,7 @@ class ReverseVendorPayment:
                 "amount": str(payment.amount),
                 "reversal_entry_id": result.entry_id,
                 "deallocated_invoices": deallocated_invoice_ids,
+                "deallocated_debit_notes": deallocated_vdn_ids,
             },
         )
 
@@ -199,4 +229,5 @@ class ReverseVendorPayment:
             payment_id=payment.pk,
             reversal_entry_id=result.entry_id,
             deallocated_invoices=tuple(deallocated_invoice_ids),
+            deallocated_debit_notes=tuple(deallocated_vdn_ids),
         )

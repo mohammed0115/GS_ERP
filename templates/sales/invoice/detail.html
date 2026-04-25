@@ -130,6 +130,8 @@
                     <th>#</th>
                     <th>{% trans "Item" %}</th>
                     <th>{% trans "Description" %}</th>
+                    <th>{% trans "Product" %}</th>
+                    <th>{% trans "Warehouse" %}</th>
                     <th class="text-right">{% trans "Qty" %}</th>
                     <th class="text-right">{% trans "Unit Price" %}</th>
                     <th class="text-right">{% trans "Discount" %}</th>
@@ -144,6 +146,8 @@
                     <td>{{ line.sequence }}</td>
                     <td><code>{{ line.item_code|default:"—" }}</code></td>
                     <td>{{ line.description }}</td>
+                    <td><code>{{ line.product.code|default:"—" }}</code></td>
+                    <td>{{ line.warehouse.code|default:"—" }}</td>
                     <td class="text-right">{{ line.quantity }}</td>
                     <td class="text-right">{{ line.unit_price|money:object.currency_code }}</td>
                     <td class="text-right">{{ line.discount_amount|money:object.currency_code }}</td>
@@ -152,7 +156,7 @@
                     <td class="text-right font-weight-bold">{{ line.line_total|money:object.currency_code }}</td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="9" class="text-center text-muted p-3">{% trans "No lines." %}</td></tr>
+                <tr><td colspan="11" class="text-center text-muted p-3">{% trans "No lines." %}</td></tr>
                 {% endfor %}
             </tbody>
         </table>

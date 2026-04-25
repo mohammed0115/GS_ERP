@@ -171,14 +171,23 @@ class IssueDebitNote:
                 )
             )
             now = datetime.now(timezone.utc)
+            from apps.finance.infrastructure.fiscal_year_models import (
+                AccountingPeriod, AccountingPeriodStatus,
+            )
+            fiscal_period = AccountingPeriod.objects.filter(
+                organization_id=note.organization_id,
+                start_date__lte=note.note_date,
+                end_date__gte=note.note_date,
+                status=AccountingPeriodStatus.OPEN,
+            ).first()
             DebitNote.objects.filter(pk=note.pk).update(
                 status=NoteStatus.ISSUED,
                 note_number=note_number,
                 journal_entry_id=result.entry_id,
+                fiscal_period=fiscal_period,
                 issued_at=now,
                 issued_by_id=command.actor_id,
             )
-
         from apps.audit.infrastructure.models import record_audit_event
         record_audit_event(
             event_type="debit_note.issued",

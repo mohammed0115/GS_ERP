@@ -81,6 +81,30 @@ class IssueSalesInvoice:
                 f"Customer {invoice.customer.code} is not active."
             )
 
+        # Credit limit check (limit=0 means unlimited)
+        if invoice.customer.credit_limit > Decimal("0"):
+            from django.db.models import Sum as _Sum
+            outstanding = (
+                SalesInvoice.objects
+                .filter(
+                    customer_id=invoice.customer_id,
+                    status__in=[
+                        SalesInvoiceStatus.ISSUED,
+                        SalesInvoiceStatus.PARTIALLY_PAID,
+                    ],
+                )
+                .aggregate(
+                    outstanding=_Sum("grand_total") - _Sum("allocated_amount")
+                )["outstanding"]
+            ) or Decimal("0")
+            if outstanding + invoice.grand_total > invoice.customer.credit_limit:
+                from apps.sales.domain.exceptions import CreditLimitExceededError
+                raise CreditLimitExceededError(
+                    f"Customer {invoice.customer.code} credit limit "
+                    f"{invoice.customer.credit_limit} would be exceeded: "
+                    f"outstanding={outstanding}, new invoice={invoice.grand_total}."
+                )
+
         # Date guards
         from datetime import date as _date
         from apps.sales.domain.exceptions import InvalidSaleError
@@ -99,10 +123,26 @@ class IssueSalesInvoice:
             "revenue_account",
             "tax_code__output_tax_account",
             "tax_code__tax_account",
+            "product__unit",
+            "warehouse",
         ).all())
         if not lines:
             from apps.sales.domain.exceptions import InvoiceHasNoLinesError
             raise InvoiceHasNoLinesError("Cannot issue an invoice with no lines.")
+
+        # FIX-3: STANDARD and COMBO products must have a warehouse; silently
+        # skipping would issue the invoice without stock deduction or COGS.
+        from apps.catalog.domain.entities import ProductType as _ProductType
+        from apps.sales.domain.exceptions import InvalidSaleError as _ISE
+        for _line in lines:
+            if _line.product_id and _line.product and not _line.warehouse_id:
+                if _line.product.type in (
+                    _ProductType.STANDARD.value, _ProductType.COMBO.value
+                ):
+                    raise _ISE(
+                        f"Line seq={_line.sequence}: product '{_line.product.code}' "
+                        "requires a warehouse to be selected."
+                    )
 
         # Period guard
         _assert_period_open(invoice.invoice_date)
@@ -161,7 +201,7 @@ class IssueSalesInvoice:
                     f"Revenue account {rev_account.code} must be type 'income', "
                     f"got '{rev_account.account_type}'."
                 )
-            taxable = line.line_subtotal - line.discount_amount
+            taxable = line.line_subtotal  # already = qty×price − discount_amount
             revenue_by_account[rev_account.pk] = (
                 revenue_by_account.get(rev_account.pk, Decimal("0")) + taxable
             )
@@ -226,7 +266,7 @@ class IssueSalesInvoice:
             _tax_engine = CalculateTax()
             for line in lines:
                 if line.tax_code_id and line.tax_amount:
-                    taxable = line.line_subtotal - line.discount_amount
+                    taxable = line.line_subtotal  # already = qty×price − discount_amount
                     if taxable > Decimal("0"):
                         _tax_engine.execute(CalculateTaxCommand(
                             net_amount=taxable,
@@ -243,10 +283,22 @@ class IssueSalesInvoice:
             now = datetime.now(timezone.utc)
             inv_number = f"INV-{invoice.invoice_date.year}-{invoice.pk:06d}"
             customer = invoice.customer
+
+            from apps.finance.infrastructure.fiscal_year_models import (
+                AccountingPeriod, AccountingPeriodStatus,
+            )
+            fiscal_period = AccountingPeriod.objects.filter(
+                organization_id=invoice.organization_id,
+                start_date__lte=invoice.invoice_date,
+                end_date__gte=invoice.invoice_date,
+                status=AccountingPeriodStatus.OPEN,
+            ).first()
+
             update_fields = dict(
                 status=SalesInvoiceStatus.ISSUED,
                 invoice_number=inv_number,
                 journal_entry_id=result.entry_id,
+                fiscal_period=fiscal_period,
                 issued_at=now,
                 issued_by_id=command.actor_id,
             )
@@ -263,6 +315,62 @@ class IssueSalesInvoice:
                 )
 
             SalesInvoice.objects.filter(pk=invoice.pk).update(**update_fields)
+
+            # Decrement stock and post COGS for inventory-linked lines.
+            # COMBO lines are decomposed into their STANDARD components (same
+            # pattern as PostSale._build_inventory_specs).
+            from apps.inventory.application.use_cases.issue_sold_inventory import (
+                IssueSoldInventory, SaleLineSpec,
+            )
+            from apps.catalog.infrastructure.models import (
+                ComboRecipe as _ComboRecipe,
+                ComboComponent as _ComboComponent,
+            )
+            from apps.catalog.domain.entities import ProductType as _PT
+            from datetime import datetime as _dt, timezone as _tz
+
+            inv_lines: list[SaleLineSpec] = []
+            for line in lines:
+                if not (line.product_id and line.warehouse_id):
+                    continue
+                ptype = line.product.type if line.product else None
+                if ptype == _PT.COMBO.value:
+                    recipe = _ComboRecipe.objects.filter(
+                        product_id=line.product_id
+                    ).first()
+                    if recipe is None:
+                        continue
+                    for comp in (
+                        _ComboComponent.objects
+                        .filter(recipe=recipe)
+                        .select_related("component_product__unit")
+                    ):
+                        cp = comp.component_product
+                        if cp.type != _PT.STANDARD.value:
+                            continue
+                        inv_lines.append(SaleLineSpec(
+                            product_id=cp.pk,
+                            warehouse_id=line.warehouse_id,
+                            quantity=line.quantity * comp.quantity,
+                            uom_code=cp.unit.code,
+                        ))
+                elif ptype == _PT.STANDARD.value:
+                    inv_lines.append(SaleLineSpec(
+                        product_id=line.product_id,
+                        warehouse_id=line.warehouse_id,
+                        quantity=line.quantity,
+                        uom_code=line.product.unit.code,
+                    ))
+            if inv_lines:
+                IssueSoldInventory().execute(
+                    source_type="sales_invoice",
+                    source_id=invoice.pk,
+                    reference=inv_number,
+                    sale_date=invoice.invoice_date,
+                    currency_code=invoice.currency_code,
+                    lines=inv_lines,
+                    occurred_at=_dt.now(tz=_tz.utc),
+                )
 
         from apps.audit.infrastructure.models import record_audit_event
         record_audit_event(

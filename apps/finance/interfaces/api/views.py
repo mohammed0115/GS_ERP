@@ -602,18 +602,76 @@ class JournalEntryPostView(APIView):
 
     @extend_schema(responses=JournalEntrySerializer, tags=["Finance / Journal Entries"])
     def post(self, request, pk):
-        from django.utils import timezone
-        entry = get_object_or_404(JournalEntry, pk=pk)
+        import datetime
+        from django.db.models import Sum as _Sum
+        from apps.finance.application.use_cases.post_journal_entry import (
+            _assert_period_open, _find_open_period_id,
+        )
+        from apps.finance.domain.exceptions import (
+            AccountNotFoundError, AccountNotPostableError, PeriodClosedError,
+        )
+        from datetime import datetime as dt_cls, timezone as tz
+
+        entry = get_object_or_404(
+            JournalEntry.objects.prefetch_related("lines__account"), pk=pk
+        )
         if entry.status not in ("submitted", "approved"):
             return Response(
                 {"error": {"code": "invalid_status", "message": "Entry must be submitted or approved to post."}},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        entry.status = "posted"
-        entry.is_posted = True
-        entry.posted_at = timezone.now()
-        entry.posted_by = request.user
-        entry.save(update_fields=["status", "is_posted", "posted_at", "posted_by"])
+
+        # Period guard
+        try:
+            _assert_period_open(entry.entry_date)
+        except PeriodClosedError as exc:
+            return Response({"error": {"code": "period_closed", "message": str(exc)}},
+                            status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+        # Account validation
+        lines = list(entry.lines.select_related("account").all())
+        account_ids = {ln.account_id for ln in lines}
+        from apps.finance.infrastructure.models import Account
+        accounts = {a.pk: a for a in Account.objects.filter(pk__in=account_ids, is_active=True)}
+        missing = account_ids - accounts.keys()
+        if missing:
+            return Response(
+                {"error": {"code": "account_not_found",
+                           "message": f"Accounts not found or inactive: {sorted(missing)}"}},
+                status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+        non_postable = [f"{a.code} {a.name}" for a in accounts.values() if not a.is_postable]
+        if non_postable:
+            return Response(
+                {"error": {"code": "account_not_postable",
+                           "message": f"Summary accounts cannot receive lines: {non_postable}"}},
+                status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+
+        # Balance check
+        from decimal import Decimal as _Dec
+        total_dr = sum(ln.debit for ln in lines)
+        total_cr = sum(ln.credit for ln in lines)
+        if abs(total_dr - total_cr) > _Dec("0.0001"):
+            return Response(
+                {"error": {"code": "unbalanced",
+                           "message": f"Entry is unbalanced: DR {total_dr} ≠ CR {total_cr}"}},
+                status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+
+        now = dt_cls.now(tz.utc)
+        fiscal_period_id = _find_open_period_id(entry.entry_date)
+        updates = {
+            "status": "posted",
+            "is_posted": True,
+            "posted_at": now,
+            "posted_by": request.user,
+            "fiscal_period_id": fiscal_period_id,
+        }
+        if not entry.entry_number:
+            updates["entry_number"] = f"JE-{entry.entry_date.year}-{entry.pk:06d}"
+        JournalEntry.objects.filter(pk=entry.pk).update(**updates)
+        entry.refresh_from_db()
         return Response(JournalEntrySerializer(entry).data)
 
 
@@ -622,41 +680,44 @@ class JournalEntryReverseView(APIView):
 
     @extend_schema(responses=JournalEntrySerializer, tags=["Finance / Journal Entries"])
     def post(self, request, pk):
-        original = get_object_or_404(JournalEntry.objects.prefetch_related("lines"), pk=pk)
-        if original.status != "posted":
+        import datetime
+        from apps.finance.application.use_cases.reverse_journal_entry import (
+            ReverseJournalEntry, ReverseJournalEntryCommand,
+        )
+        from apps.finance.domain.exceptions import (
+            JournalAlreadyPostedError, JournalAlreadyReversedError, PeriodClosedError,
+            AccountNotFoundError,
+        )
+
+        reversal_date_str = request.data.get("reversal_date", str(datetime.date.today()))
+        try:
+            reversal_date = datetime.date.fromisoformat(reversal_date_str)
+        except (ValueError, TypeError):
             return Response(
-                {"error": {"code": "invalid_status", "message": "Only posted entries can be reversed."}},
+                {"error": {"code": "invalid_date", "message": "reversal_date must be YYYY-MM-DD"}},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        from django.utils import timezone
-        import datetime
-        reversal_date = request.data.get("reversal_date", str(datetime.date.today()))
-        with db_transaction.atomic():
-            reversal = JournalEntry.objects.create(
-                entry_date=reversal_date,
-                reference=f"REV-{original.reference}",
-                memo=f"Reversal of {original.reference}",
-                currency_code=original.currency_code,
-                reversed_from=original,
-            )
-            for line in original.lines.all():
-                JournalLine.objects.create(
-                    entry=reversal,
-                    account_id=line.account_id,
-                    debit=line.credit,
-                    credit=line.debit,
-                    currency_code=line.currency_code,
-                    memo=line.memo,
-                    line_number=line.line_number,
-                )
-            reversal.status = "posted"
-            reversal.is_posted = True
-            reversal.posted_at = timezone.now()
-            reversal.posted_by = request.user
-            reversal.save(update_fields=["status", "is_posted", "posted_at", "posted_by"])
-            original.status = "reversed"
-            original.save(update_fields=["status"])
-        reversal.refresh_from_db()
+
+        cmd = ReverseJournalEntryCommand(
+            entry_id=pk,
+            reversal_date=reversal_date,
+            memo=request.data.get("memo", ""),
+        )
+        try:
+            result = ReverseJournalEntry().execute(cmd)
+        except AccountNotFoundError as exc:
+            return Response({"error": {"code": "not_found", "message": str(exc)}},
+                            status=status.HTTP_404_NOT_FOUND)
+        except (JournalAlreadyPostedError, JournalAlreadyReversedError) as exc:
+            return Response({"error": {"code": "invalid_status", "message": str(exc)}},
+                            status=status.HTTP_400_BAD_REQUEST)
+        except PeriodClosedError as exc:
+            return Response({"error": {"code": "period_closed", "message": str(exc)}},
+                            status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+        reversal = get_object_or_404(
+            JournalEntry.objects.prefetch_related("lines"), pk=result.reversal_entry_id
+        )
         return Response(JournalEntrySerializer(reversal).data, status=status.HTTP_201_CREATED)
 
 
@@ -700,14 +761,30 @@ class FiscalYearCloseView(APIView):
 
     @extend_schema(responses=FiscalYearSerializer, tags=["Finance / Fiscal Years"])
     def post(self, request, pk):
-        obj = get_object_or_404(FiscalYear, pk=pk)
-        if obj.status != "open":
+        from apps.finance.application.use_cases.close_fiscal_year import (
+            CloseFiscalYear, CloseFiscalYearCommand,
+        )
+        from apps.finance.domain.exceptions import AccountNotFoundError, PeriodClosedError
+
+        try:
+            CloseFiscalYear().execute(
+                CloseFiscalYearCommand(
+                    fiscal_year_id=pk,
+                    actor_id=request.user.pk,
+                )
+            )
+        except AccountNotFoundError:
             return Response(
-                {"error": {"code": "already_closed", "message": "Fiscal year is already closed."}},
+                {"error": {"code": "not_found", "message": "Fiscal year not found."}},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except PeriodClosedError as exc:
+            return Response(
+                {"error": {"code": "already_closed", "message": str(exc)}},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        obj.status = "closed"
-        obj.save(update_fields=["status"])
+
+        obj = get_object_or_404(FiscalYear, pk=pk)
         return Response(FiscalYearSerializer(obj).data)
 
 

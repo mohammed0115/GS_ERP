@@ -94,6 +94,7 @@ class IssueCreditNote:
             from django.db.models import Sum as _Sum
             totals = SalesInvoice.objects.filter(
                 customer_id=note.customer_id,
+                currency_code=note.currency_code,
                 status__in=[SalesInvoiceStatus.ISSUED, SalesInvoiceStatus.PARTIALLY_PAID],
             ).aggregate(
                 total_grand=_Sum("grand_total"),
@@ -138,7 +139,7 @@ class IssueCreditNote:
         for line in lines:
             rev_acc = line.revenue_account or note.customer.revenue_account
             if rev_acc:
-                subtotal = line.quantity * line.unit_price
+                subtotal = line.line_total - line.tax_amount
                 revenue_by_acc[rev_acc.pk] = (
                     revenue_by_acc.get(rev_acc.pk, Decimal("0")) + subtotal
                 )

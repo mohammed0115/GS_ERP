@@ -37,6 +37,7 @@ urlpatterns = [
     path("invoices/",                         views.SalesInvoiceListView.as_view(),   name="invoice_list"),
     path("invoices/create/",                  views.SalesInvoiceCreateView.as_view(), name="invoice_create"),
     path("invoices/<int:pk>/",                views.SalesInvoiceDetailView.as_view(), name="invoice_detail"),
+    path("invoices/<int:pk>/edit/",           views.SalesInvoiceEditView.as_view(),   name="invoice_edit"),
     path("invoices/<int:pk>/issue/",          views.SalesInvoiceIssueView.as_view(),  name="invoice_issue"),
     path("invoices/<int:pk>/cancel/",         views.SalesInvoiceCancelView.as_view(), name="invoice_cancel"),
 
@@ -47,6 +48,7 @@ urlpatterns = [
     path("receipts/<int:pk>/post/",           views.CustomerReceiptPostView.as_view(),       name="receipt_post"),
     path("receipts/<int:pk>/allocate/",       views.CustomerReceiptAllocateView.as_view(),   name="receipt_allocate"),
     path("receipts/<int:pk>/reverse/",        views.CustomerReceiptReverseView.as_view(),    name="receipt_reverse"),
+    path("receipts/<int:pk>/cancel/",         views.CustomerReceiptCancelView.as_view(),    name="receipt_cancel"),
     path("receipts/<int:pk>/unallocate/",     views.CustomerReceiptUnallocateView.as_view(), name="receipt_unallocate"),
 
     # CreditNote
@@ -54,10 +56,13 @@ urlpatterns = [
     path("credit-notes/create/",              views.CreditNoteCreateView.as_view(), name="credit_note_create"),
     path("credit-notes/<int:pk>/",            views.CreditNoteDetailView.as_view(), name="credit_note_detail"),
     path("credit-notes/<int:pk>/issue/",      views.CreditNoteIssueView.as_view(),  name="credit_note_issue"),
+    path("credit-notes/<int:pk>/apply/",      views.CreditNoteApplyView.as_view(),  name="credit_note_apply"),
+    path("credit-notes/<int:pk>/cancel/",     views.CreditNoteCancelView.as_view(), name="credit_note_cancel"),
 
     # DebitNote
     path("debit-notes/",                      views.DebitNoteListView.as_view(),   name="debit_note_list"),
     path("debit-notes/create/",               views.DebitNoteCreateView.as_view(), name="debit_note_create"),
     path("debit-notes/<int:pk>/",             views.DebitNoteDetailView.as_view(), name="debit_note_detail"),
     path("debit-notes/<int:pk>/issue/",       views.DebitNoteIssueView.as_view(),  name="debit_note_issue"),
+    path("debit-notes/<int:pk>/cancel/",      views.DebitNoteCancelView.as_view(), name="debit_note_cancel"),
 ]
